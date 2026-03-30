@@ -198,6 +198,7 @@ class Encoder(nn.Module):
         self.W_P = nn.Linear(dim_in, embed_dim)
         self.W_pos = positional_encoding(pe, learn_pe, num_patches, embed_dim)  # learnable PE str
         self.dropout = nn.Dropout(drop_rate)
+        self.pe_dropout = nn.Dropout(p=0.3)  # randomly zero PE during training
 
         d_ff = int(embed_dim * mlp_ratio)
         self.transformer = TSTEncoder(
@@ -220,7 +221,7 @@ class Encoder(nn.Module):
 
         # Patch projection + positional encoding
         x = self.W_P(x)
-        x = self.dropout(x + self.W_pos[:P, :])
+        x = self.dropout(x + self.pe_dropout(self.W_pos[:P, :]))
 
         # Context masking (student encoder only)
         if mask is not None:

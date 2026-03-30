@@ -17,10 +17,13 @@ Colab
   or call run(model="dino", skip_train=False) directly after importing.
 """
 
-import os, sys, copy, argparse
+import os, sys, copy, argparse, random
 import subprocess
 from types import SimpleNamespace
 from pathlib import Path
+
+import numpy as np
+import torch
 
 # Make sure the project root (where dataset_registry.py lives) is importable
 _PROJECT_ROOT = str(Path(__file__).parent.resolve())
@@ -28,6 +31,14 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from dataset_registry import get_dataset_info
+
+GLOBAL_SEED = 42
+
+def _set_seed(seed: int = GLOBAL_SEED):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -1025,6 +1036,7 @@ def run(model: str, skip_train: bool = False,
     checkpoints    — list of checkpoint epochs to evaluate (model-specific default if None).
     Available datasets: ettm1, etth1, etth2, ettm2, weather, electricity, traffic
     """
+    _set_seed()
     model = model.lower()
     if model not in RUNNERS:
         raise ValueError(f"Unknown model '{model}'. Choose from: {list(RUNNERS)}")

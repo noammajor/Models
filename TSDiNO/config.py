@@ -3,7 +3,7 @@ config = {
     # ── Task ─────────────────────────────────────────────────────────────────
     # "dino"  |  "classification"  |  "forecasting"
     "task": "dino",
-    "seed": 0,
+    "seed": 42,
     "output_dir": "./checkpoints",
     "saveckp_freq": 10,
     "test_only": False,
