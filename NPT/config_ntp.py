@@ -28,7 +28,7 @@ config = {
     "act":          "gelu",
 
     # ── Training ──────────────────────────────────────────────────────────────
-    "num_epochs":    50,
+    "num_epochs":    20,
     "batch_size":    64,
     "lr":            1e-4,
     "revin":         True,

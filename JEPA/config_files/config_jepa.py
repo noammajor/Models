@@ -4,7 +4,7 @@
 config = {
     "path_save": "./output_model/JEPA/",
     "lr": 3e-3,
-    "num_epochs": 50,
+    "num_epochs": 20,
     "ema_momentum": 0.996,
     "weight_decay": 3e-3,
     "lr_pred": 5e-3,

@@ -25,7 +25,7 @@ config = {
 
     # ── Pretraining ───────────────────────────────────────────────────────────
     "mask_ratio":          0.4,
-    "n_epochs_pretrain":   50,
+    "n_epochs_pretrain":   20,
     "batch_size":          64,
     "num_workers":         0,
     "pretrained_model_id": 1,
