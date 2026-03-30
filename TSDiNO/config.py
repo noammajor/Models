@@ -131,65 +131,16 @@ config = {
     #
     # ─────────────────────────────────────────────────────────────────────────
 
-    # ── Teacher views (global crops) ──────────────────────────────────────────
-    # Soft-threshold detail coefficients → clean, stable structural view.
-    # Two views with different sigma to give the teacher mild variety.
-    # Try: sigma 0.1 (light) → 0.5 (aggressive)
+    # ── Teacher view (global crop) ────────────────────────────────────────────
+    # One easy view: soft-threshold strips noise while preserving signal structure.
     "global_crops": [
         {"type": "dwt_soft_threshold", "crop_ratio": 1.0, "soft_threshold_sigma": 0.3},
-        {"type": "dwt_band_scale",     "crop_ratio": 1.0},
     ],
 
-    # ── Student views (local crops) ───────────────────────────────────────────
-    # Grouped by crop_ratio so same-length views are batched together.
-    #
-    # crop_ratio=0.5  → 50 % of the window (~8 patches with step_size=1).
-    #   Hardest task: predict full-window teacher summary from half the signal.
-    # crop_ratio=0.6  → 60 % of the window (~13 patches).
-    #   Medium difficulty; uses random type selection for within-batch diversity.
-    # crop_ratio=1.0  → full window, but with structural (non-DWT) transforms.
-    #   Teaches invariance to geometric / amplitude distortions.
+    # ── Student view (local crop) ─────────────────────────────────────────────
+    # One hard view: high-perturb adds aggressive Gaussian noise to detail coeffs.
     "local_crops": [
-        # ── High Difficulty (Focus on Approximation/Low-Freq) ─────────────────
-        # We zero out details but keep the "approximation" (the skeleton of the signal)
-        {
-            "type": "dwt_zero_out_detail",
-            "crop_ratio": 1.0, 
-            "zero_out_ratio": 0.6,  # Reduced from 0.7 to prevent over-smoothing
-            "finest_levels": 2
-        },
-        {
-            "type": "dwt_high_perturb",
-            "crop_ratio": 1.0, 
-            "high_perturb_noise_range": (0.05, 0.2) # Subtle noise, not destructive
-        },
-    
-        # ── Medium Difficulty (Focus on Scale Invariance) ────────────────────
-        # We use band scaling to mimic volume/intensity changes
-        {
-            "type": ["dwt_band_scale"],
-            "crop_ratio": 1.0, 
-            "scale_range": (0.8, 1.2) # Tightened range for stability
-        },
-        {
-            "type": ["dwt_zero_out_detail", "dwt_high_perturb"],
-            "crop_ratio": 1.0, 
-            "zero_out_ratio": 0.3,
-            "high_perturb_noise_range": (0.02, 0.1)
-        },
-    
-        # ── Low Difficulty (Structural Preservation) ─────────────────────────
-        # These ensure the model doesn't forget what the raw signal looks like
-        {
-            "type": ["dwt_band_scale"],
-            "crop_ratio": 1.0, 
-            "scale_range": (0.9, 1.1) 
-        },
-        {
-            "type": ["dwt_high_perturb"],
-            "crop_ratio": 1.0, 
-            "high_perturb_noise_range": (0.01, 0.05)
-        }
+        {"type": "dwt_high_perturb", "crop_ratio": 1.0, "high_perturb_noise_range": (0.1, 0.3)},
     ],
 
     # ── Patch reconstruction (MAE-style auxiliary loss) ────────────────────────
