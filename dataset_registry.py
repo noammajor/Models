@@ -8,7 +8,7 @@ Colab (after drive mount) and locally without editing path strings anywhere else
 import os
 from pathlib import Path
 
-_DATA_DIR = Path(__file__).parent / "Discrete_JEPA" / "data"
+_DATA_DIR = Path("/home/shared/datasets/data - forecasting timeseries")
 
 # JEPA groups variables into chunks of this many columns.
 # Every group must be the same size; the last group is padded by repeating
