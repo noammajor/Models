@@ -70,7 +70,7 @@ config = {
     "token_diversity": 0.15,
     "vigreg_patches": 0.00,
     "decorr_coeff": 0.0,
-    "vigreg_var": 0.50,
+    "vigreg_var": 1.0,
     "vigreg_covar": 0.04,
     "grounding_coeff": 0.10,
     "beta_vq": 1.0,
