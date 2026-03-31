@@ -5,7 +5,7 @@
 config = {
     "path_save": "./output_model/DiscreteJEPA/",
     "lr": 2e-3,
-    "num_epochs": 50,
+    "num_epochs": 20,
     "ema_momentum": 0.996,
     "codebook_lr": 1e-3,
     "weight_decay": 3e-3,
