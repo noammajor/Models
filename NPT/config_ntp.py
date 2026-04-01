@@ -10,9 +10,9 @@ config = {
     # ── Patching (JEPA-style data loader) ─────────────────────────────────────
     # patch_size  = length of each patch (≡ patch_len in PatchTST)
     # ratio_patches = number of patches per window (context = patch_size * ratio_patches)
-    "patch_size":     12,
-    "ratio_patches":  42,   # 12 * 42 = 504 ≈ 512 context window
-    "masking_type":   "bernoulli",   # required by data loader; not used in NTP loss
+    "patch_size":     16,
+    "ratio_patches":  27,   # 16 * 27 = 432 total window (21 context + 6 horizon)
+    "masking_type":   "causal",   # forecasting-style: context = first patches, target = last horizon patches
     "mask_ratio":     0.4,
     "num_blocks":     1,
     "val_prec":       0.1,
@@ -37,7 +37,7 @@ config = {
     # ── Zero-Shot Forecasting ─────────────────────────────────────────────────
     # horizon_t          = number of future patches to forecast
     # patch_size_forcasting is automatically set to patch_size at runtime
-    "horizon_t":              4,     # 4 patches × 12 = 48-step horizon
+    "horizon_t":              6,     # 6 patches × 16 = 96-step horizon
     "val_prec_forcasting":    0.1,
     "test_prec_forcasting":   0.1,
     "window_step_forecasting": 1,    # stride between forecasting windows

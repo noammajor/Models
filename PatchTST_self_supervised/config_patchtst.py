@@ -9,10 +9,10 @@ config = {
     "monash_min_len":     512,
 
     # ── Patching ──────────────────────────────────────────────────────────────
-    "context_points":  512,
+    "context_points":  336,
     "target_points":   96,
-    "patch_len":       12,
-    "stride":          12,
+    "patch_len":       16,
+    "stride":          16,
 
     # ── Model ─────────────────────────────────────────────────────────────────
     "n_layers":     3,

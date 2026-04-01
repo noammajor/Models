@@ -52,14 +52,15 @@ def _instance_norm(x, eps=1e-6):
 # ── model ─────────────────────────────────────────────────────────────────────
 
 def get_model(config, c_in, device):
-    num_patch = config['ratio_patches']
-    patch_len = config['patch_size']
+    horizon_patches  = config['horizon_t']
+    context_patches  = config['ratio_patches'] - horizon_patches
+    patch_len        = config['patch_size']
     model = PatchTST(
         c_in=c_in,
         target_dim=patch_len,       # not used by NTPHead, kept for signature compat
         patch_len=patch_len,
         stride=patch_len,           # non-overlapping (same as JEPA data loader)
-        num_patch=num_patch,
+        num_patch=context_patches,  # encoder sees only context patches
         n_layers=config['n_layers'],
         n_heads=config['n_heads'],
         d_model=config['d_model'],
@@ -71,6 +72,7 @@ def get_model(config, c_in, device):
         head_type='ntp',
         causal=True,
         res_attention=False,
+        horizon_patches=horizon_patches,  # head outputs exactly horizon patches
     ).to(device)
     print(f'model params: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}')
     return model
@@ -174,6 +176,8 @@ def pretrain_ntp(config):
     best_val_loss = float('inf')
     records = []
 
+    context_patches = config['ratio_patches'] - config['horizon_t']  # 27 - 6 = 21
+
     for epoch in range(config['num_epochs']):
         # ── train ─────────────────────────────────────────────────────────────
         model.train()
@@ -187,8 +191,9 @@ def pretrain_ntp(config):
             # PatchTST expects [B x P x F x P_L]
             x = patches.permute(0, 1, 3, 2)
 
-            pred = model(x)                        # [B x P x F x P_L]
-            loss = loss_fn(pred[:, :-1], x[:, 1:])
+            # Feed context, predict horizon — pred is exactly [B x horizon_patches x F x P_L]
+            pred = model(x[:, :context_patches])
+            loss = loss_fn(pred, x[:, context_patches:])
 
             optimizer.zero_grad()
             loss.backward()
@@ -204,8 +209,8 @@ def pretrain_ntp(config):
                 if config.get('revin', True):
                     patches, _, _ = _instance_norm(patches)
                 x    = patches.permute(0, 1, 3, 2)
-                pred = model(x)
-                val_losses.append(loss_fn(pred[:, :-1], x[:, 1:]).item())
+                pred = model(x[:, :context_patches])
+                val_losses.append(loss_fn(pred, x[:, context_patches:]).item())
 
         train_loss = float(np.mean(train_losses))
         val_loss   = float(np.mean(val_losses))
