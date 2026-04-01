@@ -5,7 +5,7 @@ config = {
     "task": "dino",
     "seed": 42,
     "output_dir": "./checkpoints",
-    "saveckp_freq": 10,
+    "saveckp_freq": 1,
     "test_only": False,
 
     # ── Datasets ──────────────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ config = {
     "freeze_last_layer": 1,
 
     # ── DINO pretraining ──────────────────────────────────────────────────────
-    "epochs": 5,
+    "epochs": 6,
 
     # ── DWT defaults (shared across all dwt_* aug types) ─────────────────────
     #

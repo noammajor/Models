@@ -1065,7 +1065,7 @@ if __name__ == "__main__":
         help="Which model to run: dino | jepa | jepa2 | jepa_simple | patchtst | npt | random",
     )
     parser.add_argument(
-        "--pretrain_dataset", type=str, required=True,
+        "--pretrain_dataset", type=str, default=None,
         choices=list(_DATASETS),
         help=f"Dataset for pretraining. Available: {list(_DATASETS)}",
     )
@@ -1079,8 +1079,14 @@ if __name__ == "__main__":
         choices=["true", "false"],
         help="Skip pretraining and go straight to forecasting (true | false)",
     )
+    parser.add_argument(
+        "--pretrain_only", type=str, default="false",
+        choices=["true", "false"],
+        help="Run pretraining only, skip downstream evaluation (true | false)",
+    )
     args = parser.parse_args()
     run(model=args.model,
         skip_train=args.skip_train.lower() == "true",
         pretrain_dataset=args.pretrain_dataset,
-        forecast_dataset=args.forecast_dataset)
+        forecast_dataset=args.forecast_dataset,
+        pretrain_only=args.pretrain_only.lower() == "true")
