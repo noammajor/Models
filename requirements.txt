@@ -6,3 +6,4 @@ scikit-learn>=1.2.0
 PyWavelets>=1.4.0
 matplotlib>=3.7.0
 tqdm>=4.64.0
+pynvml>=11.0.0

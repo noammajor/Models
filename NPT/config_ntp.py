@@ -12,7 +12,7 @@ config = {
     # ratio_patches = number of patches per window (context = patch_size * ratio_patches)
     "patch_size":     12,
     "ratio_patches":  42,   # 12 * 42 = 504 ≈ 512 context window
-    "masking_type":   "random",   # required by data loader; not used in NTP loss
+    "masking_type":   "bernoulli",   # required by data loader; not used in NTP loss
     "mask_ratio":     0.4,
     "num_blocks":     1,
     "val_prec":       0.1,

@@ -57,7 +57,7 @@ config = {
     "weight_decay": 0.04,
     "weight_decay_end": 0.1,
     "clip_grad": 3.0,
-    "use_fp16": True,
+    "use_fp16": False,
     "freeze_last_layer": 1,
 
     # ── DINO pretraining ──────────────────────────────────────────────────────
