@@ -50,7 +50,8 @@ class PatchTST(nn.Module):
         if head_type == "pretrain":
             self.head = PretrainHead(d_model, patch_len, head_dropout)
         elif head_type == "ntp":
-            self.head = NTPHead(d_model, d_ff, patch_len, head_dropout, act=act)
+            self.head = NTPHead(d_model, d_ff, patch_len, head_dropout, act=act,
+                                horizon_patches=kwargs.get('horizon_patches', None))
         elif head_type == "prediction":
             self.head = PredictionHead(individual, self.n_vars, d_model, num_patch, target_dim, head_dropout)
         elif head_type == "regression":
@@ -173,9 +174,14 @@ class PretrainHead(nn.Module):
 
 
 class NTPHead(nn.Module):
-    """Residual-block projection from d_model → patch_len for next-patch prediction."""
-    def __init__(self, d_model, d_ff, patch_len, dropout, act='gelu'):
+    """Residual-block projection from d_model → patch_len for next-patch prediction.
+
+    When horizon_patches is set, only the last horizon_patches positions are
+    returned — i.e. the model sees context_patches and outputs horizon_patches.
+    """
+    def __init__(self, d_model, d_ff, patch_len, dropout, act='gelu', horizon_patches=None):
         super().__init__()
+        self.horizon_patches = horizon_patches
         self.block = ResidualBlock(
             in_dim=d_model, h_dim=d_ff, out_dim=patch_len,
             act_fn_name=act, dropout_p=dropout,
@@ -184,11 +190,13 @@ class NTPHead(nn.Module):
     def forward(self, x):
         """
         x: tensor [bs x nvars x d_model x num_patch]
-        output: tensor [bs x num_patch x nvars x patch_len]
+        output: tensor [bs x horizon_patches x nvars x patch_len]  (or num_patch if horizon_patches is None)
         """
         x = x.transpose(2,3)       # [bs x nvars x num_patch x d_model]
         x = self.block(x)          # [bs x nvars x num_patch x patch_len]
         x = x.permute(0,2,1,3)    # [bs x num_patch x nvars x patch_len]
+        if self.horizon_patches is not None:
+            x = x[:, -self.horizon_patches:]   # [bs x horizon_patches x nvars x patch_len]
         return x
 
 
