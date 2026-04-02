@@ -345,7 +345,7 @@ def run_jepa(skip_train: bool = False,
     if skip_train and pretrain_on_monash:
         # Skip loading Monash entirely — only need forecasting loaders
         print("\n[JEPA] skip_train=True + Monash pretrain: skipping Monash data load.")
-        input_dim   = config.get("jepa_group_size", 1)  # Monash is univariate (1)
+        input_dim   = config["patch_size"]  # Monash is univariate: input_dim = patch_size
         num_patches = config["ratio_patches"]
         train_loader = val_loader = test_loader = None
     else:
@@ -721,7 +721,7 @@ def run_jepa_simple(skip_train: bool = False,
     if skip_train and pretrain_on_monash:
         # Skip loading Monash entirely — only need forecasting loaders
         print("\n[JEPA simple] skip_train=True + Monash pretrain: skipping Monash data load.")
-        input_dim       = config.get("jepa_group_size", 1)  # Monash is univariate (1)
+        input_dim       = config["patch_size"]  # Monash is univariate: input_dim = patch_size
         num_patches     = config["ratio_patches"]
         train_loader = val_loader = test_loader = None
     else:
