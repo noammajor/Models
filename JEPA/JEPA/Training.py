@@ -17,26 +17,6 @@ def _instance_norm(x, eps=1e-6):
     std  = x.std(dim=(1, 2), keepdim=True) + eps
     return (x - mean) / std, mean, std
 
-def _compute_global_stats(self, data_loader=None):
-    """Compute global mean and std from data for robust normalization."""
-    if data_loader is None:
-        data_loader = self.train_loader
-    all_values = []
-    max_batches = min(50, len(data_loader))
-    for i, batch_data in enumerate(data_loader):
-        if i >= max_batches:
-            break
-        patches = batch_data[0]
-        all_values.append(patches.flatten())
-
-    all_values = torch.cat(all_values)
-    self.global_mean = all_values.mean()
-    self.global_std = all_values.std() + 1e-8
-
-    self.register_buffer('norm_mean', self.global_mean.clone())
-    self.register_buffer('norm_std', self.global_std.clone())
-    print(f"Global stats: mean={self.norm_mean.item():.6f}, std={self.norm_std.item():.6f}")
-
 
 def compute_jepa_loss(
     self,

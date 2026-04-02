@@ -15,7 +15,6 @@ from JEPA.losses import (
     _calculate_vicreg_loss,
 )
 from JEPA.Training import (
-    _compute_global_stats,
     compute_jepa_loss,
     evaluate,
     save_model,
@@ -147,8 +146,6 @@ class JEPA(nn.Module):
             num_layers=config["predictor_num_layers"],
             config=config,
         )
-        self._compute_global_stats()
-
 
 # Bind loss helpers from losses.py as methods on the class
 JEPA._calculate_vicreg_loss       = _calculate_vicreg_loss
@@ -157,7 +154,6 @@ JEPA._calculate_vicreg_loss       = _calculate_vicreg_loss
 JEPA.forcasting_zeroshot    = forcasting_zeroshot
 
 # Bind training methods from Training.py as methods on the class
-JEPA._compute_global_stats       = _compute_global_stats
 JEPA.compute_jepa_loss           = compute_jepa_loss
 JEPA.evaluate                    = evaluate
 JEPA.save_model                  = save_model

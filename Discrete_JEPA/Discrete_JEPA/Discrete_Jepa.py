@@ -21,7 +21,6 @@ from Discrete_JEPA.Forecasting import (
     predictor_s2p_p2p_forecasting,
 )
 from Discrete_JEPA.Training import (
-    _compute_global_stats,
     compute_discrete_jepa_loss,
     evaluate,
     save_model,
@@ -155,7 +154,7 @@ class DiscreteJEPA(nn.Module):
         self.patches_size_forecasting = config["patches_size_forecasting"]
 
         self.encoder_for = Encoder(
-            num_patches=len(self.train_loader.dataset[0][0]),
+            num_patches=num_patches,
             num_semantic_tokens=config["num_semantic_tokens"],
             dim_in=input_dim,
             embed_dim=config["encoder_embed_dim"],
@@ -169,14 +168,13 @@ class DiscreteJEPA(nn.Module):
             res_attention=True,
         )
         self.predictor_for = Predictor(
-            num_patches=len(self.train_loader.dataset[0][0]),
+            num_patches=num_patches,
             num_semantic_tokens=config["num_semantic_tokens"],
             embed_dim=config["encoder_embed_dim"],
             nhead=config["predictor_nhead"],
             num_layers=config["predictor_num_layers"],
             config=config,
         )
-        self._compute_global_stats()
 
 
 
@@ -193,7 +191,6 @@ DiscreteJEPA.forcasting_zeroshot            = forcasting_zeroshot
 DiscreteJEPA.predictor_s2p_p2p_forecasting  = predictor_s2p_p2p_forecasting
 
 # Bind training methods from Training.py as methods on the class
-DiscreteJEPA._compute_global_stats       = _compute_global_stats
 DiscreteJEPA.compute_discrete_jepa_loss  = compute_discrete_jepa_loss
 DiscreteJEPA.evaluate                    = evaluate
 DiscreteJEPA.save_model                  = save_model
