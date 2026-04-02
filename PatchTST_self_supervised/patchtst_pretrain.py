@@ -1,5 +1,6 @@
 
 
+import random
 import numpy as np
 import pandas as pd
 import os
@@ -50,9 +51,14 @@ parser.add_argument('--model_type', type=str, default='based_model', help='for m
 # Monash pretraining
 parser.add_argument('--monash_data_dir', type=str, default=None, help='path to Monash .tsf directory (required when dset_pretrain=monash)')
 parser.add_argument('--monash_min_len', type=int, default=512, help='min series length for Monash filtering')
+parser.add_argument('--seed', type=int, default=42, help='random seed')
 
 
 args = parser.parse_args()
+random.seed(args.seed)
+np.random.seed(args.seed)
+torch.manual_seed(args.seed)
+torch.cuda.manual_seed_all(args.seed)
 args.dset = args.dset_pretrain
 print('args:', args)
 args.save_pretrained_model = 'patchtst_pretrained_cw'+str(args.context_points)+'_patch'+str(args.patch_len) + '_stride'+str(args.stride) + '_epochs-pretrain' + str(args.n_epochs_pretrain) + '_mask' + str(args.mask_ratio)  + '_model' + str(args.pretrained_model_id)

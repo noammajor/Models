@@ -887,6 +887,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         "--batch_size",          str(cfg.get("batch_size",          64)),
         "--revin",               str(int(cfg.get("revin",           True))),
         "--pretrained_model_id", str(cfg.get("pretrained_model_id", 1)),
+        "--seed",                str(GLOBAL_SEED),
     ]
     if monash_dir is not None:
         pretrain_cmd += ["--monash_data_dir", monash_dir,
