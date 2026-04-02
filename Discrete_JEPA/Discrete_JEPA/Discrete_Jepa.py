@@ -89,7 +89,7 @@ class DiscreteJEPA(nn.Module):
                 "momentum": 0.9
             }
         ])
-        self.steps_per_epoch = len(train_loader)
+        self.steps_per_epoch = len(train_loader) if train_loader is not None else steps_per_epoch
         self.total_steps = self.config["num_epochs"] * self.steps_per_epoch
 
         # mimicing the D-JEPA paper

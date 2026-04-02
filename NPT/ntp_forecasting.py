@@ -50,12 +50,13 @@ def _get_forecasting_model(config, c_in, forecast_len, device):
     backbone architecture must match the pretrained checkpoint exactly
     (same patch_len, num_patch, n_layers, d_model, n_heads, d_ff, causal).
     """
+    context_patches = config["ratio_patches"] - config.get("horizon_t", 6)
     return PatchTST(
         c_in=c_in,
         target_dim=forecast_len,
         patch_len=config["patch_size"],
         stride=config["patch_size"],
-        num_patch=config["ratio_patches"],
+        num_patch=context_patches,
         n_layers=config["n_layers"],
         n_heads=config["n_heads"],
         d_model=config["d_model"],
