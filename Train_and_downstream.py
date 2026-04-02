@@ -342,35 +342,45 @@ def run_jepa(skip_train: bool = False,
         config["input_variables_forcasting"] = [ds_fore["columns"]]
 
     # ── data ─────────────────────────────────────────────────────────────────
-    print("\n[JEPA] Loading datasets …")
-    if pretrain_on_monash:
-        train_dataset = MonashDataPullerJEPA(config, which='train')
-        val_dataset   = MonashDataPullerJEPA(config, which='val')
-        test_dataset  = MonashDataPullerJEPA(config, which='test')
+    if skip_train and pretrain_on_monash:
+        # Skip loading Monash entirely — only need forecasting loaders
+        print("\n[JEPA] skip_train=True + Monash pretrain: skipping Monash data load.")
+        input_dim   = config.get("jepa_group_size", 1)  # Monash is univariate (1)
+        num_patches = config["ratio_patches"]
+        train_loader = val_loader = test_loader = None
+        steps_per_epoch = 1
     else:
-        train_dataset = DataPullerDJepa(
-            data_paths         = config["path_data"],
-            patch_size         = config["patch_size"],
-            batch_size         = config["batch_size"],
-            ratio_patches      = config["ratio_patches"],
-            mask_ratio         = config["mask_ratio"],
-            masking_type       = config["masking_type"],
-            num_semantic_tokens= config["num_semantic_tokens"],
-            input_variables    = config["input_variables"],
-            timestamp_cols     = config["timestampcols"],
-            type_data          = "train",
-            val_prec           = config["val_prec"],
-            test_prec          = config["test_prec"],
-            stride             = config.get("stride", None),
-            num_blocks         = config.get("num_blocks", 1),
-        )
-        val_dataset  = copy.copy(train_dataset); val_dataset.which  = "val"
-        test_dataset = copy.copy(train_dataset); test_dataset.which = "test"
+        print("\n[JEPA] Loading datasets …")
+        if pretrain_on_monash:
+            train_dataset = MonashDataPullerJEPA(config, which='train')
+            val_dataset   = MonashDataPullerJEPA(config, which='val')
+            test_dataset  = MonashDataPullerJEPA(config, which='test')
+        else:
+            train_dataset = DataPullerDJepa(
+                data_paths         = config["path_data"],
+                patch_size         = config["patch_size"],
+                batch_size         = config["batch_size"],
+                ratio_patches      = config["ratio_patches"],
+                mask_ratio         = config["mask_ratio"],
+                masking_type       = config["masking_type"],
+                num_semantic_tokens= config["num_semantic_tokens"],
+                input_variables    = config["input_variables"],
+                timestamp_cols     = config["timestampcols"],
+                type_data          = "train",
+                val_prec           = config["val_prec"],
+                test_prec          = config["test_prec"],
+                stride             = config.get("stride", None),
+                num_blocks         = config.get("num_blocks", 1),
+            )
+            val_dataset  = copy.copy(train_dataset); val_dataset.which  = "val"
+            test_dataset = copy.copy(train_dataset); test_dataset.which = "test"
 
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
-    val_loader   = torch.utils.data.DataLoader(val_dataset,   batch_size=config["batch_size"], shuffle=True)
-    test_loader  = torch.utils.data.DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False)
-    input_dim    = len(train_loader.dataset[0][0][0])
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
+        val_loader   = torch.utils.data.DataLoader(val_dataset,   batch_size=config["batch_size"], shuffle=True)
+        test_loader  = torch.utils.data.DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False)
+        input_dim       = len(train_loader.dataset[0][0][0])
+        num_patches     = len(train_loader.dataset[0][0])
+        steps_per_epoch = len(train_loader)
 
     if pretrain_only:
         train_loader_fc = val_loader_fc = test_loader_fc = None
@@ -386,8 +396,8 @@ def run_jepa(skip_train: bool = False,
     model = DiscreteJEPA(
         config            = config,
         input_dim         = input_dim,
-        num_patches       = len(train_loader.dataset[0][0]),
-        steps_per_epoch   = len(train_loader),
+        num_patches       = num_patches,
+        steps_per_epoch   = steps_per_epoch,
         train_loader      = train_loader,
         val_loader        = val_loader,
         test_loader       = test_loader,
@@ -710,35 +720,45 @@ def run_jepa_simple(skip_train: bool = False,
         config["input_variables_forcasting"] = [ds_fore["columns"]]
 
     # ── data ─────────────────────────────────────────────────────────────────
-    print("\n[JEPA] Loading datasets …")
-    if pretrain_on_monash:
-        train_dataset = MonashDataPullerJEPA(config, which='train')
-        val_dataset   = MonashDataPullerJEPA(config, which='val')
-        test_dataset  = MonashDataPullerJEPA(config, which='test')
+    if skip_train and pretrain_on_monash:
+        # Skip loading Monash entirely — only need forecasting loaders
+        print("\n[JEPA simple] skip_train=True + Monash pretrain: skipping Monash data load.")
+        input_dim       = config.get("jepa_group_size", 1)  # Monash is univariate (1)
+        num_patches     = config["ratio_patches"]
+        train_loader = val_loader = test_loader = None
+        steps_per_epoch = 1
     else:
-        train_dataset = DataPullerDJepa(
-            data_paths          = config["path_data"],
-            patch_size          = config["patch_size"],
-            batch_size          = config["batch_size"],
-            ratio_patches       = config["ratio_patches"],
-            mask_ratio          = config["mask_ratio"],
-            masking_type        = config["masking_type"],
-            num_semantic_tokens = config.get("num_semantic_tokens", 0),
-            input_variables     = config["input_variables"],
-            timestamp_cols      = config["timestampcols"],
-            type_data           = "train",
-            val_prec            = config["val_prec"],
-            test_prec           = config["test_prec"],
-            stride              = config.get("stride", None),
-            num_blocks          = config.get("num_blocks", 1),
-        )
-        val_dataset  = copy.copy(train_dataset); val_dataset.which  = "val"
-        test_dataset = copy.copy(train_dataset); test_dataset.which = "test"
+        print("\n[JEPA simple] Loading datasets …")
+        if pretrain_on_monash:
+            train_dataset = MonashDataPullerJEPA(config, which='train')
+            val_dataset   = MonashDataPullerJEPA(config, which='val')
+            test_dataset  = MonashDataPullerJEPA(config, which='test')
+        else:
+            train_dataset = DataPullerDJepa(
+                data_paths          = config["path_data"],
+                patch_size          = config["patch_size"],
+                batch_size          = config["batch_size"],
+                ratio_patches       = config["ratio_patches"],
+                mask_ratio          = config["mask_ratio"],
+                masking_type        = config["masking_type"],
+                num_semantic_tokens = config.get("num_semantic_tokens", 0),
+                input_variables     = config["input_variables"],
+                timestamp_cols      = config["timestampcols"],
+                type_data           = "train",
+                val_prec            = config["val_prec"],
+                test_prec           = config["test_prec"],
+                stride              = config.get("stride", None),
+                num_blocks          = config.get("num_blocks", 1),
+            )
+            val_dataset  = copy.copy(train_dataset); val_dataset.which  = "val"
+            test_dataset = copy.copy(train_dataset); test_dataset.which = "test"
 
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
-    val_loader   = torch.utils.data.DataLoader(val_dataset,   batch_size=config["batch_size"], shuffle=True)
-    test_loader  = torch.utils.data.DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False)
-    input_dim    = len(train_loader.dataset[0][0][0])
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
+        val_loader   = torch.utils.data.DataLoader(val_dataset,   batch_size=config["batch_size"], shuffle=True)
+        test_loader  = torch.utils.data.DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False)
+        input_dim       = len(train_loader.dataset[0][0][0])
+        num_patches     = len(train_loader.dataset[0][0])
+        steps_per_epoch = len(train_loader)
 
     if pretrain_only:
         train_loader_fc = val_loader_fc = test_loader_fc = None
@@ -754,8 +774,8 @@ def run_jepa_simple(skip_train: bool = False,
     model = JEPA(
         config          = config,
         input_dim       = input_dim,
-        num_patches     = len(train_loader.dataset[0][0]),
-        steps_per_epoch = len(train_loader),
+        num_patches     = num_patches,
+        steps_per_epoch = steps_per_epoch,
         train_loader    = train_loader,
         val_loader      = val_loader,
         test_loader     = test_loader,
