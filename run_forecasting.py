@@ -113,13 +113,24 @@ def discover_checkpoints(model: str) -> list:
         return found or []
 
     elif model == "npt":
-        # Per-epoch checkpoints: NPT/saved_models/*/ntp/*_epoch{N}.pt  (1-indexed)
+        import re as _re
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location("config_ntp", ROOT / "NPT" / "config_ntp.py")
+        _mod = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_mod)
+        _cfg = _mod.config
+        _prefix = (f"ntp_pretrained"
+                   f"_patch{_cfg['patch_size']}"
+                   f"_patches{_cfg['ratio_patches']}"
+                   f"_epochs{_cfg['num_epochs']}"
+                   f"_model{_cfg.get('pretrained_model_id', 1)}_epoch")
         save_dir = ROOT / "NPT" / "saved_models"
-        found = sorted(
-            int(p.stem.split("_epoch")[1])
-            for p in save_dir.rglob("*_epoch*.pt")
-            if len(p.stem.split("_epoch")) > 1 and p.stem.split("_epoch")[1].isdigit()
-        )
+        found = sorted(set(
+            int(m.group(1))
+            for p in save_dir.rglob("*.pt")
+            if p.stem.startswith(_prefix)
+            for m in [_re.search(r'_epoch(\d+)$', p.stem)]
+            if m
+        ))
         return found or [None]
 
     elif model == "patchtst":
