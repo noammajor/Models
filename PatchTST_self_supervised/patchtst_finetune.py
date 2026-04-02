@@ -16,6 +16,7 @@ from src.metrics import *
 from src.basics import set_device
 from datautils import *
 
+import random
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -48,12 +49,17 @@ parser.add_argument('--lr', type=float, default=1e-4, help='learning rate')
 # Pretrained model name
 parser.add_argument('--pretrained_model', type=str, default=None, help='pretrained model name')
 parser.add_argument('--random_encoder', type=int, default=0, help='use random (untrained) encoder weights')
+parser.add_argument('--seed', type=int, default=42, help='random seed')
 # model id to keep track of the number of models saved
 parser.add_argument('--finetuned_model_id', type=int, default=1, help='id of the saved finetuned model')
 parser.add_argument('--model_type', type=str, default='based_model', help='for multivariate model or univariate model')
 
 
 args = parser.parse_args()
+random.seed(args.seed)
+np.random.seed(args.seed)
+torch.manual_seed(args.seed)
+torch.cuda.manual_seed_all(args.seed)
 args.dset = args.dset_finetune
 print('args:', args)
 args.save_path = 'saved_models/' + args.dset_finetune + '/masked_patchtst/' + args.model_type + '/'

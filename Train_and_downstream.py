@@ -944,7 +944,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
          "--head_dropout",    str(cfg.get("head_dropout", 0.2)),
          "--target_points",   str(_target_points),
          "--pretrained_model", pretrained_model_path,
-         "--random_encoder",   str(int(random_encoder))],
+         "--random_encoder",   str(int(random_encoder)),
+         "--seed",             "42"],
         cwd=patchtst_dir, capture_output=True, text=True,
     )
     print(result.stdout)
