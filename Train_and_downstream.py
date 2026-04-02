@@ -1075,7 +1075,7 @@ RUNNERS = {
     "jepa2":           run_jepa2,
     "jepa_simple":     run_jepa_simple,
     "patchtst":        run_patchtst,
-    "patchtst_random": lambda **kw: run_patchtst(**kw, random_encoder=True),
+    "patchtst_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, pretrain_only=False, pred_len=None, checkpoints=None: run_patchtst(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, pretrain_only=pretrain_only, pred_len=pred_len, checkpoints=checkpoints, random_encoder=True),
     "npt":             run_ntp,
     "random":          run_random,
 }
