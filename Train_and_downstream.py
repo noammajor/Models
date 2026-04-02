@@ -260,6 +260,8 @@ def run_dino(skip_train: bool = False,
             print(f"\n[DINO] Best checkpoint at pred_len={pred_lens[0]}: "
                   f"epoch {best_ckpt} (MSE={best_mse:.6f})")
 
+    return best_ckpt, best_mse
+
 
 # ── Discrete JEPA ─────────────────────────────────────────────────────────────
 
@@ -462,6 +464,8 @@ def run_jepa(skip_train: bool = False,
             print(f"\n[JEPA] Best checkpoint at pred_len={pred_lens[0]}: "
                   f"epoch {best_ckpt} (mix MSE={best_mse:.4f})")
 
+    return best_ckpt, best_mse
+
 
 # ── Discrete JEPA 2 (RevIN, no StandardScaler, denorm forecasting) ────────────
 
@@ -628,6 +632,8 @@ def run_jepa2(skip_train: bool = False,
         if is_search:
             print(f"\n[JEPA2] Best checkpoint at pred_len={pred_lens[0]}: "
                   f"epoch {best_ckpt} (mix MSE={best_mse:.4f})")
+
+    return best_ckpt, best_mse
 
 
 # ── JEPA (P2P only, no VQ / semantic tokens) ─────────────────────────────────
@@ -808,11 +814,13 @@ def run_jepa_simple(skip_train: bool = False,
             print(f"\n[JEPA simple] Best checkpoint at pred_len={pred_lens[0]}: "
                   f"epoch {best_ckpt} (mix MSE={best_mse:.4f})")
 
+    return best_ckpt, best_mse
+
 
 # ── PatchTST ──────────────────────────────────────────────────────────────────
 
 def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
-                 pretrain_only: bool = False):
+                 pretrain_only: bool = False, pred_len: int = None, checkpoints=None):
     patchtst_dir = Path(__file__).parent / "PatchTST_self_supervised"
 
     import importlib.util
@@ -890,18 +898,26 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     stride  = cfg.get("stride", 12)
     m_ratio = cfg.get("mask_ratio", 0.4)
     m_id    = cfg.get("pretrained_model_id", 1)
-    model_fname = (f"patchtst_pretrained_cw{ctx}_patch{p_len}_stride{stride}"
-                   f"_epochs-pretrain{n_ep}_mask{m_ratio}_model{m_id}.pth")
+    model_fname_base = (f"patchtst_pretrained_cw{ctx}_patch{p_len}_stride{stride}"
+                        f"_epochs-pretrain{n_ep}_mask{m_ratio}_model{m_id}")
+    # If a specific epoch checkpoint is requested (0-indexed, as saved by SaveModelCB)
+    _ckpt_epoch = checkpoints[0] if (checkpoints and checkpoints[0] is not None) else None
+    if _ckpt_epoch is not None:
+        model_fname = f"{model_fname_base}_{_ckpt_epoch}.pth"
+    else:
+        model_fname = f"{model_fname_base}.pth"
     pretrained_model_path = os.path.join(
         patchtst_dir, "saved_models", _pretrain_dset,
         "masked_patchtst", cfg.get("model_type", "based_model"), model_fname
     )
-    print(f"\n[PatchTST] Running forecasting fine-tuning on {_forecast_dset} …")
+    _target_points = pred_len if pred_len is not None else cfg.get("target_points", 96)
+    print(f"\n[PatchTST] Running forecasting fine-tuning on {_forecast_dset} (target_points={_target_points}) …")
     result = subprocess.run(
         [sys.executable, "patchtst_finetune.py",
-         "--dset_finetune", _forecast_dset,
-         "--is_finetune",   "1",
-         "--d_ff",          str(cfg.get("d_ff", 512)),
+         "--dset_finetune",  _forecast_dset,
+         "--is_finetune",    "1",
+         "--d_ff",           str(cfg.get("d_ff", 512)),
+         "--target_points",  str(_target_points),
          "--pretrained_model", pretrained_model_path],
         cwd=patchtst_dir, capture_output=True, text=True,
     )
@@ -909,12 +925,27 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     if result.returncode != 0:
         print("[PatchTST] Forecasting fine-tuning exited with errors.")
         print(result.stderr)
+        return None
+
+    # Parse MSE from the saved _acc.csv
+    import glob as _glob
+    acc_files = _glob.glob(os.path.join(
+        patchtst_dir, "saved_models", _forecast_dset,
+        "masked_patchtst", cfg.get("model_type", "based_model"), "*_acc.csv"
+    ))
+    if acc_files:
+        import pandas as _pd
+        acc = _pd.read_csv(sorted(acc_files)[-1])
+        mse_val = float(acc["mse"].iloc[0])
+        print(f"[PatchTST] MSE on {_forecast_dset}: {mse_val:.4f}")
+        return mse_val
+    return None
 
 
 # ── NPT (NTP pretraining on PatchTST) ─────────────────────────────────────────
 
 def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
-            pretrain_only: bool = False):
+            pretrain_only: bool = False, pred_len: int = None, checkpoints=None):
     npt_dir = Path(__file__).parent / "NPT"
     _add_path(npt_dir)
 
@@ -950,7 +981,12 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
 
     # Resolve checkpoint path (used whether we train or skip)
     _save_dir = npt_dir / "saved_models" / _pretrain_dset / "ntp"
-    _ckpt_path = str(_save_dir / (_model_fname(cfg, _pretrain_dset) + ".pt"))
+    _base_name = _model_fname(cfg, _pretrain_dset)
+    _ckpt_epoch = checkpoints[0] if (checkpoints and checkpoints[0] is not None) else None
+    if _ckpt_epoch is not None:
+        _ckpt_path = str(_save_dir / f"{_base_name}_epoch{_ckpt_epoch}.pt")
+    else:
+        _ckpt_path = str(_save_dir / f"{_base_name}.pt")
 
     if not skip_train:
         print(f"\n[NPT] Starting NTP pretraining on {_pretrain_dset} …")
@@ -961,6 +997,9 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     if _forecast_dset:
         _add_path(Path(__file__).parent / "random")
         from random_forecasting import random_forecasting
+
+        if pred_len is not None:
+            cfg["horizon_t"] = pred_len // cfg["patch_size"]
 
         print(f"\n[NPT] Running zero-shot forecasting on {_forecast_dset} …")
         mse_trained, mae_trained = zeroshot_forecasting(cfg, _ckpt_path)
@@ -975,8 +1014,10 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
             print(f"  {'NPT (pretrained)':20s}  {mse_trained:8.4f}  {mae_trained:8.4f}")
             print(f"  {'Random baseline':20s}  {mse_random:8.4f}  {mae_random:8.4f}")
             print(f"{'='*60}")
+        return mse_trained
     else:
         print("[NPT] No forecast_dataset set — skipping forecasting.")
+        return None
 
 
 # ── Random baseline ───────────────────────────────────────────────────────────
@@ -1023,7 +1064,8 @@ def run(model: str, skip_train: bool = False,
         forecast_dataset: str = None,
         pred_lens=None,
         checkpoints=None,
-        pretrain_only: bool = False):
+        pretrain_only: bool = False,
+        pred_len: int = None):
     """
     Call this directly from a notebook:
 
@@ -1053,7 +1095,8 @@ def run(model: str, skip_train: bool = False,
     if 'pretrain_only' in sig.parameters: kwargs['pretrain_only'] = pretrain_only
     if 'pred_lens'     in sig.parameters: kwargs['pred_lens']     = pred_lens
     if 'checkpoints'   in sig.parameters: kwargs['checkpoints']   = checkpoints
-    runner(**kwargs)
+    if 'pred_len'      in sig.parameters: kwargs['pred_len']      = pred_len
+    return runner(**kwargs)
 
 
 if __name__ == "__main__":
