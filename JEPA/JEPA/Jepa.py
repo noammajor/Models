@@ -108,7 +108,7 @@ class JEPA(nn.Module):
         self.path_save = self.config["path_save"]
         self.clip_grad = self.config["clip_grad"]
         self.warmup = self.config["warmup_ratio"] * self.config["num_epochs"]
-        _T = int(self.config["num_epochs"] * len(train_loader))
+        _T = int(self.config["num_epochs"] * self.steps_per_epoch)
         _m0 = self.config["ema_momentum"]
         self.ema_scheduler = (
             1 - (1 - _m0) * (math.cos(math.pi * i / _T) + 1) / 2
