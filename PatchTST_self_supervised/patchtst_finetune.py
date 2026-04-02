@@ -111,8 +111,8 @@ def find_lr(head_type):
     dls = get_dls(args)    
     model = get_model(dls.vars, args, head_type)
     # transfer weight
-    # weight_path = args.save_path + args.pretrained_model + '.pth'
-    model = transfer_weights(args.pretrained_model, model)
+    if not args.random_encoder:
+        model = transfer_weights(args.pretrained_model, model)
     # get loss
     loss_func = torch.nn.MSELoss(reduction='mean')
     # get callbacks
