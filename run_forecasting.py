@@ -91,20 +91,24 @@ def discover_checkpoints(model: str) -> list:
         return found or []
 
     elif model == "jepa":
+        import re as _re
         ckpt_dir = ROOT / "output_model" / "DiscreteJEPA"
         found = sorted(
-            int(p.stem.split("_epoch")[1])
+            int(m.group(1))
             for p in ckpt_dir.glob("_epoch*best_model.pt")
-            if len(p.stem.split("_epoch")) > 1 and p.stem.split("_epoch")[1].isdigit()
+            for m in [_re.search(r'_epoch(\d+)best_model', p.stem)]
+            if m
         )
         return found or []
 
     elif model == "jepa_simple":
+        import re as _re
         ckpt_dir = ROOT / "output_model" / "JEPA"
         found = sorted(
-            int(p.stem.split("_epoch")[1])
+            int(m.group(1))
             for p in ckpt_dir.glob("_epoch*best_model.pt")
-            if len(p.stem.split("_epoch")) > 1 and p.stem.split("_epoch")[1].isdigit()
+            for m in [_re.search(r'_epoch(\d+)best_model', p.stem)]
+            if m
         )
         return found or []
 
@@ -206,14 +210,6 @@ def checkpoint_search(model: str, dataset: str, all_checkpoints: list,
     """
     log_dir = log_base / model / dataset
     results = {}
-
-    if model in ("patchtst", "npt"):
-        # Single checkpoint — run all pred_lens directly
-        for pred_len in PRED_LENS:
-            mse = eval_checkpoint(model, dataset, pred_len, None, gpu, log_dir)
-            if mse is not None:
-                results[pred_len] = mse
-        return results
 
     if not all_checkpoints:
         print(f"  [WARN] No checkpoints found for {model}")

@@ -68,23 +68,20 @@ DATASETS: dict = {
         "csv_filename":    "weather.csv",
         "patchtst_cls":    "Custom",
         "timestamp_col":   "date",
-        # 20 numeric features + OT target column
-        "columns":         [str(i) for i in range(1, 21)] + ["OT"],
+        "columns":         None,  # auto-detected from CSV header
         "jepa_group_size": 7,
     },
     "electricity": {
         "csv_filename":  "electricity.csv",
         "patchtst_cls":  "Custom",
         "timestamp_col": "date",
-        # 320 numeric columns named 0..319
-        "columns": [str(i) for i in range(320)],
+        "columns": None,  # auto-detected from CSV header
     },
     "traffic": {
         "csv_filename":  "traffic.csv",
         "patchtst_cls":  "Custom",
         "timestamp_col": "date",
-        # 862 numeric columns named 0..861
-        "columns": [str(i) for i in range(862)],
+        "columns": None,  # auto-detected from CSV header
     },
 }
 
