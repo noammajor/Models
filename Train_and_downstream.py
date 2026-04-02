@@ -955,11 +955,12 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         print(result.stderr)
         return None
 
-    # Parse MSE from the saved _acc.csv
+    # Parse MSE from the saved _acc.csv — match on target_points to avoid reading wrong pred_len
     import glob as _glob
     acc_files = _glob.glob(os.path.join(
         patchtst_dir, "saved_models", _forecast_dset,
-        "masked_patchtst", cfg.get("model_type", "based_model"), "*_acc.csv"
+        "masked_patchtst", cfg.get("model_type", "based_model"),
+        f"*_tw{_target_points}_*_acc.csv"
     ))
     if acc_files:
         import pandas as _pd
