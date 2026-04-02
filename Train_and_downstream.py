@@ -836,7 +836,8 @@ def run_jepa_simple(skip_train: bool = False,
 # ── PatchTST ──────────────────────────────────────────────────────────────────
 
 def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
-                 pretrain_only: bool = False, pred_len: int = None, checkpoints=None):
+                 pretrain_only: bool = False, pred_len: int = None, checkpoints=None,
+                 random_encoder: bool = False):
     patchtst_dir = Path(__file__).parent / "PatchTST_self_supervised"
 
     import importlib.util
@@ -942,7 +943,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
          "--dropout",         str(cfg.get("dropout", 0.2)),
          "--head_dropout",    str(cfg.get("head_dropout", 0.2)),
          "--target_points",   str(_target_points),
-         "--pretrained_model", pretrained_model_path],
+         "--pretrained_model", pretrained_model_path,
+         "--random_encoder",   str(int(random_encoder))],
         cwd=patchtst_dir, capture_output=True, text=True,
     )
     print(result.stdout)
@@ -1066,13 +1068,14 @@ def run_random(skip_train: bool = False, pretrain_dataset: str = None, forecast_
 # ── entry point ───────────────────────────────────────────────────────────────
 
 RUNNERS = {
-    "dino":        run_dino,
-    "jepa":        run_jepa,
-    "jepa2":       run_jepa2,
-    "jepa_simple": run_jepa_simple,
-    "patchtst":    run_patchtst,
-    "npt":         run_ntp,
-    "random":      run_random,
+    "dino":            run_dino,
+    "jepa":            run_jepa,
+    "jepa2":           run_jepa2,
+    "jepa_simple":     run_jepa_simple,
+    "patchtst":        run_patchtst,
+    "patchtst_random": lambda **kw: run_patchtst(**kw, random_encoder=True),
+    "npt":             run_ntp,
+    "random":          run_random,
 }
 
 def run(model: str, skip_train: bool = False,

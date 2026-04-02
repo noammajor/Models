@@ -36,7 +36,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent.resolve()
 sys.path.insert(0, str(ROOT))
 
-MODELS   = ["jepa_simple", "jepa", "patchtst", "npt", "dino"]
+MODELS   = ["jepa_simple", "jepa", "patchtst", "npt", "dino", "patchtst_random"]
 DATASETS = ["etth1", "etth2", "ettm1", "ettm2", "weather", "electricity", "traffic"]
 PRED_LENS = [96, 192, 336, 720]
 
@@ -156,6 +156,9 @@ def discover_checkpoints(model: str) -> list:
                     found.add(int(suffix))
         return sorted(found) or [None]
 
+    elif model == "patchtst_random":
+        return [None]
+
     else:
         return [None]
 
@@ -204,6 +207,14 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     forecast_dataset=dataset,
                     pred_len=pred_len,
                     checkpoints=[ckpt] if ckpt is not None else None,
+                )
+
+            elif model == "patchtst_random":
+                return run(
+                    model="patchtst_random",
+                    skip_train=True,
+                    forecast_dataset=dataset,
+                    pred_len=pred_len,
                 )
 
         except Exception as e:
@@ -335,7 +346,18 @@ def main():
             print(f"\n--- {model} / {dataset} ---")
 
             try:
-                mses = checkpoint_search(model, dataset, all_checkpoints, args.gpu, log_base)
+                if model == "patchtst_random":
+                    log_dir = log_base / model / dataset
+                    mses = {}
+                    for pl in PRED_LENS:
+                        if (model, dataset, pl) in existing:
+                            continue
+                        mse = eval_checkpoint(model, dataset, pl, None, args.gpu, log_dir)
+                        if mse is not None:
+                            mses[pl] = mse
+                            print(f"    pred_len={pl}: MSE={mse:.4f}")
+                else:
+                    mses = checkpoint_search(model, dataset, all_checkpoints, args.gpu, log_base)
             except Exception as e:
                 print(f"  [ERROR] {model}/{dataset}: {e}")
                 import traceback; traceback.print_exc()

@@ -100,7 +100,9 @@ def zeroshot_forecasting(config, checkpoint_path):
     horizon_t    = config.get("horizon_t", 4)
     forecast_len = horizon_t * patch_size
 
-    context_patches = config["ratio_patches"] - horizon_t
+    # context_patches is fixed regardless of pred_len so the backbone always
+    # has the same num_patch as the pretrained checkpoint (W_pos shape is stable)
+    context_patches = config.get("context_patches", config["ratio_patches"] - horizon_t)
     fore_cfg = dict(config)
     fore_cfg["ratio_patches"]               = context_patches  # data loader uses this as context size
     fore_cfg["patch_size_forcasting"]       = patch_size
@@ -117,8 +119,8 @@ def zeroshot_forecasting(config, checkpoint_path):
     batch_size     = config["batch_size"]
 
     print(f"\n  dataset={forecast_dset}  n_vars={n_vars}")
-    print(f"  context={config['ratio_patches']} patches × {patch_size} = "
-          f"{config['ratio_patches'] * patch_size} steps")
+    print(f"  context={context_patches} patches × {patch_size} = "
+          f"{context_patches * patch_size} steps")
     print(f"  horizon={horizon_t} patches × {patch_size} = {forecast_len} steps")
     print(f"  head lr={lr_head}  epochs={epochs_head}\n")
 

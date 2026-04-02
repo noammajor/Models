@@ -12,6 +12,7 @@ config = {
     # ratio_patches = number of patches per window (context = patch_size * ratio_patches)
     "patch_size":     16,
     "ratio_patches":  27,   # 16 * 27 = 432 total window (21 context + 6 horizon)
+    "context_patches": 21,  # fixed context size for forecasting (independent of pred_len)
     "masking_type":   "causal",   # forecasting-style: context = first patches, target = last horizon patches
     "mask_ratio":     0.4,
     "num_blocks":     1,

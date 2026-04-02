@@ -47,6 +47,7 @@ parser.add_argument('--n_epochs_finetune', type=int, default=20, help='number of
 parser.add_argument('--lr', type=float, default=1e-4, help='learning rate')
 # Pretrained model name
 parser.add_argument('--pretrained_model', type=str, default=None, help='pretrained model name')
+parser.add_argument('--random_encoder', type=int, default=0, help='use random (untrained) encoder weights')
 # model id to keep track of the number of models saved
 parser.add_argument('--finetuned_model_id', type=int, default=1, help='id of the saved finetuned model')
 parser.add_argument('--model_type', type=str, default='based_model', help='for multivariate model or univariate model')
@@ -135,11 +136,13 @@ def finetune_func(lr=args.lr):
     print('end-to-end finetuning')
     # get dataloader
     dls = get_dls(args)
-    # get model 
+    # get model
     model = get_model(dls.vars, args, head_type='prediction')
     # transfer weight
-    # weight_path = args.pretrained_model + '.pth'
-    model = transfer_weights(args.pretrained_model, model)
+    if not args.random_encoder:
+        model = transfer_weights(args.pretrained_model, model)
+    else:
+        print('random_encoder=True — skipping weight transfer, using random backbone')
     # get loss
     loss_func = torch.nn.MSELoss(reduction='mean')   
     # get callbacks
