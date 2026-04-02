@@ -50,13 +50,12 @@ def _get_forecasting_model(config, c_in, forecast_len, device):
     backbone architecture must match the pretrained checkpoint exactly
     (same patch_len, num_patch, n_layers, d_model, n_heads, d_ff, causal).
     """
-    context_patches = config["ratio_patches"] - config.get("horizon_t", 6)
     return PatchTST(
         c_in=c_in,
         target_dim=forecast_len,
         patch_len=config["patch_size"],
         stride=config["patch_size"],
-        num_patch=context_patches,
+        num_patch=config["ratio_patches"],  # already set to context_patches by caller
         n_layers=config["n_layers"],
         n_heads=config["n_heads"],
         d_model=config["d_model"],
@@ -101,7 +100,9 @@ def zeroshot_forecasting(config, checkpoint_path):
     horizon_t    = config.get("horizon_t", 4)
     forecast_len = horizon_t * patch_size
 
+    context_patches = config["ratio_patches"] - horizon_t
     fore_cfg = dict(config)
+    fore_cfg["ratio_patches"]               = context_patches  # data loader uses this as context size
     fore_cfg["patch_size_forcasting"]       = patch_size
     fore_cfg["horizon_t"]                   = horizon_t
     fore_cfg["val_prec_forcasting"]         = config.get("val_prec_forcasting",  config.get("val_prec",  0.1))

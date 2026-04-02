@@ -102,16 +102,19 @@ class DiscreteJEPA(nn.Module):
         #div_factor=10.0,                 # changed from 25 to 10
         #final_div_factor=1e4             # defualt
         #)
-        self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        self.optimizer,
-        max_lr=[config["lr"], config["lr_pred"], config["codebook_lr"]],
-        epochs=config["num_epochs"],
-        steps_per_epoch=len(self.train_loader) if self.train_loader is not None else 1,
-        pct_start=0.05,    # Spend 10% of time warming up
-        anneal_strategy='cos',
-        div_factor=10.0,  # Initial lr = max_lr / 25
-        final_div_factor=1000.0 # Final lr = max_lr / 1000
-        )
+        if self.train_loader is not None:
+            self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            self.optimizer,
+            max_lr=[config["lr"], config["lr_pred"], config["codebook_lr"]],
+            epochs=config["num_epochs"],
+            steps_per_epoch=self.steps_per_epoch,
+            pct_start=0.05,
+            anneal_strategy='cos',
+            div_factor=10.0,
+            final_div_factor=1000.0
+            )
+        else:
+            self.scheduler = None
         
         self.encoder_ema = copy.deepcopy(self.encoder)
         self.encoder_ema.jepa = True
