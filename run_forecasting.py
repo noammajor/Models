@@ -91,7 +91,7 @@ def discover_checkpoints(model: str) -> list:
         return found or []
 
     elif model == "jepa":
-        ckpt_dir = ROOT / "Discrete_JEPA" / "output_model" / "DiscreteJEPA"
+        ckpt_dir = ROOT / "output_model" / "DiscreteJEPA"
         found = sorted(
             int(p.stem.split("_epoch")[1])
             for p in ckpt_dir.glob("_epoch*best_model.pt")
@@ -100,7 +100,7 @@ def discover_checkpoints(model: str) -> list:
         return found or []
 
     elif model == "jepa_simple":
-        ckpt_dir = ROOT / "JEPA" / "output_model" / "JEPA"
+        ckpt_dir = ROOT / "output_model" / "JEPA"
         found = sorted(
             int(p.stem.split("_epoch")[1])
             for p in ckpt_dir.glob("_epoch*best_model.pt")
@@ -119,13 +119,26 @@ def discover_checkpoints(model: str) -> list:
         return found or [None]
 
     elif model == "patchtst":
-        # Per-epoch checkpoints: saved_models/*/masked_patchtst/**/{name}_{N}.pth  (0-indexed)
+        # Per-epoch checkpoints — filter to the config's cw/patch/stride variant
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location("config_patchtst",
+                    ROOT / "PatchTST_self_supervised" / "config_patchtst.py")
+        _mod = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_mod)
+        _cfg = _mod.config
+        _prefix = (f"patchtst_pretrained"
+                   f"_cw{_cfg['context_points']}"
+                   f"_patch{_cfg['patch_len']}"
+                   f"_stride{_cfg['stride']}"
+                   f"_epochs-pretrain{_cfg['n_epochs_pretrain']}"
+                   f"_mask{_cfg['mask_ratio']}"
+                   f"_model{_cfg['pretrained_model_id']}_")
         save_dir = ROOT / "PatchTST_self_supervised" / "saved_models"
-        found = []
+        found = set()
         for p in save_dir.rglob("*.pth"):
-            parts = p.stem.rsplit("_", 1)
-            if len(parts) == 2 and parts[1].isdigit():
-                found.append(int(parts[1]))
+            if p.stem.startswith(_prefix):
+                suffix = p.stem[len(_prefix):]
+                if suffix.isdigit():
+                    found.add(int(suffix))
         return sorted(found) or [None]
 
     else:

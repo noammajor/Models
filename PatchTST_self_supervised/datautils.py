@@ -8,11 +8,12 @@ from torch import nn
 import sys
 import os as _os
 
-# Root directory containing ETT CSVs — resolved relative to this file so it works
-# from any working directory (Colab, local, etc.)
-_ETT_DATA_DIR = _os.path.normpath(
-    _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'Discrete_JEPA', 'data')
-) + _os.sep
+# Root directory containing ETT CSVs — pulled from the central dataset_registry
+_ROOT_DIR = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+if _ROOT_DIR not in sys.path:
+    sys.path.insert(0, _ROOT_DIR)
+from dataset_registry import _DATA_DIR as _ETT_DATA_DIR_PATH
+_ETT_DATA_DIR = str(_ETT_DATA_DIR_PATH) + _os.sep
 
 from src.data.datamodule import DataLoaders
 from src.data.pred_dataset import *

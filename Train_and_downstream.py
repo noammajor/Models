@@ -914,10 +914,18 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     print(f"\n[PatchTST] Running forecasting fine-tuning on {_forecast_dset} (target_points={_target_points}) …")
     result = subprocess.run(
         [sys.executable, "patchtst_finetune.py",
-         "--dset_finetune",  _forecast_dset,
-         "--is_finetune",    "1",
-         "--d_ff",           str(cfg.get("d_ff", 512)),
-         "--target_points",  str(_target_points),
+         "--dset_finetune",   _forecast_dset,
+         "--is_finetune",     "1",
+         "--context_points",  str(cfg.get("context_points", 512)),
+         "--patch_len",       str(cfg.get("patch_len", 16)),
+         "--stride",          str(cfg.get("stride", 16)),
+         "--n_layers",        str(cfg.get("n_layers", 3)),
+         "--n_heads",         str(cfg.get("n_heads", 16)),
+         "--d_model",         str(cfg.get("d_model", 128)),
+         "--d_ff",            str(cfg.get("d_ff", 512)),
+         "--dropout",         str(cfg.get("dropout", 0.2)),
+         "--head_dropout",    str(cfg.get("head_dropout", 0.2)),
+         "--target_points",   str(_target_points),
          "--pretrained_model", pretrained_model_path],
         cwd=patchtst_dir, capture_output=True, text=True,
     )
@@ -995,24 +1003,17 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         print("[NPT] Skipping pretraining.")
 
     if _forecast_dset:
-        _add_path(Path(__file__).parent / "random")
-        from random_forecasting import random_forecasting
-
         if pred_len is not None:
             cfg["horizon_t"] = pred_len // cfg["patch_size"]
 
         print(f"\n[NPT] Running zero-shot forecasting on {_forecast_dset} …")
         mse_trained, mae_trained = zeroshot_forecasting(cfg, _ckpt_path)
 
-        print(f"\n[NPT] Running random baseline on {_forecast_dset} …")
-        mse_random, mae_random = random_forecasting(cfg, _forecast_dset)
-
-        if mse_trained is not None and mse_random is not None:
+        if mse_trained is not None:
             print(f"\n{'='*60}")
             print(f"  Results on {_forecast_dset}")
             print(f"  {'':20s}  {'MSE':>8}  {'MAE':>8}")
             print(f"  {'NPT (pretrained)':20s}  {mse_trained:8.4f}  {mae_trained:8.4f}")
-            print(f"  {'Random baseline':20s}  {mse_random:8.4f}  {mae_random:8.4f}")
             print(f"{'='*60}")
         return mse_trained
     else:
