@@ -72,7 +72,7 @@ class JEPA(nn.Module):
                 "nesterov": True
             }
         ])
-        self.steps_per_epoch = len(train_loader) if train_loader is not None else steps_per_epoch
+        self.steps_per_epoch = len(train_loader) if train_loader is not None else 1
         self.total_steps = self.config["num_epochs"] * self.steps_per_epoch
 
         # mimicing the D-JEPA paper
@@ -89,7 +89,7 @@ class JEPA(nn.Module):
         self.optimizer,
         max_lr=[config["lr"], config["lr_pred"]],
         epochs=config["num_epochs"],
-        steps_per_epoch=len(self.train_loader),
+        steps_per_epoch=len(self.train_loader) if self.train_loader is not None else 1,
         pct_start=0.05,    # Spend 10% of time warming up
         anneal_strategy='cos',
         div_factor=10.0,  # Initial lr = max_lr / 25

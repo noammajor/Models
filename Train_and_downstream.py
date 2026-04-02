@@ -348,7 +348,6 @@ def run_jepa(skip_train: bool = False,
         input_dim   = config.get("jepa_group_size", 1)  # Monash is univariate (1)
         num_patches = config["ratio_patches"]
         train_loader = val_loader = test_loader = None
-        steps_per_epoch = 1
     else:
         print("\n[JEPA] Loading datasets …")
         if pretrain_on_monash:
@@ -380,7 +379,6 @@ def run_jepa(skip_train: bool = False,
         test_loader  = torch.utils.data.DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False)
         input_dim       = len(train_loader.dataset[0][0][0])
         num_patches     = len(train_loader.dataset[0][0])
-        steps_per_epoch = len(train_loader)
 
     if pretrain_only:
         train_loader_fc = val_loader_fc = test_loader_fc = None
@@ -397,7 +395,7 @@ def run_jepa(skip_train: bool = False,
         config            = config,
         input_dim         = input_dim,
         num_patches       = num_patches,
-        steps_per_epoch   = steps_per_epoch,
+        steps_per_epoch   = 1,
         train_loader      = train_loader,
         val_loader        = val_loader,
         test_loader       = test_loader,
@@ -726,7 +724,6 @@ def run_jepa_simple(skip_train: bool = False,
         input_dim       = config.get("jepa_group_size", 1)  # Monash is univariate (1)
         num_patches     = config["ratio_patches"]
         train_loader = val_loader = test_loader = None
-        steps_per_epoch = 1
     else:
         print("\n[JEPA simple] Loading datasets …")
         if pretrain_on_monash:
@@ -758,7 +755,6 @@ def run_jepa_simple(skip_train: bool = False,
         test_loader  = torch.utils.data.DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False)
         input_dim       = len(train_loader.dataset[0][0][0])
         num_patches     = len(train_loader.dataset[0][0])
-        steps_per_epoch = len(train_loader)
 
     if pretrain_only:
         train_loader_fc = val_loader_fc = test_loader_fc = None
@@ -775,7 +771,7 @@ def run_jepa_simple(skip_train: bool = False,
         config          = config,
         input_dim       = input_dim,
         num_patches     = num_patches,
-        steps_per_epoch = steps_per_epoch,
+        steps_per_epoch = 1,
         train_loader    = train_loader,
         val_loader      = val_loader,
         test_loader     = test_loader,
