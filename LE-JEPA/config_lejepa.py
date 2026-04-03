@@ -25,6 +25,10 @@ config = {
     "attn_drop_rate": 0.0,
     "patch_size": 16,
     "ratio_patches": 32,   # number of non-overlapping patches per window
+    # Required by MonashDataPullerJEPA — mask indices are returned but ignored by LE-JEPA
+    "mask_ratio": 0.25,
+    "masking_type": "multi_block",
+    "num_blocks": 2,
 
     # ── Augmentations ─────────────────────────────────────────────────────────
     "aug_noise_std": 0.05,              # Gaussian jitter std
