@@ -932,8 +932,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     print(f"\n[PatchTST] Running forecasting fine-tuning on {_forecast_dset} (target_points={_target_points}) …")
     result = subprocess.run(
         [sys.executable, "patchtst_finetune.py",
-         "--dset_finetune",   _forecast_dset,
-         "--is_finetune",     "1",
+         "--dset_finetune",      _forecast_dset,
+         "--is_linear_probe",    "1",
          "--context_points",  str(cfg.get("context_points", 512)),
          "--patch_len",       str(cfg.get("patch_len", 16)),
          "--stride",          str(cfg.get("stride", 16)),
