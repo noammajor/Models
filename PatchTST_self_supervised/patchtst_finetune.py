@@ -172,11 +172,11 @@ def linear_probe_func(lr=args.lr):
     print('linear probing')
     # get dataloader
     dls = get_dls(args)
-    # get model 
+    # get model
     model = get_model(dls.vars, args, head_type='prediction')
     # transfer weight
-    # weight_path = args.save_path + args.pretrained_model + '.pth'
-    model = transfer_weights(args.pretrained_model, model)
+    if not args.random_encoder:
+        model = transfer_weights(args.pretrained_model, model)
     # get loss
     loss_func = torch.nn.MSELoss(reduction='mean')    
     # get callbacks
