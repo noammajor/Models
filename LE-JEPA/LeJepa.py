@@ -101,35 +101,6 @@ class LeJEPA(nn.Module):
         else:
             self.scheduler = None
 
-        # ── SWA (optional) ────────────────────────────────────────────────────
-        # config["use_swa"] = True to enable Stochastic Weight Averaging.
-        # SWA averaging starts after config["swa_start_epoch"] (default: 75% of training).
-        self.use_swa = config.get("use_swa", False)
-        if self.use_swa:
-            self.swa_model     = torch.optim.swa_utils.AveragedModel(self.encoder)
-            self.swa_scheduler = torch.optim.swa_utils.SWALR(
-                self.optimizer,
-                swa_lr=config.get("swa_lr", lr * 0.1),
-                anneal_epochs=config.get("swa_anneal_epochs", 5),
-            )
-            self.swa_start_epoch = config.get(
-                "swa_start_epoch",
-                int(config["num_epochs"] * 0.75),
-            )
-
-        # ── Extra views (optional) ────────────────────────────────────────────
-        # config["num_extra_views"] = N adds N more augmented views beyond v1/v2.
-        # Extra views use view2's DWT mode (perturbed) and are averaged into the loss.
-        n_extra = config.get("num_extra_views", 0)
-        self.extra_augments = nn.ModuleList([
-            # ModuleList so they move to device with model.to(device)
-            # (AugmentationPipeline is not nn.Module, so store them as a plain list)
-        ])
-        self.extra_augments = [
-            AugmentationPipeline(config, dwt_mode=config.get("view2_dwt_mode", "high_perturb"))
-            for _ in range(n_extra)
-        ]
-
         self.path_save    = config["path_save"]
         self.best_encoder = None
 
