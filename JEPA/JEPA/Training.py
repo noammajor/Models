@@ -201,5 +201,5 @@ def train_and_evaluate(self):
 
     print("Training complete. Starting Final Test:")
     test_loss, test_dict = self.evaluate(self.test_loader,  current_global_step, self.total_steps,  101)
-    print(f"FINAL TEST RESULTS | Loss: {test_loss:.4f} | MSE: {test_dict['l_MSE']:.4f} | Var: {test_dict['var_loss_context_patch']:.4f} | Cov: {test_dict['cov_loss_context_patch']:.4f}")
+    print(f"FINAL TEST RESULTS | Loss: {test_loss:.4f} | MSE: {test_dict['l_MSE']:.4f} | SIGReg: {test_dict['sigreg']:.4f}")
     return test_loss, test_dict, self.best_model
