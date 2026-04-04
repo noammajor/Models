@@ -82,7 +82,7 @@ def log_to_file(log_path: Path):
 def discover_checkpoints(model: str) -> list:
     """Return sorted list of available checkpoint epoch numbers for each model."""
     if model == "dino":
-        ckpt_dir = ROOT / "TSDiNO" / "checkpoints"
+        ckpt_dir = ROOT / "checkpoints"
         found = sorted(
             int(p.stem.replace("checkpoint", ""))
             for p in ckpt_dir.glob("checkpoint*.pth")

@@ -21,12 +21,12 @@ config = {
     "data_path_forecast_test": "data/ETTh1.csv",
     "data_path_classification": "UCI HAR Dataset",
     "num_workers": 0,
-    "batch_size_per_gpu": 16,
+    "batch_size_per_gpu": 32,
 
     # ── Model architecture ────────────────────────────────────────────────────
     "c_in": 7,          # number of input variables  (9 for UCI HAR)
     "patch_len": 16,
-    "step_size": 16,    # stride between patches
+    "step_size": 512,   # stride between patches (non-overlapping windows)
     "num_patches": 32,  # window length in patches
     "n_layers": 5,
     "n_heads": 16,
