@@ -13,7 +13,7 @@ config = {
 
     # ── Loss ──────────────────────────────────────────────────────────────────
     # LeJEPA objective: (1-λ)*pred_loss + λ*sigreg
-    "lambda_sigreg": 0.05,
+    "lambda_sigreg": 0.01,
     "sigreg_num_slices": 512,
 
     # ── Encoder (same architecture as JEPA) ──────────────────────────────────
@@ -67,6 +67,9 @@ config = {
     "pretrain_on_monash": True,
     "monash_data_dir": "/home/shared/datasets/Monash",
     "monash_min_len": 512,
+    # Synthetic .arrow files live in the same folder as Monash — set to the
+    # same path. Set to None to use Monash only.
+    "synthetic_data_dir": "/home/shared/datasets/Monash",
 
     # ── Forecasting downstream ────────────────────────────────────────────────
     "epoch_t": 70,
