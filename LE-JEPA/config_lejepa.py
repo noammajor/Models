@@ -13,7 +13,7 @@ config = {
 
     # ── Loss ──────────────────────────────────────────────────────────────────
     # LeJEPA objective: (1-λ)*pred_loss + λ*sigreg
-    "lambda_sigreg": 0.01,
+    "lambda_sigreg": 0.05,
     "sigreg_num_slices": 512,
 
     # ── Encoder (same architecture as JEPA) ──────────────────────────────────
