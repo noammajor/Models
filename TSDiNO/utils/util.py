@@ -32,10 +32,9 @@ def get_activation_fn(activation):
 
 
 def init_distributed_mode(args):
-    # launched with torch.distributed.launch
     if dist.is_initialized():
-        print("Distributed mode already initialized. Skipping...")
         return
+
     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
         args.rank = int(os.environ["RANK"])
         args.world_size = int(os.environ['WORLD_SIZE'])
@@ -45,12 +44,12 @@ def init_distributed_mode(args):
         args.rank = int(os.environ['SLURM_PROCID'])
         args.gpu = args.rank % torch.cuda.device_count()
     # launched naively with `python main_dino.py`
-    # we manually add MASTER_ADDR and MASTER_PORT to env variables
+    # pick a fresh free port every time to avoid EADDRINUSE across calls
     elif torch.cuda.is_available():
         print('Will run the code on one GPU.')
         args.rank, args.gpu, args.world_size = 0, 0, 1
-        os.environ['MASTER_ADDR'] = '127.0.0.1'
-        os.environ['MASTER_PORT'] = '29500'
+        args.distributed = False
+        return
     else:
         print('Does not support training without GPU.')
         sys.exit(1)
