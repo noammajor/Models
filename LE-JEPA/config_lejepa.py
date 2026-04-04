@@ -5,7 +5,7 @@ config = {
     "clip_grad": 1.0,
     "warmup_ratio": 0.05,
     # Optimizer: "adamw" or "sgd"
-    "optimizer": "adamw",
+    "optimizer": "sgd",
     "lr_adamw": 5e-4,
     "lr_sgd": 3e-3,           # same as JEPA
     "weight_decay": 1e-2,
