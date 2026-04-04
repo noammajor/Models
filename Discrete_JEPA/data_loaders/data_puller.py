@@ -458,3 +458,131 @@ class MonashDataPullerJEPA(Dataset):
         )
         self.epochs_completed += 1
         return patches_tensor, context_idx.squeeze(0), target_idx.squeeze(0)
+
+
+class SyntheticArrowDataPullerJEPA(Dataset):
+    """
+    Loads synthetic time series from GluonTS .arrow files (produced by
+    LMC_Synth.py and kernel-synth.py) for JEPA-style pretraining.
+
+    Handles both univariate targets (shape [T]) and multivariate targets
+    (shape [C, T]).  Each window is returned as [ratio_patches, patch_size, C],
+    matching the shape produced by MonashDataPullerJEPA (with C=1 for univariate).
+
+    Returns (patches_tensor, context_idx, target_idx) — identical contract to
+    MonashDataPullerJEPA so ConcatDataset works transparently.
+
+    Config keys used:
+        synthetic_data_dir  – directory containing .arrow files
+        patch_size, ratio_patches, mask_ratio, masking_type, num_blocks,
+        val_prec, test_prec, monash_min_len (reused as min series length)
+    """
+
+    def __init__(self, config, which='train'):
+        self.which          = which
+        self.patch_size     = config['patch_size']
+        self.ratio_patches  = config['ratio_patches']
+        self.mask_ratio     = config['mask_ratio']
+        self.masking_type   = config['masking_type']
+        self.num_blocks     = config.get('num_blocks', 1)
+        self.chunk_size     = self.ratio_patches * self.patch_size
+
+        val_prec  = config.get('val_prec', 0.1)
+        test_prec = config.get('test_prec', 0.1)
+        data_dir  = config['synthetic_data_dir']
+        min_len   = config.get('monash_min_len', 512)
+
+        self._series = {'train': [], 'val': [], 'test': []}
+        self._index  = {'train': [], 'val': [], 'test': []}
+
+        self._load_all(data_dir, min_len, val_prec, test_prec)
+        print(f"SyntheticArrowDataPullerJEPA: {len(self._index['train'])} train  "
+              f"| {len(self._index['val'])} val  "
+              f"| {len(self._index['test'])} test  chunks  "
+              f"(chunk={self.chunk_size})")
+
+    def _load_all(self, data_dir, min_len, val_prec, test_prec):
+        import pyarrow as pa
+
+        arrow_files = sorted(f for f in os.listdir(data_dir) if f.endswith('.arrow'))
+        for fname in arrow_files:
+            path = os.path.join(data_dir, fname)
+            try:
+                with pa.memory_map(path, 'r') as src:
+                    table = pa.ipc.open_file(src).read_all()
+            except Exception:
+                try:
+                    with open(path, 'rb') as f:
+                        reader = pa.ipc.open_stream(f)
+                        table = reader.read_all()
+                except Exception as e:
+                    print(f"  SyntheticArrowDataPullerJEPA: skipping {fname} — {e}")
+                    continue
+
+            targets = table.column('target')
+            loaded = 0
+            for row in targets:
+                arr = row.as_py()
+                if arr is None:
+                    continue
+                arr = np.array(arr, dtype=np.float32)
+
+                # Normalise shape to [T, C]
+                if arr.ndim == 1:
+                    arr = arr[:, None]          # univariate [T] -> [T, 1]
+                elif arr.ndim == 2:
+                    arr = arr.T                 # multivariate [C, T] -> [T, C]
+                else:
+                    continue
+
+                T = arr.shape[0]
+                if T < min_len or np.isnan(arr).any():
+                    continue
+
+                val_len   = int(T * val_prec)
+                test_len  = int(T * test_prec)
+                train_len = T - val_len - test_len
+
+                scaler = StandardScaler()
+                scaler.fit(arr[:train_len])
+                scaled = scaler.transform(arr).astype(np.float32)   # [T, C]
+
+                splits = {
+                    'train': scaled[:train_len],
+                    'val':   scaled[train_len : train_len + val_len],
+                    'test':  scaled[train_len + val_len :],
+                }
+                for sname, split_arr in splits.items():
+                    if len(split_arr) < self.chunk_size:
+                        continue
+                    t     = torch.from_numpy(split_arr)   # [T, C]
+                    s_idx = len(self._series[sname])
+                    self._series[sname].append(t)
+                    n_chunks = len(t) // self.chunk_size
+                    for ci in range(n_chunks):
+                        self._index[sname].append((s_idx, ci))
+                loaded += 1
+            if loaded:
+                print(f"  {fname}: {loaded} series")
+
+    def __len__(self):
+        return len(self._index[self.which])
+
+    def __getitem__(self, idx):
+        s_idx, ci = self._index[self.which][idx]
+        tensor = self._series[self.which][s_idx]
+        start  = ci * self.chunk_size
+        chunk  = tensor[start : start + self.chunk_size]   # [chunk_size, C]
+
+        patches = [chunk[i * self.patch_size : (i + 1) * self.patch_size]
+                   for i in range(self.ratio_patches)]
+        patches_tensor = torch.stack(patches)   # [ratio_patches, patch_size, C]
+
+        context_idx, target_idx = get_mask_style(
+            B=1,
+            num_patches=self.ratio_patches,
+            type=self.masking_type,
+            p=self.mask_ratio,
+            num_blocks=self.num_blocks,
+        )
+        return patches_tensor, context_idx.squeeze(0), target_idx.squeeze(0)

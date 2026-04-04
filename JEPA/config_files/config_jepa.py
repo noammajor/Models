@@ -81,15 +81,17 @@ config = {
     "timestampcols_forcasting": ["date"],
     "path_data_forcasting": ["./data/ETTh1.csv"],
     "patches_to_forcast": 8,
-    "patches_size_forecasting": 32,
+    "patches_size_forecasting": 16,
     "lr_forcasting": 1e-3,
     "affine_revin": True,
 
     # ── Forecasting modes ─────────────────────────────────────────────────────
     "forecasting_modes": ["zeroshot"],
 
-    # ── Monash pretraining ────────────────────────────────────────────────────
-    "pretrain_on_monash": True,
-    "monash_data_dir": "/home/shared/datasets/Monash",
-    "monash_min_len": 512,
+    # ── Pretraining data source ───────────────────────────────────────────────
+    # pretrain_source: "monash" | "synthetic" | "monash+synthetic"
+    "pretrain_source":    "monash",
+    "monash_data_dir":    "/home/shared/datasets/Monash",
+    "monash_min_len":     512,
+    "synthetic_data_dir": "/home/shared/datasets/synthetic",  # dir containing .arrow files
 }

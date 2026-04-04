@@ -1,5 +1,6 @@
 config = {
     "path_save": "./output_model/LE-JEPA/",
+    "seed": 42,
     "num_epochs": 20,
     "batch_size": 128,
     "clip_grad": 1.0,
@@ -63,13 +64,12 @@ config = {
     "val_prec": 0.1,
     "test_prec": 0.1,
 
-    # ── Monash pretraining ────────────────────────────────────────────────────
-    "pretrain_on_monash": True,
-    "monash_data_dir": "/home/shared/datasets/Monash",
-    "monash_min_len": 512,
-    # Synthetic .arrow files live in the same folder as Monash — set to the
-    # same path. Set to None to use Monash only.
-    "synthetic_data_dir": "/home/shared/datasets/Monash",
+    # ── Pretraining data source ───────────────────────────────────────────────
+    # pretrain_source: "monash" | "synthetic" | "monash+synthetic"
+    "pretrain_source":    "monash",
+    "monash_data_dir":    "/home/shared/datasets/Monash",
+    "monash_min_len":     512,
+    "synthetic_data_dir": "/home/shared/datasets/synthetic",  # dir containing .arrow files
 
     # ── Forecasting downstream ────────────────────────────────────────────────
     "epoch_t": 70,

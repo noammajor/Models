@@ -112,10 +112,10 @@ config = {
     #   "predictor"  — frozen encoder + predictor, only decoder trained (predictor_forecasting)
     "forecasting_modes": ["zeroshot"],
 
-    # ── Monash pretraining ────────────────────────────────────────────────────
-    # pretrain_on_monash: include all Monash .tsf files in JEPA pretraining.
-    # monash_min_len: skip series shorter than this many raw timesteps.
-    "pretrain_on_monash":  True,
-    "monash_data_dir":     "/home/shared/datasets/Monash",
-    "monash_min_len":      512,
+    # ── Pretraining data source ───────────────────────────────────────────────
+    # pretrain_source: "monash" | "synthetic" | "monash+synthetic"
+    "pretrain_source":    "monash",
+    "monash_data_dir":    "/home/shared/datasets/Monash",
+    "monash_min_len":     512,
+    "synthetic_data_dir": "/home/shared/datasets/synthetic",  # dir containing .arrow files
 }

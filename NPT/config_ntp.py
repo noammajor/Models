@@ -3,9 +3,12 @@ config = {
     "pretrain_dataset":  "monash",
     "forecast_dataset":  "ettm1",
 
-    # ── Monash pretraining ────────────────────────────────────────────────────
-    "monash_data_dir":   "/home/shared/datasets/Monash",
-    "monash_min_len":    512,
+    # ── Pretraining data source ───────────────────────────────────────────────
+    # pretrain_source: "monash" | "synthetic" | "monash+synthetic"
+    "pretrain_source":    "monash",
+    "monash_data_dir":    "/home/shared/datasets/Monash",
+    "monash_min_len":     512,
+    "synthetic_data_dir": "/home/shared/datasets/synthetic",  # dir containing .arrow files
 
     # ── Patching (JEPA-style data loader) ─────────────────────────────────────
     # patch_size  = length of each patch (≡ patch_len in PatchTST)

@@ -159,18 +159,32 @@ def train_TS_DINO(args):
     )
 
     # ── Select pretraining dataset ─────────────────────────────────────────────
-    if cfg.get('pretrain_on_monash', False):
+    _pretrain_source = cfg.get('pretrain_source') or (
+        'monash' if cfg.get('pretrain_on_monash', False) else None
+    )
+    _shared_kwargs = dict(
+        split     = 'train',
+        transform = dataAugmentationDino,
+        batch_size= args.num_patches,
+        patch_size= args.patch_len,
+        step_size = args.step_size,
+        min_len   = cfg.get('monash_min_len', 512),
+    )
+    if _pretrain_source in ('monash', 'monash+synthetic'):
         print("Using Monash dataset for DINO pretraining")
         combined_dataset = dpuller.MonashDataPuller(
-            data_dir  = cfg['monash_data_dir'],
-            split     = 'train',
-            transform = dataAugmentationDino,
-            batch_size= args.num_patches,
-            patch_size= args.patch_len,
-            step_size = args.step_size,
-            min_len   = cfg.get('monash_min_len', 512),
-        )
-        print(f"Monash dataset: {len(combined_dataset)} windows")
+            data_dir = cfg['monash_data_dir'], **_shared_kwargs)
+        if _pretrain_source == 'monash+synthetic':
+            print("Using Monash + Synthetic datasets for DINO pretraining")
+            syn_dataset = dpuller.SyntheticArrowDataPuller(
+                data_dir = cfg['synthetic_data_dir'], **_shared_kwargs)
+            combined_dataset = ConcatDataset([combined_dataset, syn_dataset])
+    elif _pretrain_source == 'synthetic':
+        print("Using Synthetic dataset for DINO pretraining")
+        combined_dataset = dpuller.SyntheticArrowDataPuller(
+            data_dir = cfg['synthetic_data_dir'], **_shared_kwargs)
+    if _pretrain_source is not None:
+        print(f"Pretrain dataset: {len(combined_dataset)} windows")
     elif 'UCI HAR' in args.data_path:
         print("Using UCI HAR Dataset for DINO training")
         combined_dataset = dpuller.DataPullerUCIDINO(

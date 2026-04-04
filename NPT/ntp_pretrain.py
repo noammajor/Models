@@ -33,7 +33,7 @@ for _p in [_NPT_DIR, _ROOT_DIR, _DJEPA_DIR]:
         sys.path.insert(0, _p)
 
 from models.patchTST import PatchTST
-from data_loaders.data_puller import MonashDataPullerJEPA, DataPullerDJepa
+from data_loaders.data_puller import MonashDataPullerJEPA, DataPullerDJepa, SyntheticArrowDataPullerJEPA
 
 
 # ── normalization ─────────────────────────────────────────────────────────────
@@ -120,17 +120,34 @@ def pretrain_ntp(config):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'device: {device}')
 
-    pretrain_dset = config.get('pretrain_dataset', 'monash')
+    pretrain_dset = config.get('pretrain_source') or config.get('pretrain_dataset', 'monash')
 
     # ── data ─────────────────────────────────────────────────────────────────
-    if pretrain_dset == 'monash':
-        monash_dir = config['monash_data_dir']
-        if not os.path.isabs(monash_dir):
-            monash_dir = os.path.normpath(os.path.join(_NPT_DIR, monash_dir))
-        _cfg = dict(config, monash_data_dir=monash_dir)
+    if pretrain_dset in ('monash', 'synthetic', 'monash+synthetic'):
+        _cfg = dict(config)
+        if pretrain_dset in ('monash', 'monash+synthetic'):
+            monash_dir = config['monash_data_dir']
+            if not os.path.isabs(monash_dir):
+                monash_dir = os.path.normpath(os.path.join(_NPT_DIR, monash_dir))
+            _cfg['monash_data_dir'] = monash_dir
+        if pretrain_dset in ('synthetic', 'monash+synthetic'):
+            synth_dir = config['synthetic_data_dir']
+            if not os.path.isabs(synth_dir):
+                synth_dir = os.path.normpath(os.path.join(_NPT_DIR, synth_dir))
+            _cfg['synthetic_data_dir'] = synth_dir
 
-        train_dataset = MonashDataPullerJEPA(_cfg, which='train')
-        val_dataset   = MonashDataPullerJEPA(_cfg, which='val')
+        if pretrain_dset in ('monash', 'monash+synthetic'):
+            train_dataset = MonashDataPullerJEPA(_cfg, which='train')
+            val_dataset   = MonashDataPullerJEPA(_cfg, which='val')
+        if pretrain_dset in ('synthetic', 'monash+synthetic'):
+            import torch.utils.data as _tud
+            syn_train = SyntheticArrowDataPullerJEPA(_cfg, which='train')
+            syn_val   = SyntheticArrowDataPullerJEPA(_cfg, which='val')
+            if pretrain_dset == 'monash+synthetic':
+                train_dataset = _tud.ConcatDataset([train_dataset, syn_train])
+                val_dataset   = _tud.ConcatDataset([val_dataset,   syn_val])
+            else:
+                train_dataset, val_dataset = syn_train, syn_val
         c_in = 1
     else:
         from dataset_registry import get_dataset_info

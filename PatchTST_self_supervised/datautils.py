@@ -19,7 +19,8 @@ from src.data.datamodule import DataLoaders
 from src.data.pred_dataset import *
 
 DSETS = ['ettm1', 'ettm2', 'etth1', 'etth2', 'electricity',
-         'traffic', 'illness', 'weather', 'exchange', 'monash'
+         'traffic', 'illness', 'weather', 'exchange', 'monash',
+         'synthetic', 'monash+synthetic',
         ]
 
 
@@ -104,6 +105,86 @@ class MonashDatasetPatchTST:
         w = self._windows[idx]
         x = torch.tensor(w[:self._context]).unsqueeze(-1)  # [context_points, 1]
         y = torch.tensor(w[self._context:]).unsqueeze(-1)  # [target_points,  1]
+        return x, y
+
+
+class SyntheticDatasetPatchTST:
+    """Synthetic .arrow dataset for PatchTST self-supervised pretraining.
+
+    Mirrors MonashDatasetPatchTST — returns (x, y) with shapes
+    [context_points, 1] and [target_points, 1].
+    Handles both univariate [T] and multivariate [C, T] targets (each channel
+    becomes a separate series).
+    """
+
+    def __init__(self, data_dir, context_points, target_points,
+                 min_len=512, val_frac=0.1, test_frac=0.1,
+                 split='train', scale=True, **kwargs):
+        import glob
+        from sklearn.preprocessing import StandardScaler
+        import pyarrow as pa
+
+        window_size = context_points + target_points
+        self._windows = []
+
+        for fpath in sorted(glob.glob(_os.path.join(data_dir, '*.arrow'))):
+            fname = _os.path.basename(fpath)
+            try:
+                with pa.memory_map(fpath, 'r') as src:
+                    table = pa.ipc.open_file(src).read_all()
+            except Exception:
+                try:
+                    with open(fpath, 'rb') as f:
+                        reader = pa.ipc.open_stream(f)
+                        table = reader.read_all()
+                except Exception as e:
+                    print(f"  SyntheticDatasetPatchTST: skipping {fname} — {e}")
+                    continue
+
+            for row in table.column('target'):
+                arr = row.as_py()
+                if arr is None:
+                    continue
+                arr = np.array(arr, dtype=np.float32)
+                if arr.ndim == 1:
+                    channels = [arr]
+                elif arr.ndim == 2:
+                    channels = [arr[c] for c in range(arr.shape[0])]
+                else:
+                    continue
+
+                for series in channels:
+                    if np.isnan(series).any() or len(series) < min_len:
+                        continue
+                    T = len(series)
+                    val_len   = int(T * val_frac)
+                    test_len  = int(T * test_frac)
+                    train_len = T - val_len - test_len
+                    if scale:
+                        scaler = StandardScaler()
+                        scaler.fit(series[:train_len].reshape(-1, 1))
+                        series = scaler.transform(series.reshape(-1, 1)).flatten().astype(np.float32)
+                    if split == 'train':
+                        seg = series[:train_len]
+                    elif split == 'val':
+                        seg = series[train_len:train_len + val_len]
+                    else:
+                        seg = series[train_len + val_len:]
+                    if len(seg) < window_size:
+                        continue
+                    for start in range(0, len(seg) - window_size + 1, context_points):
+                        self._windows.append(seg[start:start + window_size])
+
+        self._context = context_points
+        self._target  = target_points
+
+    def __len__(self):
+        return len(self._windows)
+
+    def __getitem__(self, idx):
+        w = self._windows[idx]
+        x = torch.tensor(w[:self._context]).unsqueeze(-1)
+        y = torch.tensor(w[self._context:]).unsqueeze(-1)
         return x, y
 
 
@@ -279,6 +360,48 @@ def get_dls(params):
                 'min_len':        min_len,
                 'scale':          True,
             },
+            batch_size=params.batch_size,
+            workers=params.num_workers,
+        )
+
+    elif params.dset == 'synthetic':
+        synth_dir = params.synthetic_data_dir
+        min_len   = getattr(params, 'monash_min_len', 512)
+        dls = DataLoaders(
+            datasetCls=SyntheticDatasetPatchTST,
+            dataset_kwargs={
+                'data_dir':       synth_dir,
+                'context_points': params.context_points,
+                'target_points':  params.target_points,
+                'min_len':        min_len,
+                'scale':          True,
+            },
+            batch_size=params.batch_size,
+            workers=params.num_workers,
+        )
+
+    elif params.dset == 'monash+synthetic':
+        import torch.utils.data as _tud
+
+        min_len   = getattr(params, 'monash_min_len', 512)
+        _shared = dict(context_points=params.context_points,
+                       target_points=params.target_points,
+                       min_len=min_len, scale=True)
+
+        class _CombinedDataset:
+            """Wraps ConcatDataset of Monash + Synthetic, accepts split kwarg."""
+            def __init__(self, monash_dir, synth_dir, split='train', **kw):
+                m = MonashDatasetPatchTST(data_dir=monash_dir, split=split, **kw)
+                s = SyntheticDatasetPatchTST(data_dir=synth_dir, split=split, **kw)
+                self._ds = _tud.ConcatDataset([m, s])
+            def __len__(self):  return len(self._ds)
+            def __getitem__(self, i):  return self._ds[i]
+
+        dls = DataLoaders(
+            datasetCls=_CombinedDataset,
+            dataset_kwargs=dict(monash_dir=params.monash_data_dir,
+                                synth_dir=params.synthetic_data_dir,
+                                **_shared),
             batch_size=params.batch_size,
             workers=params.num_workers,
         )

@@ -3,10 +3,12 @@ config = {
     "pretrain_dataset":   "monash",
     "forecast_dataset":   "ettm1",
 
-    # ── Monash pretraining ────────────────────────────────────────────────────
-    "pretrain_on_monash": True,
+    # ── Pretraining data source ───────────────────────────────────────────────
+    # pretrain_source: "monash" | "synthetic" | "monash+synthetic"
+    "pretrain_source":    "monash",
     "monash_data_dir":    "/home/shared/datasets/Monash",
     "monash_min_len":     512,
+    "synthetic_data_dir": "/home/shared/datasets/synthetic",  # dir containing .arrow files
 
     # ── Patching ──────────────────────────────────────────────────────────────
     "context_points":  336,
