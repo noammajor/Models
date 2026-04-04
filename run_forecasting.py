@@ -158,7 +158,7 @@ def discover_checkpoints(model: str) -> list:
 
     elif model == "lejepa":
         import re as _re
-        ckpt_dir = ROOT / "LE-JEPA" / "output_model" / "LE-JEPA"
+        ckpt_dir = ROOT / "output_model" / "LE-JEPA"
         found = sorted(
             int(m.group(1))
             for p in ckpt_dir.glob("_epoch*best_model.pt")
