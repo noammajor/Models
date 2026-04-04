@@ -1185,17 +1185,14 @@ def run_lejepa(skip_train: bool = False,
         return
 
     # ── forecasting downstream ─────────────────────────────────────────────────
-    _add_path(Path(__file__).parent / "JEPA")
-    from JEPA.Forecasting import forcasting_zeroshot
-
     fore_data = ForcastingDataPullerDescrete(config)
     val_fc    = copy.copy(fore_data); val_fc.which  = "val";  val_fc.rebuild()
     test_fc   = copy.copy(fore_data); test_fc.which = "test"; test_fc.rebuild()
 
-    p_s      = config["patch_size_forcasting"]
-    best_mse = float('inf')
+    p_s       = config["patch_size_forcasting"]
+    best_mse  = float('inf')
     best_ckpt = None
-    ckpts = checkpoints if checkpoints is not None else list(range(config["num_epochs"]))
+    ckpts     = checkpoints if checkpoints is not None else list(range(config["num_epochs"]))
 
     for pred_len in pred_lens:
         h_t = pred_len // p_s
@@ -1203,20 +1200,13 @@ def run_lejepa(skip_train: bool = False,
             ds.h = h_t
             ds.target_raw_len = h_t * p_s
 
-        fc_train = torch.utils.data.DataLoader(fore_data, batch_size=config["batch_size"], shuffle=True,  num_workers=0)
-        fc_val   = torch.utils.data.DataLoader(val_fc,    batch_size=config["batch_size"], shuffle=False, num_workers=0)
-        fc_test  = torch.utils.data.DataLoader(test_fc,   batch_size=config["batch_size"], shuffle=False, num_workers=0)
+        model.forcast_train   = torch.utils.data.DataLoader(fore_data, batch_size=config["batch_size"], shuffle=True,  num_workers=0)
+        model.forcast_val     = torch.utils.data.DataLoader(val_fc,    batch_size=config["batch_size"], shuffle=False, num_workers=0)
+        model.forcast_test    = torch.utils.data.DataLoader(test_fc,   batch_size=config["batch_size"], shuffle=False, num_workers=0)
+        model.config["horizon_t"]    = h_t
+        model.config["ratio_patches"] = config.get("context_t", 21)
 
-        fore_cfg = dict(config)
-        fore_cfg["horizon_t"]    = h_t
-        fore_cfg["ratio_patches"] = config.get("context_t", 21)
-
-        model.forcast_train = fc_train
-        model.forcast_val   = fc_val
-        model.forcast_test  = fc_test
-        model.config["horizon_t"] = h_t
-
-        is_search = (pred_len == pred_lens[0])
+        is_search    = (pred_len == pred_lens[0])
         ckpts_to_run = ckpts if is_search else [best_ckpt if best_ckpt is not None else ckpts[-1]]
 
         print(f"\n[LE-JEPA] pred_len={pred_len} (horizon_t={h_t})"
@@ -1224,7 +1214,7 @@ def run_lejepa(skip_train: bool = False,
 
         for epoch in ckpts_to_run:
             print(f"  → checkpoint epoch {epoch}")
-            mse = forcasting_zeroshot(model, f"_epoch{epoch}")
+            mse = model.forcasting_zeroshot(f"_epoch{epoch}")
             if is_search and mse is not None and mse < best_mse:
                 best_mse  = mse
                 best_ckpt = epoch

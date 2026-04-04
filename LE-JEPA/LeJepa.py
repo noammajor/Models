@@ -10,6 +10,7 @@ from Training import (
     save_model,
     train_and_evaluate,
 )
+from Forecasting import forcasting_zeroshot
 
 
 class LeJEPA(nn.Module):
@@ -104,9 +105,16 @@ class LeJEPA(nn.Module):
         self.path_save    = config["path_save"]
         self.best_encoder = None
 
+        # Forecasting attributes — set by run_lejepa before calling forcasting_zeroshot
+        self.forcast_train = None
+        self.forcast_val   = None
+        self.forcast_test  = None
+        self.epoch_t       = config.get("epoch_t", 70)
 
-# Bind methods from Training.py
+
+# Bind methods
 LeJEPA.compute_lejepa_loss = compute_lejepa_loss
 LeJEPA.evaluate            = evaluate
 LeJEPA.save_model          = save_model
 LeJEPA.train_and_evaluate  = train_and_evaluate
+LeJEPA.forcasting_zeroshot = forcasting_zeroshot
