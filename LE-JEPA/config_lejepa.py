@@ -5,7 +5,7 @@ config = {
     "clip_grad": 1.0,
     "warmup_ratio": 0.05,
     # Optimizer: "adamw" or "sgd"
-    "optimizer": "sgd",
+    "optimizer": "adamw",
     "lr_adamw": 5e-4,
     "lr_sgd": 3e-3,           # same as JEPA
     "weight_decay": 1e-2,
@@ -14,7 +14,7 @@ config = {
     # ── Loss ──────────────────────────────────────────────────────────────────
     # LeJEPA objective: (1-λ)*pred_loss + λ*sigreg
     "lambda_sigreg": 0.05,
-    "sigreg_num_slices": 512,
+    "sigreg_num_slices": 1024,
 
     # ── Encoder (same architecture as JEPA) ──────────────────────────────────
     "encoder_embed_dim": 256,
