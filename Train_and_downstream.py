@@ -51,6 +51,18 @@ def _add_path(p):
     if p not in sys.path:
         sys.path.insert(0, p)
 
+def _resolve_pretrain_source(config):
+    """Return 'monash', 'synthetic', or 'monash+synthetic' (or None for CSV pretraining).
+
+    Checks the explicit 'pretrain_source' key first (set this in your config).
+    Falls back to the legacy pretrain_on_monash + synthetic_data_dir flags.
+    """
+    if 'pretrain_source' in config:
+        return config['pretrain_source']   # None means CSV-only
+    if config.get('pretrain_on_monash', False):
+        return 'monash+synthetic' if config.get('synthetic_data_dir') else 'monash'
+    return None
+
 def _config_to_dino_args(cfg):
     """
     Convert the DINO config dict (TSDINOALT 4/config.py) into the
@@ -167,32 +179,41 @@ def run_dino(skip_train: bool = False,
         pred_lens = [96, 192, 336, 720]
 
     dino_cfg = dict(dino_cfg)
-    pretrain_on_monash = dino_cfg.get('pretrain_on_monash', False)
+    pretrain_source = _resolve_pretrain_source(dino_cfg)
+    use_global_data = pretrain_source is not None
 
     # Resolve forecast dataset (always needed for downstream)
     forecast_dataset = forecast_dataset or dino_cfg.get("forecast_dataset")
-    if pretrain_only and pretrain_on_monash:
+    if pretrain_only and use_global_data:
         dino_cfg['saveckp_freq'] = 1  # save every epoch
 
-    if pretrain_on_monash:
-        # No pretrain CSV needed; derive c_in from forecast dataset (or default 1 for Monash)
-        if pretrain_only:
-            dino_cfg["c_in"] = 1  # Monash series are univariate
-        else:
+    if use_global_data:
+        # No pretrain CSV needed; c_in = 1 (univariate global data)
+        dino_cfg["c_in"] = 1
+        if not pretrain_only:
             if forecast_dataset is None:
-                raise ValueError("forecast_dataset must be set when pretrain_on_monash=True")
+                raise ValueError("forecast_dataset must be set when pretraining on global data")
             ds_fore = get_dataset_info(forecast_dataset)
             dino_cfg["c_in"] = ds_fore["c_in"]
-        # Resolve monash_data_dir relative to dino_dir
-        monash_dir = dino_cfg.get('monash_data_dir', '../Monash')
-        if not os.path.isabs(monash_dir):
-            dino_cfg['monash_data_dir'] = str((dino_dir / monash_dir).resolve())
+        if pretrain_source in ('monash', 'monash+synthetic'):
+            monash_dir = dino_cfg.get('monash_data_dir', '../Monash')
+            if not os.path.isabs(monash_dir):
+                dino_cfg['monash_data_dir'] = str((dino_dir / monash_dir).resolve())
+        if pretrain_source in ('synthetic', 'monash+synthetic'):
+            synth_dir = dino_cfg.get('synthetic_data_dir', '../Monash')
+            if not os.path.isabs(synth_dir):
+                dino_cfg['synthetic_data_dir'] = str((dino_dir / synth_dir).resolve())
+        _src_label = {
+            'monash':           f"Monash ({dino_cfg.get('monash_data_dir', '')})",
+            'synthetic':        f"Synthetic ({dino_cfg.get('synthetic_data_dir', '')})",
+            'monash+synthetic': "Monash + Synthetic",
+        }.get(pretrain_source, pretrain_source)
         print("\n" + "="*60)
         print(f"  MODEL: DINO  (TSDiNO)")
         if pretrain_only:
-            print(f"  pretrain: Monash ({dino_cfg['monash_data_dir']})  [pretrain only]")
+            print(f"  pretrain: {_src_label}  [pretrain only]")
         else:
-            print(f"  pretrain: Monash ({dino_cfg['monash_data_dir']})   forecast: {forecast_dataset}")
+            print(f"  pretrain: {_src_label}   forecast: {forecast_dataset}")
         print("="*60)
     else:
         pretrain_dataset = pretrain_dataset or dino_cfg.get("pretrain_dataset")
@@ -207,6 +228,8 @@ def run_dino(skip_train: bool = False,
         print(f"  MODEL: DINO  (TSDiNO)")
         print(f"  pretrain: {pretrain_dataset}   forecast: {forecast_dataset}")
         print("="*60)
+    # Propagate resolved config to the module-level cfg used by train_TS_DINO
+    dino_main.cfg.update(dino_cfg)
 
     if not pretrain_only:
         dino_cfg["data_path_forecast_training"]    = ds_fore["csv_path"]
@@ -289,7 +312,7 @@ def run_jepa(skip_train: bool = False,
     import torch
     from config_files.config_pretrain import config
     from data_loaders.data_puller import (DataPullerDJepa, ForcastingDataPullerDescrete,
-                                          MonashDataPullerJEPA)
+                                          MonashDataPullerJEPA, SyntheticArrowDataPullerJEPA)
     from Discrete_JEPA.Discrete_Jepa import DiscreteJEPA
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -298,28 +321,38 @@ def run_jepa(skip_train: bool = False,
     # Single-dataset pipeline: force same dataset for pretrain and forecast,
     # disable Monash, and align split fractions so test never leaks into training.
     if pretrain_dataset is not None and pretrain_dataset == forecast_dataset:
-        config['pretrain_on_monash'] = False
+        config['pretrain_source'] = None   # force CSV-only mode
         config['val_prec']  = config.get('val_prec_forcasting',  0.1)
         config['test_prec'] = config.get('test_prec_forcasting', 0.1)
 
-    pretrain_on_monash = config.get('pretrain_on_monash', False)
+    pretrain_source = _resolve_pretrain_source(config)
+    use_global_data = pretrain_source is not None
 
     # Resolve forecast dataset (always needed for downstream, optional for pretrain_only)
     forecast_dataset = forecast_dataset or config.get("forecast_dataset")
-    if pretrain_on_monash:
+    if use_global_data:
         if not pretrain_only and forecast_dataset is None:
-            raise ValueError("forecast_dataset must be set when pretrain_on_monash=True")
-        # Resolve monash_data_dir relative to jepa_dir
-        monash_dir = config.get('monash_data_dir', '../Monash')
-        if not os.path.isabs(monash_dir):
-            config['monash_data_dir'] = str((jepa_dir / monash_dir).resolve())
+            raise ValueError("forecast_dataset must be set when pretraining on global data")
+        if pretrain_source in ('monash', 'monash+synthetic'):
+            monash_dir = config.get('monash_data_dir', '../Monash')
+            if not os.path.isabs(monash_dir):
+                config['monash_data_dir'] = str((jepa_dir / monash_dir).resolve())
+        if pretrain_source in ('synthetic', 'monash+synthetic'):
+            synth_dir = config.get('synthetic_data_dir', '../Monash')
+            if not os.path.isabs(synth_dir):
+                config['synthetic_data_dir'] = str((jepa_dir / synth_dir).resolve())
+        _src_label = {
+            'monash':           f"Monash ({config.get('monash_data_dir', '')})",
+            'synthetic':        f"Synthetic ({config.get('synthetic_data_dir', '')})",
+            'monash+synthetic': "Monash + Synthetic",
+        }.get(pretrain_source, pretrain_source)
         print("\n" + "="*60)
         print(f"  MODEL: Discrete JEPA")
         if pretrain_only:
-            print(f"  pretrain: Monash ({config['monash_data_dir']})  [pretrain only]")
+            print(f"  pretrain: {_src_label}  [pretrain only]")
         else:
             ds_fore = get_dataset_info(forecast_dataset)
-            print(f"  pretrain: Monash ({config['monash_data_dir']})   forecast: {forecast_dataset}")
+            print(f"  pretrain: {_src_label}   forecast: {forecast_dataset}")
         print("="*60)
     else:
         pretrain_dataset = pretrain_dataset or config.get("pretrain_dataset")
@@ -344,18 +377,30 @@ def run_jepa(skip_train: bool = False,
         config["input_variables_forcasting"] = [ds_fore["columns"]]
 
     # ── data ─────────────────────────────────────────────────────────────────
-    if skip_train and pretrain_on_monash:
-        # Skip loading Monash entirely — only need forecasting loaders
-        print("\n[JEPA] skip_train=True + Monash pretrain: skipping Monash data load.")
-        input_dim   = config["patch_size"]  # Monash is univariate: input_dim = patch_size
+    if skip_train and use_global_data:
+        # Skip loading pretrain data entirely — only need forecasting loaders
+        print("\n[JEPA] skip_train=True + global pretrain: skipping pretrain data load.")
+        input_dim   = config["patch_size"]  # univariate: input_dim = patch_size
         num_patches = config["ratio_patches"]
         train_loader = val_loader = test_loader = None
     else:
         print("\n[JEPA] Loading datasets …")
-        if pretrain_on_monash:
-            train_dataset = MonashDataPullerJEPA(config, which='train')
-            val_dataset   = MonashDataPullerJEPA(config, which='val')
-            test_dataset  = MonashDataPullerJEPA(config, which='test')
+        if use_global_data:
+            import torch.utils.data as _tud
+            if pretrain_source in ('monash', 'monash+synthetic'):
+                train_dataset = MonashDataPullerJEPA(config, which='train')
+                val_dataset   = MonashDataPullerJEPA(config, which='val')
+                test_dataset  = MonashDataPullerJEPA(config, which='test')
+            if pretrain_source in ('synthetic', 'monash+synthetic'):
+                syn_train = SyntheticArrowDataPullerJEPA(config, which='train')
+                syn_val   = SyntheticArrowDataPullerJEPA(config, which='val')
+                syn_test  = SyntheticArrowDataPullerJEPA(config, which='test')
+                if pretrain_source == 'monash+synthetic':
+                    train_dataset = _tud.ConcatDataset([train_dataset, syn_train])
+                    val_dataset   = _tud.ConcatDataset([val_dataset,   syn_val])
+                    test_dataset  = _tud.ConcatDataset([test_dataset,  syn_test])
+                else:
+                    train_dataset, val_dataset, test_dataset = syn_train, syn_val, syn_test
         else:
             train_dataset = DataPullerDJepa(
                 data_paths         = config["path_data"],
@@ -493,30 +538,41 @@ def run_jepa2(skip_train: bool = False,
     import torch
     from config_files.config_pretrain import config
     from data_loaders.data_puller import (DataPullerDJepa, ForcastingDataPullerDescrete,
-                                          MonashDataPullerJEPA)
+                                          MonashDataPullerJEPA, SyntheticArrowDataPullerJEPA)
     from Discrete_JEPA.Discrete_Jepa import DiscreteJEPA
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     config = dict(config)
 
     if pretrain_dataset is not None and pretrain_dataset == forecast_dataset:
-        config['pretrain_on_monash'] = False
+        config['pretrain_source'] = None   # force CSV-only mode
         config['val_prec']  = config.get('val_prec_forcasting',  0.1)
         config['test_prec'] = config.get('test_prec_forcasting', 0.1)
 
-    pretrain_on_monash = config.get('pretrain_on_monash', False)
+    pretrain_source = _resolve_pretrain_source(config)
+    use_global_data = pretrain_source is not None
 
     forecast_dataset = forecast_dataset or config.get("forecast_dataset")
-    if pretrain_on_monash:
+    if use_global_data:
         if forecast_dataset is None:
-            raise ValueError("forecast_dataset must be set when pretrain_on_monash=True")
+            raise ValueError("forecast_dataset must be set when pretraining on global data")
         ds_fore = get_dataset_info(forecast_dataset)
-        monash_dir = config.get('monash_data_dir', '../Monash')
-        if not os.path.isabs(monash_dir):
-            config['monash_data_dir'] = str((jepa2_dir / monash_dir).resolve())
+        if pretrain_source in ('monash', 'monash+synthetic'):
+            monash_dir = config.get('monash_data_dir', '../Monash')
+            if not os.path.isabs(monash_dir):
+                config['monash_data_dir'] = str((jepa2_dir / monash_dir).resolve())
+        if pretrain_source in ('synthetic', 'monash+synthetic'):
+            synth_dir = config.get('synthetic_data_dir', '../Monash')
+            if not os.path.isabs(synth_dir):
+                config['synthetic_data_dir'] = str((jepa2_dir / synth_dir).resolve())
+        _src_label = {
+            'monash':           f"Monash ({config.get('monash_data_dir', '')})",
+            'synthetic':        f"Synthetic ({config.get('synthetic_data_dir', '')})",
+            'monash+synthetic': "Monash + Synthetic",
+        }.get(pretrain_source, pretrain_source)
         print("\n" + "="*60)
         print(f"  MODEL: Discrete JEPA 2  (RevIN)")
-        print(f"  pretrain: Monash ({config['monash_data_dir']})   forecast: {forecast_dataset}")
+        print(f"  pretrain: {_src_label}   forecast: {forecast_dataset}")
         print("="*60)
     else:
         pretrain_dataset = pretrain_dataset or config.get("pretrain_dataset")
@@ -539,10 +595,22 @@ def run_jepa2(skip_train: bool = False,
     config["input_variables_forcasting"] = [ds_fore["columns"]]
 
     print("\n[JEPA2] Loading datasets …")
-    if pretrain_on_monash:
-        train_dataset = MonashDataPullerJEPA(config, which='train')
-        val_dataset   = MonashDataPullerJEPA(config, which='val')
-        test_dataset  = MonashDataPullerJEPA(config, which='test')
+    if use_global_data:
+        import torch.utils.data as _tud
+        if pretrain_source in ('monash', 'monash+synthetic'):
+            train_dataset = MonashDataPullerJEPA(config, which='train')
+            val_dataset   = MonashDataPullerJEPA(config, which='val')
+            test_dataset  = MonashDataPullerJEPA(config, which='test')
+        if pretrain_source in ('synthetic', 'monash+synthetic'):
+            syn_train = SyntheticArrowDataPullerJEPA(config, which='train')
+            syn_val   = SyntheticArrowDataPullerJEPA(config, which='val')
+            syn_test  = SyntheticArrowDataPullerJEPA(config, which='test')
+            if pretrain_source == 'monash+synthetic':
+                train_dataset = _tud.ConcatDataset([train_dataset, syn_train])
+                val_dataset   = _tud.ConcatDataset([val_dataset,   syn_val])
+                test_dataset  = _tud.ConcatDataset([test_dataset,  syn_test])
+            else:
+                train_dataset, val_dataset, test_dataset = syn_train, syn_val, syn_test
     else:
         train_dataset = DataPullerDJepa(
             data_paths         = config["path_data"],
@@ -672,31 +740,42 @@ def run_jepa_simple(skip_train: bool = False,
     config = dict(_mod.config)
 
     from data_loaders.data_puller import (DataPullerDJepa, ForcastingDataPullerDescrete,
-                                          MonashDataPullerJEPA)
+                                          MonashDataPullerJEPA, SyntheticArrowDataPullerJEPA)
     from JEPA.Jepa import JEPA
 
     # Single-dataset pipeline: align splits so test never leaks into training.
     if pretrain_dataset is not None and pretrain_dataset == forecast_dataset:
-        config['pretrain_on_monash'] = False
+        config['pretrain_source'] = None   # force CSV-only mode
         config['val_prec']  = config.get('val_prec_forcasting',  0.1)
         config['test_prec'] = config.get('test_prec_forcasting', 0.1)
 
-    pretrain_on_monash = config.get('pretrain_on_monash', False)
+    pretrain_source = _resolve_pretrain_source(config)
+    use_global_data = pretrain_source is not None
 
     forecast_dataset = forecast_dataset or config.get("forecast_dataset")
-    if pretrain_on_monash:
+    if use_global_data:
         if not pretrain_only and forecast_dataset is None:
-            raise ValueError("forecast_dataset must be set when pretrain_on_monash=True")
-        monash_dir = config.get('monash_data_dir', '../Monash')
-        if not os.path.isabs(monash_dir):
-            config['monash_data_dir'] = str((jepa_dir / monash_dir).resolve())
+            raise ValueError("forecast_dataset must be set when pretraining on global data")
+        if pretrain_source in ('monash', 'monash+synthetic'):
+            monash_dir = config.get('monash_data_dir', '../Monash')
+            if not os.path.isabs(monash_dir):
+                config['monash_data_dir'] = str((jepa_dir / monash_dir).resolve())
+        if pretrain_source in ('synthetic', 'monash+synthetic'):
+            synth_dir = config.get('synthetic_data_dir', '../Monash')
+            if not os.path.isabs(synth_dir):
+                config['synthetic_data_dir'] = str((jepa_dir / synth_dir).resolve())
+        _src_label = {
+            'monash':           f"Monash ({config.get('monash_data_dir', '')})",
+            'synthetic':        f"Synthetic ({config.get('synthetic_data_dir', '')})",
+            'monash+synthetic': "Monash + Synthetic",
+        }.get(pretrain_source, pretrain_source)
         print("\n" + "="*60)
         print(f"  MODEL: JEPA (P2P)")
         if pretrain_only:
-            print(f"  pretrain: Monash ({config['monash_data_dir']})  [pretrain only]")
+            print(f"  pretrain: {_src_label}  [pretrain only]")
         else:
             ds_fore = get_dataset_info(forecast_dataset)
-            print(f"  pretrain: Monash ({config['monash_data_dir']})   forecast: {forecast_dataset}")
+            print(f"  pretrain: {_src_label}   forecast: {forecast_dataset}")
         print("="*60)
     else:
         pretrain_dataset = pretrain_dataset or config.get("pretrain_dataset")
@@ -720,18 +799,30 @@ def run_jepa_simple(skip_train: bool = False,
         config["input_variables_forcasting"] = [ds_fore["columns"]]
 
     # ── data ─────────────────────────────────────────────────────────────────
-    if skip_train and pretrain_on_monash:
-        # Skip loading Monash entirely — only need forecasting loaders
-        print("\n[JEPA simple] skip_train=True + Monash pretrain: skipping Monash data load.")
-        input_dim       = config["patch_size"]  # Monash is univariate: input_dim = patch_size
+    if skip_train and use_global_data:
+        # Skip loading pretrain data entirely — only need forecasting loaders
+        print("\n[JEPA simple] skip_train=True + global pretrain: skipping pretrain data load.")
+        input_dim       = config["patch_size"]  # univariate: input_dim = patch_size
         num_patches     = config["ratio_patches"]
         train_loader = val_loader = test_loader = None
     else:
         print("\n[JEPA simple] Loading datasets …")
-        if pretrain_on_monash:
-            train_dataset = MonashDataPullerJEPA(config, which='train')
-            val_dataset   = MonashDataPullerJEPA(config, which='val')
-            test_dataset  = MonashDataPullerJEPA(config, which='test')
+        if use_global_data:
+            import torch.utils.data as _tud
+            if pretrain_source in ('monash', 'monash+synthetic'):
+                train_dataset = MonashDataPullerJEPA(config, which='train')
+                val_dataset   = MonashDataPullerJEPA(config, which='val')
+                test_dataset  = MonashDataPullerJEPA(config, which='test')
+            if pretrain_source in ('synthetic', 'monash+synthetic'):
+                syn_train = SyntheticArrowDataPullerJEPA(config, which='train')
+                syn_val   = SyntheticArrowDataPullerJEPA(config, which='val')
+                syn_test  = SyntheticArrowDataPullerJEPA(config, which='test')
+                if pretrain_source == 'monash+synthetic':
+                    train_dataset = _tud.ConcatDataset([train_dataset, syn_train])
+                    val_dataset   = _tud.ConcatDataset([val_dataset,   syn_val])
+                    test_dataset  = _tud.ConcatDataset([test_dataset,  syn_test])
+                else:
+                    train_dataset, val_dataset, test_dataset = syn_train, syn_val, syn_test
         else:
             train_dataset = DataPullerDJepa(
                 data_paths          = config["path_data"],
@@ -849,24 +940,35 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     _spec.loader.exec_module(_mod)
     cfg = dict(_mod.config)
 
-    pretrain_on_monash = cfg.get("pretrain_on_monash", False)
-    _pretrain_dset = pretrain_dataset or cfg.get("pretrain_dataset", "ettm1")
-    _forecast_dset = forecast_dataset or cfg.get("forecast_dataset") or _pretrain_dset
+    pretrain_source = _resolve_pretrain_source(cfg)
+    _pretrain_dset  = pretrain_dataset or cfg.get("pretrain_dataset", "ettm1")
+    _forecast_dset  = forecast_dataset or cfg.get("forecast_dataset") or _pretrain_dset
 
-    print("\n" + "="*60)
-    print("  MODEL: PatchTST (self-supervised)")
-    if pretrain_on_monash or _pretrain_dset == "monash":
+    # pretrain_source overrides _pretrain_dset for global data
+    if pretrain_source in ('monash', 'synthetic', 'monash+synthetic'):
+        _pretrain_dset = pretrain_source
+
+    monash_dir = synth_dir = None
+    if _pretrain_dset in ('monash', 'monash+synthetic'):
         monash_dir = cfg.get("monash_data_dir", "../Monash")
         if not os.path.isabs(monash_dir):
             monash_dir = str((patchtst_dir / monash_dir).resolve())
-        if pretrain_only:
-            print(f"  pretrain: Monash ({monash_dir})  [pretrain only]")
-        else:
-            print(f"  pretrain: Monash ({monash_dir})   forecast: {_forecast_dset}")
-        _pretrain_dset = "monash"
+    if _pretrain_dset in ('synthetic', 'monash+synthetic'):
+        synth_dir = cfg.get("synthetic_data_dir", "../synthetic")
+        if not os.path.isabs(synth_dir):
+            synth_dir = str((patchtst_dir / synth_dir).resolve())
+
+    _src_label = {
+        'monash':           f"Monash ({monash_dir})",
+        'synthetic':        f"Synthetic ({synth_dir})",
+        'monash+synthetic': "Monash + Synthetic",
+    }.get(_pretrain_dset, _pretrain_dset)
+    print("\n" + "="*60)
+    print("  MODEL: PatchTST (self-supervised)")
+    if pretrain_only:
+        print(f"  pretrain: {_src_label}  [pretrain only]")
     else:
-        monash_dir = None
-        print(f"  pretrain: {_pretrain_dset}   forecast: {_forecast_dset}")
+        print(f"  pretrain: {_src_label}   forecast: {_forecast_dset}")
     print("="*60)
 
     patchtst_dir = str(patchtst_dir.resolve())
@@ -892,8 +994,10 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         "--seed",                str(GLOBAL_SEED),
     ]
     if monash_dir is not None:
-        pretrain_cmd += ["--monash_data_dir", monash_dir,
-                         "--monash_min_len", str(cfg.get("monash_min_len", 512))]
+        pretrain_cmd += ["--monash_data_dir",    monash_dir,
+                         "--monash_min_len",      str(cfg.get("monash_min_len", 512))]
+    if synth_dir is not None:
+        pretrain_cmd += ["--synthetic_data_dir", synth_dir]
 
     # ── pretraining ───────────────────────────────────────────────────────────
     if not skip_train:
@@ -986,25 +1090,34 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     _spec.loader.exec_module(_mod)
     cfg = dict(_mod.config)
 
-    _pretrain_dset = pretrain_dataset or cfg.get("pretrain_dataset", "monash")
+    _pretrain_source = _resolve_pretrain_source(cfg)
+    _pretrain_dset   = pretrain_dataset or cfg.get("pretrain_dataset", "monash")
+    if _pretrain_source in ('monash', 'synthetic', 'monash+synthetic'):
+        _pretrain_dset = _pretrain_source
     _forecast_dset = None if pretrain_only else (forecast_dataset or cfg.get("forecast_dataset") or _pretrain_dset)
     cfg["pretrain_dataset"] = _pretrain_dset
     cfg["forecast_dataset"] = _forecast_dset
 
-    if _pretrain_dset == "monash":
+    if _pretrain_dset in ('monash', 'monash+synthetic'):
         monash_dir = cfg.get("monash_data_dir", "../Monash")
         if not os.path.isabs(monash_dir):
             cfg["monash_data_dir"] = str((npt_dir / monash_dir).resolve())
-        print("\n" + "="*60)
-        print("  MODEL: NPT (Next-Token-Patch Prediction)")
-        if pretrain_only:
-            print(f"  pretrain: Monash ({cfg['monash_data_dir']})  [pretrain only]")
-        else:
-            print(f"  pretrain: Monash ({cfg['monash_data_dir']})   forecast: {_forecast_dset}")
+    if _pretrain_dset in ('synthetic', 'monash+synthetic'):
+        synth_dir = cfg.get("synthetic_data_dir", "../synthetic")
+        if not os.path.isabs(synth_dir):
+            cfg["synthetic_data_dir"] = str((npt_dir / synth_dir).resolve())
+
+    _src_label = {
+        'monash':           f"Monash ({cfg.get('monash_data_dir', '')})",
+        'synthetic':        f"Synthetic ({cfg.get('synthetic_data_dir', '')})",
+        'monash+synthetic': "Monash + Synthetic",
+    }.get(_pretrain_dset, _pretrain_dset)
+    print("\n" + "="*60)
+    print("  MODEL: NPT (Next-Token-Patch Prediction)")
+    if pretrain_only:
+        print(f"  pretrain: {_src_label}  [pretrain only]")
     else:
-        print("\n" + "="*60)
-        print("  MODEL: NPT (Next-Token-Patch Prediction)")
-        print(f"  pretrain: {_pretrain_dset}   forecast: {_forecast_dset}")
+        print(f"  pretrain: {_src_label}   forecast: {_forecast_dset}")
     print("="*60)
 
     from ntp_pretrain import pretrain_ntp, _model_fname
@@ -1069,32 +1182,43 @@ def run_lejepa(skip_train: bool = False,
     config = dict(_mod.config)
 
     from data_loaders.data_puller import (DataPullerDJepa, ForcastingDataPullerDescrete,
-                                          MonashDataPullerJEPA)
+                                          MonashDataPullerJEPA, SyntheticArrowDataPullerJEPA)
     from LeJepa import LeJEPA
 
-    pretrain_on_monash = config.get('pretrain_on_monash', False)
-    forecast_dataset   = forecast_dataset or config.get('forecast_dataset')
+    forecast_dataset = forecast_dataset or config.get('forecast_dataset')
 
     # Single-dataset mode: align splits so test never leaks into pretraining
     if pretrain_dataset and pretrain_dataset == forecast_dataset:
-        config['pretrain_on_monash'] = False
-        pretrain_on_monash = False
+        config['pretrain_source'] = None   # force CSV-only mode
         config['val_prec']  = config.get('val_prec_forcasting',  0.1)
         config['test_prec'] = config.get('test_prec_forcasting', 0.1)
 
-    if pretrain_on_monash:
+    pretrain_source = _resolve_pretrain_source(config)
+    use_global_data = pretrain_source is not None
+
+    if use_global_data:
         if not pretrain_only and forecast_dataset is None:
-            raise ValueError("forecast_dataset must be set when pretrain_on_monash=True")
-        monash_dir = config.get('monash_data_dir', '../Monash')
-        if not os.path.isabs(monash_dir):
-            config['monash_data_dir'] = str((lejepa_dir / monash_dir).resolve())
+            raise ValueError("forecast_dataset must be set when pretraining on global data")
+        if pretrain_source in ('monash', 'monash+synthetic'):
+            monash_dir = config.get('monash_data_dir', '../Monash')
+            if not os.path.isabs(monash_dir):
+                config['monash_data_dir'] = str((lejepa_dir / monash_dir).resolve())
+        if pretrain_source in ('synthetic', 'monash+synthetic'):
+            synth_dir = config.get('synthetic_data_dir', '../Monash')
+            if not os.path.isabs(synth_dir):
+                config['synthetic_data_dir'] = str((lejepa_dir / synth_dir).resolve())
+        _src_label = {
+            'monash':           f"Monash ({config.get('monash_data_dir', '')})",
+            'synthetic':        f"Synthetic ({config.get('synthetic_data_dir', '')})",
+            'monash+synthetic': "Monash + Synthetic",
+        }.get(pretrain_source, pretrain_source)
         print("\n" + "="*60)
         print(f"  MODEL: LE-JEPA")
         if pretrain_only:
-            print(f"  pretrain: Monash ({config['monash_data_dir']})  [pretrain only]")
+            print(f"  pretrain: {_src_label}  [pretrain only]")
         else:
             ds_fore = get_dataset_info(forecast_dataset)
-            print(f"  pretrain: Monash ({config['monash_data_dir']})   forecast: {forecast_dataset}")
+            print(f"  pretrain: {_src_label}   forecast: {forecast_dataset}")
         print("="*60)
     else:
         pretrain_dataset = pretrain_dataset or config.get('pretrain_dataset')
@@ -1123,17 +1247,29 @@ def run_lejepa(skip_train: bool = False,
         config["input_variables_forcasting"] = [ds_fore["columns"]]
 
     # ── data ──────────────────────────────────────────────────────────────────
-    if skip_train and pretrain_on_monash:
-        print("\n[LE-JEPA] skip_train=True + Monash pretrain: skipping Monash data load.")
+    if skip_train and use_global_data:
+        print("\n[LE-JEPA] skip_train=True + global pretrain: skipping pretrain data load.")
         input_dim   = config["patch_size"]
         num_patches = config["ratio_patches"]
         train_loader = val_loader = test_loader = None
     else:
         print("\n[LE-JEPA] Loading datasets …")
-        if pretrain_on_monash:
-            train_dataset = MonashDataPullerJEPA(config, which='train')
-            val_dataset   = MonashDataPullerJEPA(config, which='val')
-            test_dataset  = MonashDataPullerJEPA(config, which='test')
+        if use_global_data:
+            import torch.utils.data as _tud
+            if pretrain_source in ('monash', 'monash+synthetic'):
+                train_dataset = MonashDataPullerJEPA(config, which='train')
+                val_dataset   = MonashDataPullerJEPA(config, which='val')
+                test_dataset  = MonashDataPullerJEPA(config, which='test')
+            if pretrain_source in ('synthetic', 'monash+synthetic'):
+                syn_train = SyntheticArrowDataPullerJEPA(config, which='train')
+                syn_val   = SyntheticArrowDataPullerJEPA(config, which='val')
+                syn_test  = SyntheticArrowDataPullerJEPA(config, which='test')
+                if pretrain_source == 'monash+synthetic':
+                    train_dataset = _tud.ConcatDataset([train_dataset, syn_train])
+                    val_dataset   = _tud.ConcatDataset([val_dataset,   syn_val])
+                    test_dataset  = _tud.ConcatDataset([test_dataset,  syn_test])
+                else:
+                    train_dataset, val_dataset, test_dataset = syn_train, syn_val, syn_test
         else:
             train_dataset = DataPullerDJepa(
                 data_paths          = config["path_data"],
@@ -1185,6 +1321,7 @@ def run_lejepa(skip_train: bool = False,
         return
 
     # ── forecasting downstream ─────────────────────────────────────────────────
+    config["ratio_patches"] = config.get("context_t", config["ratio_patches"])
     fore_data = ForcastingDataPullerDescrete(config)
     val_fc    = copy.copy(fore_data); val_fc.which  = "val";  val_fc.rebuild()
     test_fc   = copy.copy(fore_data); test_fc.which = "test"; test_fc.rebuild()
@@ -1204,7 +1341,6 @@ def run_lejepa(skip_train: bool = False,
         model.forcast_val     = torch.utils.data.DataLoader(val_fc,    batch_size=config["batch_size"], shuffle=False, num_workers=0)
         model.forcast_test    = torch.utils.data.DataLoader(test_fc,   batch_size=config["batch_size"], shuffle=False, num_workers=0)
         model.config["horizon_t"]    = h_t
-        model.config["ratio_patches"] = config.get("context_t", 21)
 
         is_search    = (pred_len == pred_lens[0])
         ckpts_to_run = ckpts if is_search else [best_ckpt if best_ckpt is not None else ckpts[-1]]
