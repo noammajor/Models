@@ -41,8 +41,8 @@ config = {
     #   view 2 (perturbed/local): high_perturb — adds Gaussian noise to detail coeffs
     # Set either to None to disable DWT for that view.
     # Options: 'low_pass', 'soft_threshold', 'zero_out_detail', 'high_perturb', 'band_scale'
-    "view1_dwt_mode": None,
-    "view2_dwt_mode": None,
+    "view1_dwt_mode": "soft_threshold",
+    "view2_dwt_mode": "high_perturb",
     # Shared DWT parameters (same as DINO defaults)
     "dwt_wavelet":                  "db4",
     "dwt_level":                    3,
