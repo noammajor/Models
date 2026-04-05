@@ -301,9 +301,20 @@ class ForcastingDataPullerDescrete(Dataset):
             icols = df.select_dtypes("integer").columns
             df[icols] = df[icols].apply(pd.to_numeric, downcast="integer")
             df.sort_values(by=[t_col], inplace=True)
-            val_len   = int(len(df) * self.val_prec)
-            test_len  = int(len(df) * self.test_prec)
-            train_len = len(df) - val_len - test_len
+            n = len(df)
+            fname = os.path.basename(path).lower()
+            if 'etth' in fname:
+                train_len = 12 * 30 * 24
+                val_len   = 4  * 30 * 24
+                test_len  = 4  * 30 * 24
+            elif 'ettm' in fname:
+                train_len = 12 * 30 * 24 * 4
+                val_len   = 4  * 30 * 24 * 4
+                test_len  = 4  * 30 * 24 * 4
+            else:
+                train_len = int(n * 0.7)
+                test_len  = int(n * 0.2)
+                val_len   = n - train_len - test_len
             input_vars = self.input_variables_forcasting[run_idx]
             # Fit scaler on training portion only, transform all splits
             train_portion = df.iloc[:train_len][input_vars].values

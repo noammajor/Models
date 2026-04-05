@@ -141,9 +141,20 @@ class DataPullerForecastingTrain():
 
         data = df.values.astype(np.float32)
 
-        test_len  = int(len(data) * 0.1)
-        val_len   = int(len(data) * 0.1)
-        train_len = len(data) - test_len - val_len
+        n = len(data)
+        fname = os.path.basename(self.data_dir).lower()
+        if 'etth' in fname:
+            train_len = 12 * 30 * 24
+            val_len   = 4  * 30 * 24
+            test_len  = 4  * 30 * 24
+        elif 'ettm' in fname:
+            train_len = 12 * 30 * 24 * 4
+            val_len   = 4  * 30 * 24 * 4
+            test_len  = 4  * 30 * 24 * 4
+        else:
+            train_len = int(n * 0.7)
+            test_len  = int(n * 0.2)
+            val_len   = n - train_len - test_len
 
         train_np = data[:train_len,  self.var_indices]
         val_np   = data[train_len : train_len + val_len, self.var_indices]
@@ -212,9 +223,20 @@ class DataPullerForecastingTesting(Dataset):
 
         data = df.values.astype(np.float32)
 
-        test_len  = int(len(data) * 0.2)
-        val_len   = int(len(data) * 0.1)
-        train_len = len(data) - test_len - val_len
+        n = len(data)
+        fname = os.path.basename(self.data_dir).lower()
+        if 'etth' in fname:
+            train_len = 12 * 30 * 24
+            val_len   = 4  * 30 * 24
+            test_len  = 4  * 30 * 24
+        elif 'ettm' in fname:
+            train_len = 12 * 30 * 24 * 4
+            val_len   = 4  * 30 * 24 * 4
+            test_len  = 4  * 30 * 24 * 4
+        else:
+            train_len = int(n * 0.7)
+            test_len  = int(n * 0.2)
+            val_len   = n - train_len - test_len
 
         train_np = data[:train_len,  self.var_indices]
         val_np   = data[train_len : train_len + val_len, self.var_indices]

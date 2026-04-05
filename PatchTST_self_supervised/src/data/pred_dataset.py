@@ -49,13 +49,8 @@ class Dataset_ETT_hour(Dataset):
         df_raw = pd.read_csv(os.path.join(self.root_path,
                                           self.data_path))
 
-        n = len(df_raw)
-        num_val   = int(n * 0.1)
-        num_test  = int(n * 0.1)
-        num_train = n - num_val - num_test
-        # Strict splits — same boundary logic as ForcastingDataPullerDescrete
-        border1s = [0,          num_train,            num_train + num_val]
-        border2s = [num_train,  num_train + num_val,  n]
+        border1s = [0, 12 * 30 * 24 - self.seq_len, 12 * 30 * 24 + 4 * 30 * 24 - self.seq_len]
+        border2s = [12 * 30 * 24, 12 * 30 * 24 + 4 * 30 * 24, 12 * 30 * 24 + 8 * 30 * 24]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
@@ -146,13 +141,8 @@ class Dataset_ETT_minute(Dataset):
         df_raw = pd.read_csv(os.path.join(self.root_path,
                                           self.data_path))
 
-        n = len(df_raw)
-        num_val   = int(n * 0.1)
-        num_test  = int(n * 0.1)
-        num_train = n - num_val - num_test
-        # Strict splits — same boundary logic as ForcastingDataPullerDescrete
-        border1s = [0,          num_train,            num_train + num_val]
-        border2s = [num_train,  num_train + num_val,  n]
+        border1s = [0, 12 * 30 * 24 * 4 - self.seq_len, 12 * 30 * 24 * 4 + 4 * 30 * 24 * 4 - self.seq_len]
+        border2s = [12 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 4 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 8 * 30 * 24 * 4]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
@@ -212,8 +202,8 @@ class Dataset_Custom(Dataset):
     def __init__(self, root_path, split='train', size=None,
                  features='S', data_path='ETTh1.csv',
                  target='OT', scale=True, timeenc=0, freq='h',
-                 time_col_name='date', use_time_features=False, 
-                 train_split=0.8, test_split=0.1
+                 time_col_name='date', use_time_features=False,
+                 train_split=0.7, test_split=0.2
                  ):
         # size [seq_len, label_len, pred_len]
         # info
@@ -257,13 +247,12 @@ class Dataset_Custom(Dataset):
         #cols.remove(self.target) if self.target
         #cols.remove(self.time_col_name)
         #df_raw = df_raw[[self.time_col_name] + cols + [self.target]]
-        
+
         num_train = int(len(df_raw) * self.train_split)
         num_test = int(len(df_raw) * self.test_split)
         num_vali = len(df_raw) - num_train - num_test
-        # Strict splits — same boundary logic as ForcastingDataPullerDescrete
-        border1s = [0,          num_train,            num_train + num_vali]
-        border2s = [num_train,  num_train + num_vali,  len(df_raw)]
+        border1s = [0, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
+        border2s = [num_train, num_train + num_vali, len(df_raw)]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
@@ -315,7 +304,7 @@ class Dataset_Custom(Dataset):
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
-    
+
 
 class Dataset_Pred(Dataset):
     def __init__(self, root_path, split='pred', size=None,
