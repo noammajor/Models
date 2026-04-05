@@ -140,15 +140,14 @@ def run_jepa(train_dl, test_dl, ckpt_path, pred_len, patch_size, seq_len,
     num_patches = seq_len // patch_size
 
     encoder = Encoder(
-        patch_size=patch_size,
         num_patches=num_patches,
+        dim_in=patch_size,
         embed_dim=embed_dim,
-        n_heads=cfg["nhead"],
+        nhead=cfg["nhead"],
         num_layers=cfg["num_encoder_layers"],
         mlp_ratio=cfg["mlp_ratio"],
         drop_rate=cfg["drop_rate"],
         attn_drop_rate=cfg["attn_drop_rate"],
-        kernel_size=cfg["kernel_size"],
     ).to(device)
 
     if os.path.exists(ckpt_path):
