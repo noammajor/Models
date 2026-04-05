@@ -156,9 +156,18 @@ class DataPullerForecastingTrain():
             test_len  = int(n * 0.2)
             val_len   = n - train_len - test_len
 
-        train_np = data[:train_len,  self.var_indices]
-        val_np   = data[train_len : train_len + val_len, self.var_indices]
-        test_np  = data[train_len + val_len :,           self.var_indices]
+        seq_len  = self.window_size
+        border1s = [0,
+                    train_len - seq_len,
+                    train_len + val_len - seq_len]
+        border2s = [train_len,
+                    train_len + val_len,
+                    train_len + val_len + test_len]
+
+        split_map = {'train': 0, 'val': 1, 'test': 2}
+        train_np = data[border1s[0] : border2s[0], self.var_indices]
+        val_np   = data[border1s[1] : border2s[1], self.var_indices]
+        test_np  = data[border1s[2] : border2s[2], self.var_indices]
 
         # Fit StandardScaler on training columns only
         self.scaler = StandardScaler()
@@ -238,9 +247,17 @@ class DataPullerForecastingTesting(Dataset):
             test_len  = int(n * 0.2)
             val_len   = n - train_len - test_len
 
-        train_np = data[:train_len,  self.var_indices]
-        val_np   = data[train_len : train_len + val_len, self.var_indices]
-        test_np  = data[train_len + val_len :,           self.var_indices]
+        seq_len  = self.window_size
+        border1s = [0,
+                    train_len - seq_len,
+                    train_len + val_len - seq_len]
+        border2s = [train_len,
+                    train_len + val_len,
+                    train_len + val_len + test_len]
+
+        train_np = data[border1s[0] : border2s[0], self.var_indices]
+        val_np   = data[border1s[1] : border2s[1], self.var_indices]
+        test_np  = data[border1s[2] : border2s[2], self.var_indices]
 
         # Use the scaler from the training dataset if provided; otherwise fit a new one.
         # Always fit on train split so val/test are scaled with the same statistics.

@@ -320,15 +320,17 @@ class ForcastingDataPullerDescrete(Dataset):
             train_portion = df.iloc[:train_len][input_vars].values
             self.scaler.fit(train_portion)
             df_scaled = self.scaler.transform(df[input_vars].values)
-            print(f"--- Normalization Checkaaaaaaaa ({self.which}) ---")
-            print(f"Mean (should be ~0): {df_scaled.mean().item():.6f}")
-            print(f"Std  (should be ~1): {df_scaled.std().item():.6f}")
-            print(f"Min: {df_scaled.min().item():.6f}")
-            print(f"Max: {df_scaled.max().item():.6f}")
-            print("HHHHh")
-            #df_tensor = torch.tensor(df[input_vars].values).float()
             df_tensor = torch.tensor(df_scaled).float()
-            train_df, val_df, test_df = torch.split(df_tensor, [train_len, val_len, test_len])
+            seq_len = self.context_raw_len
+            border1s = [0,
+                        train_len - seq_len,
+                        train_len + val_len - seq_len]
+            border2s = [train_len,
+                        train_len + val_len,
+                        train_len + val_len + test_len]
+            train_df = df_tensor[border1s[0] : border2s[0]]
+            val_df   = df_tensor[border1s[1] : border2s[1]]
+            test_df  = df_tensor[border1s[2] : border2s[2]]
             self.Train_Val_Test_splits['train'].append(train_df)
             self.Train_Val_Test_splits['val'].append(val_df)
             self.Train_Val_Test_splits['test'].append(test_df)

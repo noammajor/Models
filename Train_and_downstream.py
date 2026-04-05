@@ -168,7 +168,9 @@ def run_dino(skip_train: bool = False,
              forecast_dataset: str = None,
              pred_lens=None,
              checkpoints=None,
-             pretrain_only: bool = False):
+             pretrain_only: bool = False,
+             encoder_layers: int = None,
+             predictor_layers: int = None):
     dino_dir = Path(__file__).parent / "TSDiNO"
     _add_path(dino_dir)
 
@@ -179,6 +181,9 @@ def run_dino(skip_train: bool = False,
         pred_lens = [96, 192, 336, 720]
 
     dino_cfg = dict(dino_cfg)
+    if encoder_layers is not None:
+        dino_cfg['n_layers'] = encoder_layers
+        dino_cfg['output_dir'] = dino_cfg.get('output_dir', './checkpoints').rstrip('/') + f'_layers{encoder_layers}'
     pretrain_source = _resolve_pretrain_source(dino_cfg)
     use_global_data = pretrain_source is not None
 
@@ -302,7 +307,9 @@ def run_jepa(skip_train: bool = False,
              forecast_dataset: str = None,
              pretrain_only: bool = False,
              pred_lens=None,
-             checkpoints=None):
+             checkpoints=None,
+             encoder_layers: int = None,
+             predictor_layers: int = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -317,6 +324,11 @@ def run_jepa(skip_train: bool = False,
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     config = dict(config)
+    if encoder_layers is not None:
+        config['num_encoder_layers'] = encoder_layers
+        config['path_save'] = config.get('path_save', './output_model/DiscreteJEPA/').rstrip('/') + f'_layers{encoder_layers}/'
+    if predictor_layers is not None:
+        config['predictor_num_layers'] = predictor_layers
 
     # Single-dataset pipeline: force same dataset for pretrain and forecast,
     # disable Monash, and align split fractions so test never leaks into training.
@@ -721,7 +733,9 @@ def run_jepa_simple(skip_train: bool = False,
                     forecast_dataset: str = None,
                     pred_lens=None,
                     checkpoints=None,
-                    pretrain_only: bool = False):
+                    pretrain_only: bool = False,
+                    encoder_layers: int = None,
+                    predictor_layers: int = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -738,6 +752,11 @@ def run_jepa_simple(skip_train: bool = False,
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     config = dict(_mod.config)
+    if encoder_layers is not None:
+        config['num_encoder_layers'] = encoder_layers
+        config['path_save'] = config.get('path_save', './output_model/JEPA/').rstrip('/') + f'_layers{encoder_layers}/'
+    if predictor_layers is not None:
+        config['predictor_num_layers'] = predictor_layers
 
     from data_loaders.data_puller import (DataPullerDJepa, ForcastingDataPullerDescrete,
                                           MonashDataPullerJEPA, SyntheticArrowDataPullerJEPA)
@@ -930,7 +949,8 @@ def run_jepa_simple(skip_train: bool = False,
 
 def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
                  pretrain_only: bool = False, pred_len: int = None, checkpoints=None,
-                 random_encoder: bool = False):
+                 random_encoder: bool = False, encoder_layers: int = None,
+                 predictor_layers: int = None):
     patchtst_dir = Path(__file__).parent / "PatchTST_self_supervised"
 
     import importlib.util
@@ -939,6 +959,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     cfg = dict(_mod.config)
+    if encoder_layers is not None:
+        cfg['n_layers'] = encoder_layers
 
     pretrain_source = _resolve_pretrain_source(cfg)
     _pretrain_dset  = pretrain_dataset or cfg.get("pretrain_dataset", "ettm1")
@@ -1080,7 +1102,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
 # ── NPT (NTP pretraining on PatchTST) ─────────────────────────────────────────
 
 def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
-            pretrain_only: bool = False, pred_len: int = None, checkpoints=None):
+            pretrain_only: bool = False, pred_len: int = None, checkpoints=None,
+            encoder_layers: int = None, predictor_layers: int = None):
     npt_dir = Path(__file__).parent / "NPT"
     _add_path(npt_dir)
 
@@ -1089,6 +1112,8 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     _mod  = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     cfg = dict(_mod.config)
+    if encoder_layers is not None:
+        cfg['n_layers'] = encoder_layers
 
     _pretrain_source = _resolve_pretrain_source(cfg)
     _pretrain_dset   = pretrain_dataset or cfg.get("pretrain_dataset", "monash")
@@ -1164,7 +1189,9 @@ def run_lejepa(skip_train: bool = False,
                forecast_dataset: str = None,
                pretrain_only: bool = False,
                pred_lens=None,
-               checkpoints=None):
+               checkpoints=None,
+               encoder_layers: int = None,
+               predictor_layers: int = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -1180,6 +1207,9 @@ def run_lejepa(skip_train: bool = False,
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     config = dict(_mod.config)
+    if encoder_layers is not None:
+        config['num_encoder_layers'] = encoder_layers
+        config['path_save'] = config.get('path_save', './output_model/LE-JEPA/').rstrip('/') + f'_layers{encoder_layers}/'
 
     from data_loaders.data_puller import (DataPullerDJepa, ForcastingDataPullerDescrete,
                                           MonashDataPullerJEPA, SyntheticArrowDataPullerJEPA)
@@ -1409,7 +1439,9 @@ def run(model: str, skip_train: bool = False,
         pred_lens=None,
         checkpoints=None,
         pretrain_only: bool = False,
-        pred_len: int = None):
+        pred_len: int = None,
+        encoder_layers: int = None,
+        predictor_layers: int = None):
     """
     Call this directly from a notebook:
 
@@ -1436,10 +1468,12 @@ def run(model: str, skip_train: bool = False,
     kwargs = dict(skip_train=skip_train,
                   pretrain_dataset=pretrain_dataset,
                   forecast_dataset=forecast_dataset)
-    if 'pretrain_only' in sig.parameters: kwargs['pretrain_only'] = pretrain_only
-    if 'pred_lens'     in sig.parameters: kwargs['pred_lens']     = pred_lens
-    if 'checkpoints'   in sig.parameters: kwargs['checkpoints']   = checkpoints
-    if 'pred_len'      in sig.parameters: kwargs['pred_len']      = pred_len
+    if 'pretrain_only'    in sig.parameters: kwargs['pretrain_only']    = pretrain_only
+    if 'pred_lens'        in sig.parameters: kwargs['pred_lens']        = pred_lens
+    if 'checkpoints'      in sig.parameters: kwargs['checkpoints']      = checkpoints
+    if 'pred_len'         in sig.parameters: kwargs['pred_len']         = pred_len
+    if 'encoder_layers'   in sig.parameters: kwargs['encoder_layers']   = encoder_layers
+    if 'predictor_layers' in sig.parameters: kwargs['predictor_layers'] = predictor_layers
     return runner(**kwargs)
 
 
@@ -1471,9 +1505,15 @@ if __name__ == "__main__":
         choices=["true", "false"],
         help="Run pretraining only, skip downstream evaluation (true | false)",
     )
+    parser.add_argument("--encoder_layers",   type=int, default=None,
+                        help="Override number of encoder transformer layers")
+    parser.add_argument("--predictor_layers", type=int, default=None,
+                        help="Override number of predictor layers (JEPA models only)")
     args = parser.parse_args()
     run(model=args.model,
         skip_train=args.skip_train.lower() == "true",
         pretrain_dataset=args.pretrain_dataset,
         forecast_dataset=args.forecast_dataset,
-        pretrain_only=args.pretrain_only.lower() == "true")
+        pretrain_only=args.pretrain_only.lower() == "true",
+        encoder_layers=args.encoder_layers,
+        predictor_layers=args.predictor_layers)
