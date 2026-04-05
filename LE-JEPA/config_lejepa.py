@@ -78,7 +78,7 @@ config = {
     "patch_size_forcasting": 16,
     "patches_to_forcast": 6,
     "patches_size_forecasting": 16,
-    "lr_forcasting": 1e-4,
+    "lr_forcasting": 1e-3,
     "affine_revin": True,
     "input_variables_forcasting": [
         ["HUFL", "HULL", "MUFL", "MULL", "LUFL", "LULL", "OT"],
