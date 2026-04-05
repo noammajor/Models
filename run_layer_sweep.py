@@ -33,7 +33,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.resolve()
 
-LAYER_CONFIGS = [2, 6, 12, 24]
+LAYER_CONFIGS = [2, 4,8, 12, 24]
+#2, 4, 8, 12, 24
+
 
 # Model → GPU assignment (change to fit your server)
 MODEL_GPU = {
