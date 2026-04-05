@@ -725,9 +725,7 @@ def test_run(args):
         step_size=1
         )
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam([
-        {'params': model.head.parameters(), 'lr': 1e-3}
-    ])
+    optimizer = torch.optim.Adam(model.head.parameters(), lr=args.lr_forecasting, weight_decay=1e-4)
     model = model.to(device)
     if args.path_num != 0:
         path = os.path.join(args.output_dir, f'checkpoint{args.path_num}.pth')
@@ -759,39 +757,28 @@ def test_run(args):
             print(f"  Loaded {len(new_state_dict)} / {len(model_state)} weights")
             print(f"  Missing (new head): {len(missing)}  |  Unexpected (DINO head): {len(unexpected)}")
 
-    # learning rate scheduler
-    # warmup_epochs must be < epochs_forecasting; use 1 epoch of warmup (10% of default 10 epochs)
-    _forecasting_warmup = max(1, args.epochs_forecasting // 10)
-    lr_schedule = utils.cosine_scheduler(
-        args.lr_forecasting* (args.batch_size_per_gpu * utils.get_world_size()) / 256.,
-        args.min_lr_forecasting,
-        args.epochs_forecasting,
-        len(data_loader_forecasting_train),
-        warmup_epochs=_forecasting_warmup,
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer, max_lr=args.lr_forecasting,
+        total_steps=args.epochs_forecasting * len(data_loader_forecasting_train),
+        pct_start=0.3, anneal_strategy='cos',
     )
     for param in model.backbone.parameters():
         param.requires_grad = False
 
-    it_global = 0 
     for epoch in range(args.epochs_forecasting):
         model.train()
         for it, batch in enumerate(data_loader_forecasting_train):
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = lr_schedule[it_global]
-            
             samples, labels = batch
             samples = samples.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
             outputs = model(samples)
             loss = criterion(outputs, labels)
-            
+
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.head.parameters(), max_norm=1.0)  # Increased from 0.10
-            #torch.nn.utils.clip_grad_norm_(model.backbone.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(model.head.parameters(), max_norm=1.0)
             optimizer.step()
-            
-            it_global += 1 # Increment global counter
+            scheduler.step()
             
             #if it % 10 == 0:
                 #print(f'Epoch {epoch} iter {it} loss: {loss.item():.6f} lr: {optimizer.param_groups[0]["lr"]:.8f}')
