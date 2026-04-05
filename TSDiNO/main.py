@@ -711,11 +711,12 @@ def test_run(args):
     )
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    _forecast_num_patch = _SEQ_LEN // args.patch_len   # 336 // 16 = 21
     model = PatchTST(
         c_in= args.c_in,
         target_dim=args.pred_len,
         patch_len=args.patch_len,
-        num_patch=args.num_patches,
+        num_patch=_forecast_num_patch,
         n_layers=args.n_layers,
         n_heads=args.n_heads,
         d_model=args.embed_dim,
