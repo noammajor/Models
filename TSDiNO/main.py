@@ -670,14 +670,28 @@ class DataAugmentationDino:
 #----Test run -----
 def test_run(args):
     utils.init_distributed_mode(args)
-    dataset_forecasting_train = dpuller.DataPullerForecastingTrain(
-        data_dir=args.data_path_forecast_training,
-        split='train',
-        batch_size=args.num_patches,
-        patch_size=args.patch_len,
-        pred_len = args.pred_len,
-        var_list=args.parms_for_training_forecasting
-    )
+
+    # ── PatchTST-identical data loading ──────────────────────────────────────
+    _SEQ_LEN = 336   # 21 patches × 16 = same as PatchTST linear-probe context
+    _patchtst_dir = str(Path(__file__).parent.parent / "PatchTST_self_supervised")
+    if _patchtst_dir not in sys.path:
+        sys.path.insert(0, _patchtst_dir)
+    from src.data.pred_dataset import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom
+
+    _csv_path = args.data_path_forecast_training
+    _root = os.path.dirname(os.path.abspath(_csv_path))
+    _fname = os.path.basename(_csv_path)
+    _size = [_SEQ_LEN, 0, args.pred_len]
+    if 'etth' in _fname.lower():
+        _DS_CLS = Dataset_ETT_hour
+    elif 'ettm' in _fname.lower():
+        _DS_CLS = Dataset_ETT_minute
+    else:
+        _DS_CLS = Dataset_Custom
+
+    dataset_forecasting_train = _DS_CLS(_root, split='train', size=_size, features='M', data_path=_fname)
+    dataset_forecasting_test  = _DS_CLS(_root, split='test',  size=_size, features='M', data_path=_fname)
+
     _is_distributed = utils.is_dist_avail_and_initialized()
     data_loader_forecasting_train = torch.utils.data.DataLoader(
         dataset_forecasting_train,
@@ -686,15 +700,6 @@ def test_run(args):
         num_workers=args.num_workers,
         pin_memory=True,
         drop_last=False,
-    )
-    dataset_forecasting_test = dpuller.DataPullerForecastingTesting(
-        data_dir=args.data_path_forecast_test,
-        split='test',
-        batch_size=args.num_patches,
-        patch_size=args.patch_len,
-        pred_len = args.pred_len,
-        var_list=args.parms_for_testing_forecasting,
-        scaler=dataset_forecasting_train.scaler,
     )
     data_loader_forecasting_test = torch.utils.data.DataLoader(
         dataset_forecasting_test,

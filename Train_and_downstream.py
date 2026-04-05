@@ -759,7 +759,8 @@ def run_jepa_simple(skip_train: bool = False,
         config['predictor_num_layers'] = predictor_layers
 
     from data_loaders.data_puller import (DataPullerDJepa, ForcastingDataPullerDescrete,
-                                          MonashDataPullerJEPA, SyntheticArrowDataPullerJEPA)
+                                          MonashDataPullerJEPA, SyntheticArrowDataPullerJEPA,
+                                          PatchTSTForcastingAdapter)
     from JEPA.Jepa import JEPA
 
     # Single-dataset pipeline: align splits so test never leaks into training.
@@ -868,15 +869,26 @@ def run_jepa_simple(skip_train: bool = False,
         input_dim       = len(train_loader.dataset[0][0][0])
         num_patches     = len(train_loader.dataset[0][0])
 
+    # Use PatchTST-identical data: seq_len=336 (21 patches × 16)
+    _PATCHTST_SEQ_LEN = 336
+    _ctx_patches = _PATCHTST_SEQ_LEN // config["patch_size_forcasting"]   # = 21
+    config["forecasting_context_patches"] = _ctx_patches
+
     if pretrain_only:
         train_loader_fc = val_loader_fc = test_loader_fc = None
     else:
-        forecasting_data = ForcastingDataPullerDescrete(config)
-        val_fc   = copy.copy(forecasting_data); val_fc.which  = "val";  val_fc.rebuild()
-        test_fc  = copy.copy(forecasting_data); test_fc.which = "test"; test_fc.rebuild()
-        train_loader_fc = torch.utils.data.DataLoader(forecasting_data, batch_size=config["batch_size"], shuffle=True)
-        val_loader_fc   = torch.utils.data.DataLoader(val_fc,           batch_size=config["batch_size"], shuffle=True)
-        test_loader_fc  = torch.utils.data.DataLoader(test_fc,          batch_size=config["batch_size"], shuffle=False)
+        _csv = config["path_data_forcasting"][0]
+        _p_s = config["patch_size_forcasting"]
+        _pl0 = pred_lens[0] if pred_lens else 96
+        train_loader_fc = torch.utils.data.DataLoader(
+            PatchTSTForcastingAdapter(_csv, 'train', _PATCHTST_SEQ_LEN, _pl0, _p_s),
+            batch_size=config["batch_size"], shuffle=True)
+        val_loader_fc = torch.utils.data.DataLoader(
+            PatchTSTForcastingAdapter(_csv, 'val',   _PATCHTST_SEQ_LEN, _pl0, _p_s),
+            batch_size=config["batch_size"], shuffle=False)
+        test_loader_fc = torch.utils.data.DataLoader(
+            PatchTSTForcastingAdapter(_csv, 'test',  _PATCHTST_SEQ_LEN, _pl0, _p_s),
+            batch_size=config["batch_size"], shuffle=False)
 
     # ── model ─────────────────────────────────────────────────────────────────
     model = JEPA(
@@ -904,26 +916,23 @@ def run_jepa_simple(skip_train: bool = False,
         return
 
     # ── forecasting downstream ────────────────────────────────────────────────
-    # Patch datasets in-place per pred_len (no CSV re-read).  Test split only used for eval.
     ckpts = checkpoints if checkpoints is not None else [80, 120, 160, 200, 240, 300]
     p_s = config["patch_size_forcasting"]
+    _csv = config["path_data_forcasting"][0]
     best_ckpt = None
     best_mse  = float('inf')
 
     for pred_len in pred_lens:
         h_t = pred_len // p_s
-        for ds in [forecasting_data, val_fc, test_fc]:
-            ds.h = h_t
-            ds.target_raw_len = h_t * p_s
-        train_loader_fc = torch.utils.data.DataLoader(
-            forecasting_data, batch_size=config["batch_size"], shuffle=True)
-        val_loader_fc   = torch.utils.data.DataLoader(
-            val_fc,           batch_size=config["batch_size"], shuffle=True)
-        test_loader_fc  = torch.utils.data.DataLoader(
-            test_fc,          batch_size=config["batch_size"], shuffle=False)
-        model.forcast_train = train_loader_fc
-        model.forcast_val   = val_loader_fc
-        model.forcast_test  = test_loader_fc
+        model.forcast_train = torch.utils.data.DataLoader(
+            PatchTSTForcastingAdapter(_csv, 'train', _PATCHTST_SEQ_LEN, pred_len, p_s),
+            batch_size=config["batch_size"], shuffle=True)
+        model.forcast_val = torch.utils.data.DataLoader(
+            PatchTSTForcastingAdapter(_csv, 'val',   _PATCHTST_SEQ_LEN, pred_len, p_s),
+            batch_size=config["batch_size"], shuffle=False)
+        model.forcast_test = torch.utils.data.DataLoader(
+            PatchTSTForcastingAdapter(_csv, 'test',  _PATCHTST_SEQ_LEN, pred_len, p_s),
+            batch_size=config["batch_size"], shuffle=False)
         model.config["horizon_t"] = h_t
 
         is_search = (pred_len == pred_lens[0])
@@ -1211,8 +1220,8 @@ def run_lejepa(skip_train: bool = False,
         config['num_encoder_layers'] = encoder_layers
         config['path_save'] = config.get('path_save', './output_model/LE-JEPA/').rstrip('/') + f'_layers{encoder_layers}/'
 
-    from data_loaders.data_puller import (DataPullerDJepa, ForcastingDataPullerDescrete,
-                                          MonashDataPullerJEPA, SyntheticArrowDataPullerJEPA)
+    from data_loaders.data_puller import (DataPullerDJepa, MonashDataPullerJEPA,
+                                          SyntheticArrowDataPullerJEPA, PatchTSTForcastingAdapter)
     from LeJepa import LeJEPA
 
     forecast_dataset = forecast_dataset or config.get('forecast_dataset')
@@ -1351,26 +1360,29 @@ def run_lejepa(skip_train: bool = False,
         return
 
     # ── forecasting downstream ─────────────────────────────────────────────────
-    config["ratio_patches"] = config.get("context_t", config["ratio_patches"])
-    fore_data = ForcastingDataPullerDescrete(config)
-    val_fc    = copy.copy(fore_data); val_fc.which  = "val";  val_fc.rebuild()
-    test_fc   = copy.copy(fore_data); test_fc.which = "test"; test_fc.rebuild()
+    # Use PatchTST-identical data: seq_len=336 (21 patches × 16)
+    _PATCHTST_SEQ_LEN = 336
+    p_s  = config["patch_size_forcasting"]
+    _ctx_patches = _PATCHTST_SEQ_LEN // p_s   # = 21
+    config["forecasting_context_patches"] = _ctx_patches
+    _csv = config["path_data_forcasting"][0]
 
-    p_s       = config["patch_size_forcasting"]
     best_mse  = float('inf')
     best_ckpt = None
     ckpts     = checkpoints if checkpoints is not None else list(range(config["num_epochs"]))
 
     for pred_len in pred_lens:
         h_t = pred_len // p_s
-        for ds in [fore_data, val_fc, test_fc]:
-            ds.h = h_t
-            ds.target_raw_len = h_t * p_s
-
-        model.forcast_train   = torch.utils.data.DataLoader(fore_data, batch_size=config["batch_size"], shuffle=True,  num_workers=0)
-        model.forcast_val     = torch.utils.data.DataLoader(val_fc,    batch_size=config["batch_size"], shuffle=False, num_workers=0)
-        model.forcast_test    = torch.utils.data.DataLoader(test_fc,   batch_size=config["batch_size"], shuffle=False, num_workers=0)
-        model.config["horizon_t"]    = h_t
+        model.forcast_train = torch.utils.data.DataLoader(
+            PatchTSTForcastingAdapter(_csv, 'train', _PATCHTST_SEQ_LEN, pred_len, p_s),
+            batch_size=config["batch_size"], shuffle=True,  num_workers=0)
+        model.forcast_val   = torch.utils.data.DataLoader(
+            PatchTSTForcastingAdapter(_csv, 'val',   _PATCHTST_SEQ_LEN, pred_len, p_s),
+            batch_size=config["batch_size"], shuffle=False, num_workers=0)
+        model.forcast_test  = torch.utils.data.DataLoader(
+            PatchTSTForcastingAdapter(_csv, 'test',  _PATCHTST_SEQ_LEN, pred_len, p_s),
+            batch_size=config["batch_size"], shuffle=False, num_workers=0)
+        model.config["horizon_t"] = h_t
 
         is_search    = (pred_len == pred_lens[0])
         ckpts_to_run = ckpts if is_search else [best_ckpt if best_ckpt is not None else ckpts[-1]]

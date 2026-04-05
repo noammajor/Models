@@ -41,7 +41,7 @@ def forcasting_zeroshot(self, path):
         p.requires_grad = False
 
     embed_dim   = config["encoder_embed_dim"]
-    num_patches = config["ratio_patches"]
+    num_patches = config.get("forecasting_context_patches", config["ratio_patches"])
     h_t         = config["horizon_t"]
     P_L         = config["patch_size_forcasting"]
     n_v         = len(config["input_variables_forcasting"][0])

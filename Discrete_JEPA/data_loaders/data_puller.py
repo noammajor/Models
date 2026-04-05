@@ -134,6 +134,59 @@ class DataPullerDJepa(Dataset):
         self.epochs_completed += 1
         return patches_tensor, context_idx.squeeze(0), target_idx.squeeze(0)
 
+
+# ── PatchTST-identical forecasting adapter ────────────────────────────────────
+
+class PatchTSTForcastingAdapter(Dataset):
+    """
+    Wraps PatchTST's Dataset_ETT_hour / Dataset_ETT_minute / Dataset_Custom
+    and reshapes (seq_x, seq_y) → (context_patches, target_patches).
+
+    All split borders, normalization, and sliding windows are 100% identical
+    to PatchTST's linear-probe setup.
+
+    seq_x  [seq_len, n_vars]   →  context_patches [context_size, patch_size, n_vars]
+    seq_y  [pred_len, n_vars]  →  target_patches  [h, patch_size, n_vars]
+
+    Requires seq_len % patch_size == 0 and pred_len % patch_size == 0.
+    """
+
+    def __init__(self, csv_path: str, split: str, seq_len: int, pred_len: int, patch_size: int):
+        from pathlib import Path as _Path
+        _patchtst_dir = str(_Path(__file__).parent.parent.parent / "PatchTST_self_supervised")
+        if _patchtst_dir not in sys.path:
+            sys.path.insert(0, _patchtst_dir)
+        from src.data.pred_dataset import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom
+
+        assert seq_len  % patch_size == 0, f"seq_len={seq_len} not divisible by patch_size={patch_size}"
+        assert pred_len % patch_size == 0, f"pred_len={pred_len} not divisible by patch_size={patch_size}"
+
+        self.patch_size   = patch_size
+        self.context_size = seq_len  // patch_size
+        self.h            = pred_len // patch_size
+
+        root      = os.path.dirname(os.path.abspath(csv_path))
+        fname     = os.path.basename(csv_path)
+        fname_low = fname.lower()
+        size      = [seq_len, 0, pred_len]  # label_len=0: target immediately follows context
+
+        if 'etth' in fname_low:
+            self._ds = Dataset_ETT_hour(root, split=split, size=size, features='M', data_path=fname)
+        elif 'ettm' in fname_low:
+            self._ds = Dataset_ETT_minute(root, split=split, size=size, features='M', data_path=fname)
+        else:
+            self._ds = Dataset_Custom(root, split=split, size=size, features='M', data_path=fname)
+
+    def __len__(self):
+        return len(self._ds)
+
+    def __getitem__(self, idx):
+        seq_x, seq_y = self._ds[idx]                                 # [seq_len, n_vars], [pred_len, n_vars]
+        ctx = seq_x.reshape(self.context_size, self.patch_size, -1)  # [context_size, patch_size, n_vars]
+        tgt = seq_y.reshape(self.h,            self.patch_size, -1)  # [h, patch_size, n_vars]
+        return ctx, tgt
+
+
 class ForcastingDataPuller(Dataset):
     def __init__(self,config, which='train'):
         self.patch_size = config["patch_size_forcasting"]

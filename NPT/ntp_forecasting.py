@@ -38,7 +38,7 @@ for _p in [_NPT_DIR, _ROOT_DIR, _DJEPA_DIR]:
         sys.path.insert(0, _p)
 
 from models.patchTST import PatchTST
-from data_loaders.data_puller import ForcastingDataPullerDescrete
+from data_loaders.data_puller import ForcastingDataPullerDescrete, PatchTSTForcastingAdapter
 
 
 # ── model factory ─────────────────────────────────────────────────────────────
@@ -124,10 +124,14 @@ def zeroshot_forecasting(config, checkpoint_path):
     print(f"  horizon={horizon_t} patches × {patch_size} = {forecast_len} steps")
     print(f"  head lr={lr_head}  epochs={epochs_head}\n")
 
-    # ── data loaders ──────────────────────────────────────────────────────────
-    train_fc = ForcastingDataPullerDescrete(fore_cfg, which="train")
-    val_fc   = copy.copy(train_fc); val_fc.which = "val";   val_fc.rebuild()
-    test_fc  = copy.copy(train_fc); test_fc.which = "test"; test_fc.rebuild()
+    # ── data loaders (PatchTST-identical splits/normalization) ───────────────
+    _seq_len  = context_patches * patch_size   # = 21 * 16 = 336
+    _pred_len = horizon_t * patch_size
+    _csv_path = fore_cfg["path_data_forcasting"][0]
+
+    train_fc = PatchTSTForcastingAdapter(_csv_path, 'train', _seq_len, _pred_len, patch_size)
+    val_fc   = PatchTSTForcastingAdapter(_csv_path, 'val',   _seq_len, _pred_len, patch_size)
+    test_fc  = PatchTSTForcastingAdapter(_csv_path, 'test',  _seq_len, _pred_len, patch_size)
 
     train_loader = torch.utils.data.DataLoader(
         train_fc, batch_size=batch_size, shuffle=True,
