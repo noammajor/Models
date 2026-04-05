@@ -72,7 +72,7 @@ config = {
     "synthetic_data_dir": "/home/shared/datasets/synthetic",  # dir containing .arrow files
 
     # ── Forecasting downstream ────────────────────────────────────────────────
-    "epoch_t": 70,
+    "epoch_t": 20,
     "context_t": 21,
     "horizon_t": 6,
     "patch_size_forcasting": 16,

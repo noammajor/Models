@@ -54,11 +54,15 @@ def forcasting_zeroshot(self, path):
         forecast_len = h_t * P_L,
     ).to(self.device)
 
-    optimizer = torch.optim.SGD(
+    optimizer = torch.optim.Adam(
         forecast_head.parameters(),
-        lr           = config.get("lr_forcasting", 1e-3),
-        momentum     = 0.9,
+        lr           = config.get("lr_forcasting", 1e-4),
         weight_decay = 1e-4,
+    )
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer, max_lr=config.get("lr_forcasting", 1e-4),
+        total_steps=self.epoch_t * len(self.forcast_train),
+        pct_start=0.3, anneal_strategy='cos',
     )
 
     # ── Train linear head ─────────────────────────────────────────────────────
@@ -85,6 +89,7 @@ def forcasting_zeroshot(self, path):
             loss = F.mse_loss(pred, target_flat)
             loss.backward()
             optimizer.step()
+            scheduler.step()
             total_loss += loss.item()
 
         if epoch % 10 == 0:

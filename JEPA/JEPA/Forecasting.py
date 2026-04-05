@@ -47,11 +47,15 @@ def forcasting_zeroshot(self, path):
         ])
         '''
         
-        optimizer = torch.optim.SGD(
-            list(self.forecast_head_patch.parameters()),
-            lr=config["lr_forcasting"],
-            momentum=0.9,      
-            weight_decay=1e-4 
+        optimizer = torch.optim.Adam(
+            self.forecast_head_patch.parameters(),
+            lr=config.get("lr_forcasting", 1e-4),
+            weight_decay=1e-4,
+        )
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer, max_lr=config.get("lr_forcasting", 1e-4),
+            total_steps=self.epoch_t * len(self.forcast_train),
+            pct_start=0.3, anneal_strategy='cos',
         )
 
         for epoch in range(self.epoch_t):
@@ -77,6 +81,7 @@ def forcasting_zeroshot(self, path):
                 total_loss += loss.item()
                 loss.backward()
                 optimizer.step()
+                scheduler.step()
             if epoch % 10 == 0:
                 print(f"[{run_type}] Epoch: {epoch} - Loss: {total_loss/len(self.forcast_train):.4f}")
 

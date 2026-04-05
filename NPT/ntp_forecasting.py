@@ -162,9 +162,13 @@ def zeroshot_forecasting(config, checkpoint_path):
     print(f"  Backbone frozen. Head trainable params: {trainable:,}\n")
 
     # ── train prediction head ─────────────────────────────────────────────────
-    optimizer = torch.optim.AdamW(model.head.parameters(), lr=lr_head)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=epochs_head, eta_min=lr_head * 0.1)
+    lr_head = 1e-4
+    optimizer = torch.optim.Adam(model.head.parameters(), lr=lr_head, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer, max_lr=lr_head,
+        total_steps=epochs_head * len(train_loader),
+        pct_start=0.3, anneal_strategy='cos',
+    )
 
     best_val_loss = float("inf")
     best_state    = None
@@ -193,6 +197,7 @@ def zeroshot_forecasting(config, checkpoint_path):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            scheduler.step()
             train_losses.append(loss.item())
 
         # ── validation ────────────────────────────────────────────────────────
@@ -210,7 +215,6 @@ def zeroshot_forecasting(config, checkpoint_path):
 
         train_l = float(np.mean(train_losses))
         val_l   = float(np.mean(val_losses))
-        scheduler.step()
 
         if epoch % 5 == 0 or epoch == epochs_head - 1:
             print(f"  epoch {epoch+1:3d}/{epochs_head}  "

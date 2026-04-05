@@ -69,7 +69,7 @@ config = {
     "chunk_size": 128,
 
     # forecasting downstream
-    "epoch_t": 70,
+    "epoch_t": 20,
     "context_t": 21,
     "horizon_t":6,
     "input_variables_forcasting": [
