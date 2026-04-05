@@ -329,16 +329,17 @@ def forcasting_zeroshot(self, path):
 
                 target_flat = target_patch.reshape(B, h_t * P_L, n_v)
 
+                ctx_norm, ctx_mean, ctx_std = _instance_norm(context_patches)
                 with torch.no_grad():
-                    encoder_out = self.encoder_for(context_patches)
+                    encoder_out = self.encoder_for(ctx_norm)
                     encoder_patches  = encoder_out["data_patches"]         # [B*n_v, ctx, embed_dim]
                     encoder_semantic = encoder_out["quantized_semantic"]   # [B*n_v, S,   embed_dim]
                     _, encoder_semantic, _, _, _, _ = self.vector_quantizer(encoder_semantic)
                 # reshape to [B, n_v, embed_dim, num_patch/S]
                 enc_p = encoder_patches.reshape(B, n_v, num_patches, embed_dim).permute(0, 1, 3, 2)
-                pred_patch = self.forecast_head_patch(enc_p)  # [B, h_t*P_L, n_v]
-                enc_s = encoder_semantic.reshape(B, n_v, num_sem, embed_dim).permute(0, 1, 3, 2)  # [B, n_v, embed_dim, S]
-                pred_s2p = self.forecast_head_sem(enc_s)  # [B, h_t*P_L, n_v]
+                pred_patch = _instance_denorm(self.forecast_head_patch(enc_p), ctx_mean, ctx_std)
+                enc_s = encoder_semantic.reshape(B, n_v, num_sem, embed_dim).permute(0, 1, 3, 2)
+                pred_s2p = _instance_denorm(self.forecast_head_sem(enc_s), ctx_mean, ctx_std)
                 loss = F.mse_loss(pred_patch, target_flat) + F.mse_loss(pred_s2p, target_flat)
                 total_loss += loss.item()
                 loss.backward()
@@ -363,14 +364,15 @@ def forcasting_zeroshot(self, path):
                     context_patches = context_patches.unsqueeze(-1)
                 B, h_t, P_L, n_v = target_patch.shape
 
-                encoder_out = self.encoder_for(context_patches)
+                ctx_norm, ctx_mean, ctx_std = _instance_norm(context_patches)
+                encoder_out = self.encoder_for(ctx_norm)
                 encoder_patches  = encoder_out["data_patches"]
                 encoder_semantic = encoder_out["quantized_semantic"]
                 _, encoder_semantic, _, _, _, _ = self.vector_quantizer(encoder_semantic)
                 enc_p    = encoder_patches.reshape(B, n_v, num_patches, embed_dim).permute(0, 1, 3, 2)
-                pred_p2p= self.forecast_head_patch(enc_p)
-                enc_s = encoder_semantic.reshape(B, n_v, num_sem, embed_dim).permute(0, 1, 3, 2)  # [B, n_v, embed_dim, S]
-                pred_s2p = self.forecast_head_sem(enc_s)  # [B, h_t*P_L, n_v]
+                pred_p2p = _instance_denorm(self.forecast_head_patch(enc_p), ctx_mean, ctx_std)
+                enc_s    = encoder_semantic.reshape(B, n_v, num_sem, embed_dim).permute(0, 1, 3, 2)
+                pred_s2p = _instance_denorm(self.forecast_head_sem(enc_s), ctx_mean, ctx_std)
                 target_flat = target_patch.reshape(B, h_t * P_L, n_v)
 
                 mse_p2p_list.append(F.mse_loss(pred_p2p.cpu(), target_flat.cpu()).item())

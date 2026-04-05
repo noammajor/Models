@@ -41,6 +41,22 @@ from models.patchTST import PatchTST
 from data_loaders.data_puller import ForcastingDataPullerDescrete, PatchTSTForcastingAdapter
 
 
+def _instance_norm(x, eps=1e-6):
+    """Per-instance, per-variable normalization over the patch/time axes.
+    x: [B, n_patches, patch_size, n_vars]  →  returns (x_norm, mean, std)
+    mean/std shape: [B, 1, 1, n_vars]
+    """
+    mean = x.mean(dim=(1, 2), keepdim=True)
+    std  = x.std(dim=(1, 2),  keepdim=True) + eps
+    return (x - mean) / std, mean, std
+
+
+def _instance_denorm(x, mean, std):
+    """Reverse _instance_norm.  x: [B, *, n_vars],  mean/std: [B, 1, 1, n_vars]."""
+    shape = [mean.shape[0]] + [1] * (x.ndim - 2) + [mean.shape[-1]]
+    return x * std.reshape(shape) + mean.reshape(shape)
+
+
 # ── model factory ─────────────────────────────────────────────────────────────
 
 def _get_forecasting_model(config, c_in, forecast_len, device):
@@ -192,10 +208,11 @@ def zeroshot_forecasting(config, checkpoint_path):
             B, h, P_L, n_v = target_patch.shape
             target_flat = target_patch.reshape(B, h * P_L, n_v)  # [B, forecast_len, n_vars]
 
+            ctx_norm, ctx_mean, ctx_std = _instance_norm(context_patches)
             # PatchTST needs [B, num_patch, n_vars, patch_len]
-            x = context_patches.permute(0, 1, 3, 2)
+            x = ctx_norm.permute(0, 1, 3, 2)
 
-            pred = model(x)                              # [B, forecast_len, n_vars]
+            pred = _instance_denorm(model(x), ctx_mean, ctx_std)
             loss = F.mse_loss(pred, target_flat)
 
             optimizer.zero_grad()
@@ -213,8 +230,9 @@ def zeroshot_forecasting(config, checkpoint_path):
                 target_patch    = target_patch.float().to(device)
                 B, h, P_L, n_v = target_patch.shape
                 target_flat = target_patch.reshape(B, h * P_L, n_v)
-                x    = context_patches.permute(0, 1, 3, 2)
-                pred = model(x)
+                ctx_norm, ctx_mean, ctx_std = _instance_norm(context_patches)
+                x    = ctx_norm.permute(0, 1, 3, 2)
+                pred = _instance_denorm(model(x), ctx_mean, ctx_std)
                 val_losses.append(F.mse_loss(pred, target_flat).item())
 
         train_l = float(np.mean(train_losses))
@@ -243,8 +261,9 @@ def zeroshot_forecasting(config, checkpoint_path):
             target_patch    = target_patch.float().to(device)
             B, h, P_L, n_v = target_patch.shape
             target_flat = target_patch.reshape(B, h * P_L, n_v)
-            x    = context_patches.permute(0, 1, 3, 2)
-            pred = model(x)
+            ctx_norm, ctx_mean, ctx_std = _instance_norm(context_patches)
+            x    = ctx_norm.permute(0, 1, 3, 2)
+            pred = _instance_denorm(model(x), ctx_mean, ctx_std)
             all_preds.append(pred.cpu())
             all_targets.append(target_flat.cpu())
 

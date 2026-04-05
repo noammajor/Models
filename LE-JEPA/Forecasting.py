@@ -20,6 +20,19 @@ if _JEPA_DIR not in sys.path:
 from Decoder import PredictionHead
 
 
+def _instance_norm(x, eps=1e-6):
+    """Per-instance, per-variable normalization. x: [B, P, PL, n_vars]"""
+    mean = x.mean(dim=(1, 2), keepdim=True)
+    std  = x.std(dim=(1, 2),  keepdim=True) + eps
+    return (x - mean) / std, mean, std
+
+
+def _instance_denorm(x, mean, std):
+    """Reverse _instance_norm. x: [B, *, n_vars], mean/std: [B, 1, 1, n_vars]."""
+    shape = [mean.shape[0]] + [1] * (x.ndim - 2) + [mean.shape[-1]]
+    return x * std.reshape(shape) + mean.reshape(shape)
+
+
 def forcasting_zeroshot(self, path):
     """
     Linear-probe forecasting with frozen LE-JEPA encoder.
@@ -78,12 +91,13 @@ def forcasting_zeroshot(self, path):
             B, h, PL, n_v_b = target_patch.shape
 
             optimizer.zero_grad()
+            ctx_norm, ctx_mean, ctx_std = _instance_norm(context_patches)
             with torch.no_grad():
-                enc_out = self.encoder(context_patches)
+                enc_out = self.encoder(ctx_norm)
                 enc_patches = enc_out["data_patches"]          # [B*n_v, num_patches, D]
 
             enc_p = enc_patches.reshape(B, n_v_b, num_patches, embed_dim).permute(0, 1, 3, 2)
-            pred  = forecast_head(enc_p)                       # [B, h_t*P_L, n_v]
+            pred  = _instance_denorm(forecast_head(enc_p), ctx_mean, ctx_std)
             target_flat = target_patch.reshape(B, h * PL, n_v_b)
 
             loss = F.mse_loss(pred, target_flat)
@@ -107,10 +121,11 @@ def forcasting_zeroshot(self, path):
             target_patch    = target_patch.to(self.device)
 
             B, h, PL, n_v_b = target_patch.shape
-            enc_out     = self.encoder(context_patches)
+            ctx_norm, ctx_mean, ctx_std = _instance_norm(context_patches)
+            enc_out     = self.encoder(ctx_norm)
             enc_patches = enc_out["data_patches"]
             enc_p = enc_patches.reshape(B, n_v_b, num_patches, embed_dim).permute(0, 1, 3, 2)
-            pred  = forecast_head(enc_p)
+            pred  = _instance_denorm(forecast_head(enc_p), ctx_mean, ctx_std)
             target_flat = target_patch.reshape(B, h * PL, n_v_b)
 
             all_preds.append(pred.cpu())
