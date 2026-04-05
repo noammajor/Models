@@ -235,8 +235,7 @@ def zeroshot_forecasting(config, checkpoint_path):
 
     # ── test evaluation ───────────────────────────────────────────────────────
     model.eval()
-    mse_list, mae_list = [], []
-    last_batch = None
+    all_preds, all_targets = [], []
 
     with torch.no_grad():
         for context_patches, target_patch in test_loader:
@@ -246,32 +245,33 @@ def zeroshot_forecasting(config, checkpoint_path):
             target_flat = target_patch.reshape(B, h * P_L, n_v)
             x    = context_patches.permute(0, 1, 3, 2)
             pred = model(x)
-            mse_list.append(F.mse_loss(pred.cpu(), target_flat.cpu()).item())
-            mae_list.append(F.l1_loss(pred.cpu(),  target_flat.cpu()).item())
-            last_batch = (pred.cpu(), target_flat.cpu())
+            all_preds.append(pred.cpu())
+            all_targets.append(target_flat.cpu())
 
-    if not mse_list:
+    if not all_preds:
         print("WARNING: test set is empty — skipping evaluation.")
         return None, None
 
-    mse = float(np.mean(mse_list))
-    mae = float(np.mean(mae_list))
+    all_preds   = torch.cat(all_preds,   dim=0)
+    all_targets = torch.cat(all_targets, dim=0)
+    mse = F.mse_loss(all_preds, all_targets).item()
+    mae = F.l1_loss(all_preds,  all_targets).item()
+    last_batch = (all_preds[-1:], all_targets[-1:])
     print(f"\n  [NPT Zero-Shot — {forecast_dset}]")
     print(f"  MSE : {mse:.4f}")
     print(f"  MAE : {mae:.4f}")
 
     # ── plots ─────────────────────────────────────────────────────────────────
-    pred_out, target_out = last_batch
+    pred_out, target_out = last_batch   # each [1, forecast_len, n_vars]
     pretrain_dset = config.get("pretrain_dataset", "monash")
     save_dir = os.path.join(
         _NPT_DIR, "saved_models", pretrain_dset, "ntp", "output_model")
     os.makedirs(save_dir, exist_ok=True)
 
-    sample   = 0
-    n_plot   = min(n_v, 3)   # plot up to 3 variables
+    n_plot = min(n_v, 3)   # plot up to 3 variables
     for var_idx in range(n_plot):
-        gt   = target_out[sample, :, var_idx].numpy()
-        pred = pred_out[sample, :, var_idx].numpy()
+        gt   = target_out[0, :, var_idx].numpy()
+        pred = pred_out[0, :, var_idx].numpy()
 
         plt.figure(figsize=(15, 5))
         plt.plot(gt,   label="Ground Truth", color="black", alpha=0.7, linewidth=2)

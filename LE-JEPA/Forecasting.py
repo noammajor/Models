@@ -97,7 +97,7 @@ def forcasting_zeroshot(self, path):
 
     # ── Evaluate on test set ──────────────────────────────────────────────────
     forecast_head.eval()
-    mse_list, mae_list = [], []
+    all_preds, all_targets = [], []
 
     with torch.no_grad():
         for context_patches, target_patch in self.forcast_test:
@@ -113,15 +113,17 @@ def forcasting_zeroshot(self, path):
             pred  = forecast_head(enc_p)
             target_flat = target_patch.reshape(B, h * PL, n_v_b)
 
-            mse_list.append(F.mse_loss(pred.cpu(), target_flat.cpu()).item())
-            mae_list.append(F.l1_loss(pred.cpu(),  target_flat.cpu()).item())
+            all_preds.append(pred.cpu())
+            all_targets.append(target_flat.cpu())
 
-    if not mse_list:
+    if not all_preds:
         print("WARNING: forcast_test is empty.")
         return None, None
 
-    mse = sum(mse_list) / len(mse_list)
-    mae = sum(mae_list) / len(mae_list)
+    all_preds   = torch.cat(all_preds,   dim=0)
+    all_targets = torch.cat(all_targets, dim=0)
+    mse = F.mse_loss(all_preds, all_targets).item()
+    mae = F.l1_loss(all_preds,  all_targets).item()
     print(f"  MSE: {mse:.4f}  MAE: {mae:.4f}")
 
     # Re-enable gradients for encoder (in case pretraining continues)

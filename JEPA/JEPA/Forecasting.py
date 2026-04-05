@@ -90,7 +90,7 @@ def forcasting_zeroshot(self, path):
         self.predictor_for.eval()
         self.forecast_head_patch.eval()
 
-        mse_p2p_list, mae_p2p_list = [], []
+        all_preds, all_targets = [], []
         last_batch = None  # keep last batch for plotting
 
         with torch.no_grad():
@@ -107,17 +107,18 @@ def forcasting_zeroshot(self, path):
                 enc_p = encoder_patches.reshape(B, n_v, num_patches, embed_dim).permute(0, 1, 3, 2)
                 pred_p2p = self.forecast_head_patch(enc_p)  # [B, h_t*P_L, n_v]
 
-
-                mse_p2p_list.append(F.mse_loss(pred_p2p.cpu(), target_flat_orig.cpu()).item())
-                mae_p2p_list.append(F.l1_loss(pred_p2p.cpu(),  target_flat_orig.cpu()).item())
+                all_preds.append(pred_p2p.cpu())
+                all_targets.append(target_flat_orig.cpu())
                 last_batch = (pred_p2p, target_flat_orig)
 
-        if not mse_p2p_list:
+        if not all_preds:
             print("WARNING: forcast_test is empty, skipping evaluation.")
             return
 
-        norm_lossP2P = sum(mse_p2p_list) / len(mse_p2p_list)
-        mae_lossP2P  = sum(mae_p2p_list) / len(mae_p2p_list)
+        all_preds   = torch.cat(all_preds,   dim=0)
+        all_targets = torch.cat(all_targets, dim=0)
+        norm_lossP2P = F.mse_loss(all_preds, all_targets).item()
+        mae_lossP2P  = F.l1_loss(all_preds,  all_targets).item()
         print(f"[{run_type}] MSE  — P2P: {norm_lossP2P:.4f}")
         print(f"[{run_type}] MAE  — P2P: {mae_lossP2P:.4f}")
 
