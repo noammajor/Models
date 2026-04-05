@@ -82,7 +82,7 @@ config = {
     "path_data_forcasting": ["./data/ETTh1.csv"],
     "patches_to_forcast": 8,
     "patches_size_forecasting": 16,
-    "lr_forcasting": 1e-3,
+    "lr_forcasting": 1e-4,
     "affine_revin": True,
 
     # ── Forecasting modes ─────────────────────────────────────────────────────
