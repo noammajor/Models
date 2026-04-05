@@ -873,7 +873,6 @@ def run_jepa_simple(skip_train: bool = False,
     _PATCHTST_SEQ_LEN = 336
     _ctx_patches = _PATCHTST_SEQ_LEN // config["patch_size_forcasting"]   # = 21
     config["forecasting_context_patches"] = _ctx_patches
-
     if pretrain_only:
         train_loader_fc = val_loader_fc = test_loader_fc = None
     else:
