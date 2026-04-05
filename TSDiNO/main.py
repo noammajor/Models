@@ -216,9 +216,10 @@ def train_TS_DINO(args):
         )
         combined_dataset = ConcatDataset([dataset1, dataset2])
 
+    _is_distributed = utils.is_dist_avail_and_initialized()
     data_loader = torch.utils.data.DataLoader(
         combined_dataset,
-        sampler = torch.utils.data.distributed.DistributedSampler(combined_dataset, shuffle=True),
+        sampler=torch.utils.data.distributed.DistributedSampler(combined_dataset, shuffle=True) if _is_distributed else torch.utils.data.RandomSampler(combined_dataset),
         batch_size=args.batch_size_per_gpu,
         num_workers=args.num_workers,
         pin_memory=True,
@@ -677,9 +678,10 @@ def test_run(args):
         pred_len = args.pred_len,
         var_list=args.parms_for_training_forecasting
     )
+    _is_distributed = utils.is_dist_avail_and_initialized()
     data_loader_forecasting_train = torch.utils.data.DataLoader(
         dataset_forecasting_train,
-        sampler = torch.utils.data.distributed.DistributedSampler(dataset_forecasting_train, shuffle=False),
+        sampler=torch.utils.data.distributed.DistributedSampler(dataset_forecasting_train, shuffle=False) if _is_distributed else torch.utils.data.SequentialSampler(dataset_forecasting_train),
         batch_size=args.batch_size_per_gpu,
         num_workers=args.num_workers,
         pin_memory=True,
@@ -696,7 +698,7 @@ def test_run(args):
     )
     data_loader_forecasting_test = torch.utils.data.DataLoader(
         dataset_forecasting_test,
-        sampler = torch.utils.data.distributed.DistributedSampler(dataset_forecasting_test, shuffle=False),
+        sampler=torch.utils.data.distributed.DistributedSampler(dataset_forecasting_test, shuffle=False) if _is_distributed else torch.utils.data.SequentialSampler(dataset_forecasting_test),
         batch_size=args.batch_size_per_gpu,
         num_workers=args.num_workers,
         pin_memory=True,
