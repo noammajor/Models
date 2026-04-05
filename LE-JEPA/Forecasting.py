@@ -54,10 +54,9 @@ def forcasting_zeroshot(self, path):
         forecast_len = h_t * P_L,
     ).to(self.device)
 
-    optimizer = torch.optim.SGD(
+    optimizer = torch.optim.AdamW(
         forecast_head.parameters(),
         lr           = config.get("lr_forcasting", 1e-3),
-        momentum     = 0.9,
         weight_decay = 1e-4,
     )
 
