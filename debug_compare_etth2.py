@@ -173,6 +173,15 @@ def run_jepa(train_dl, test_dl, ckpt_path, pred_len, patch_size, seq_len,
         total_steps=epochs * len(train_dl),
         pct_start=0.3, anneal_strategy='cos')
 
+    def _inst_norm(x, eps=1e-6):
+        mean = x.mean(dim=(1, 2), keepdim=True)
+        std  = x.std(dim=(1, 2),  keepdim=True) + eps
+        return (x - mean) / std, mean, std
+
+    def _inst_denorm(x, mean, std):
+        shape = [mean.shape[0]] + [1] * (x.ndim - 2) + [mean.shape[-1]]
+        return x * std.reshape(shape) + mean.reshape(shape)
+
     print(f"  [JEPA] training head for {epochs} epochs …")
     for ep in range(epochs):
         head.train()
@@ -182,11 +191,12 @@ def run_jepa(train_dl, test_dl, ckpt_path, pred_len, patch_size, seq_len,
             ctx = ctx.float().to(device); tgt = tgt.float().to(device)
             B, h, PL, nv = tgt.shape
             target_flat = tgt.reshape(B, h * PL, nv)
+            ctx_norm, ctx_mean, ctx_std = _inst_norm(ctx)
             with torch.no_grad():
-                enc_out = encoder(ctx)
+                enc_out = encoder(ctx_norm)
                 enc_p   = enc_out["data_patches"]                              # [B*nv, P, D]
             enc_p = enc_p.reshape(B, nv, num_patches, embed_dim).permute(0, 1, 3, 2)
-            pred  = head(enc_p)
+            pred  = _inst_denorm(head(enc_p), ctx_mean, ctx_std)
             loss  = F.mse_loss(pred, target_flat)
             opt.zero_grad(); loss.backward(); opt.step(); sched.step()
         if ep % 5 == 0 or ep == epochs - 1:
@@ -202,10 +212,11 @@ def run_jepa(train_dl, test_dl, ckpt_path, pred_len, patch_size, seq_len,
             ctx_d = ctx.float().to(device); tgt_d = tgt.float().to(device)
             B, h, PL, nv = tgt_d.shape
             target_flat = tgt_d.reshape(B, h * PL, nv)
-            enc_out = encoder(ctx_d)
+            ctx_norm, ctx_mean, ctx_std = _inst_norm(ctx_d)
+            enc_out = encoder(ctx_norm)
             enc_p   = enc_out["data_patches"]
             enc_p   = enc_p.reshape(B, nv, num_patches, embed_dim).permute(0, 1, 3, 2)
-            pred    = head(enc_p)
+            pred    = _inst_denorm(head(enc_p), ctx_mean, ctx_std)
             all_ctx.append(ctx.float()); all_tgt.append(target_flat.cpu()); all_pred.append(pred.cpu())
 
     return (torch.cat(all_ctx), torch.cat(all_tgt), torch.cat(all_pred))

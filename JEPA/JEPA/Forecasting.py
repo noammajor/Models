@@ -8,6 +8,12 @@ from JEPA.Decoder import LinearDecoder, PredictionHead
 from JEPA.Training import _instance_norm
 
 
+def _instance_denorm(x, mean, std):
+    """Reverse _instance_norm. x: [B, *, n_vars], mean/std: [B, 1, 1, n_vars]."""
+    shape = [mean.shape[0]] + [1] * (x.ndim - 2) + [mean.shape[-1]]
+    return x * std.reshape(shape) + mean.reshape(shape)
+
+
 def forcasting_zeroshot(self, path):
     """Non-autoregressive forecasting: slides real context forward, no prediction feedback.
     Runs TWICE: first with random encoder (baseline), then with trained encoder."""
@@ -70,12 +76,13 @@ def forcasting_zeroshot(self, path):
                 target_patch = target_patch.to(self.device)
                 B, h_t, P_L, n_v = target_patch.shape  # [B, h, P_L, n_v]
                 optimizer.zero_grad()
+                ctx_norm, ctx_mean, ctx_std = _instance_norm(context_patches)
                 with torch.no_grad():
-                    encoder_out = self.encoder_for(context_patches)
+                    encoder_out = self.encoder_for(ctx_norm)
                     encoder_patches  = encoder_out["data_patches"]         # [B*n_v, ctx, embed_dim]
                 # reshape to [B, n_v, embed_dim, num_patch/S]
                 enc_p = encoder_patches.reshape(B, n_v, num_patches, embed_dim).permute(0, 1, 3, 2)
-                pred_patch = self.forecast_head_patch(enc_p)  # [B, h_t*P_L, n_v]
+                pred_patch = _instance_denorm(self.forecast_head_patch(enc_p), ctx_mean, ctx_std)
                 target_flat = target_patch.reshape(B, h_t * P_L, n_v)
                 loss = F.mse_loss(pred_patch, target_flat)
                 total_loss += loss.item()
@@ -102,10 +109,11 @@ def forcasting_zeroshot(self, path):
                 B, h_t, P_L, n_v = target_patch.shape
                 target_flat_orig = target_patch.reshape(B, h_t * P_L, n_v)
 
-                encoder_out = self.encoder_for(context_patches)
+                ctx_norm, ctx_mean, ctx_std = _instance_norm(context_patches)
+                encoder_out = self.encoder_for(ctx_norm)
                 encoder_patches  = encoder_out["data_patches"]
                 enc_p = encoder_patches.reshape(B, n_v, num_patches, embed_dim).permute(0, 1, 3, 2)
-                pred_p2p = self.forecast_head_patch(enc_p)  # [B, h_t*P_L, n_v]
+                pred_p2p = _instance_denorm(self.forecast_head_patch(enc_p), ctx_mean, ctx_std)
 
                 all_preds.append(pred_p2p.cpu())
                 all_targets.append(target_flat_orig.cpu())
