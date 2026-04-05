@@ -54,7 +54,7 @@ def predictor_layers_for(encoder_layers: int) -> int:
 
 
 def launch_model(model: str, encoder_layers: int, gpu: int,
-                 log_dir: Path, dry_run: bool) -> subprocess.Popen | None:
+                 log_dir: Path, dry_run: bool):
     pred_layers = predictor_layers_for(encoder_layers)
     log_path = log_dir / f"{model}_layers{encoder_layers}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
