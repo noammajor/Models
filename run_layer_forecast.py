@@ -218,6 +218,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     skip_train=True,
                     forecast_dataset=dataset,
                     pred_len=pred_len,
+                    encoder_layers=encoder_layers,
                 )
 
         except Exception as e:
@@ -324,20 +325,8 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
         print(f"\n--- {model} / layers={encoder_layers} / {dataset} ---")
 
         try:
-            if model == "patchtst_random":
-                mses = {}
-                for pl in PRED_LENS:
-                    if (model, encoder_layers, dataset, pl) in existing:
-                        continue
-                    mse = eval_checkpoint(model, dataset, pl, None, gpu,
-                                         log_base / f"layers{encoder_layers}" / model / dataset,
-                                         encoder_layers)
-                    if mse is not None:
-                        mses[pl] = mse
-                        print(f"    pred_len={pl}: MSE={mse:.4f}")
-            else:
-                mses = checkpoint_search(model, dataset, all_checkpoints,
-                                         gpu, log_base, encoder_layers)
+            mses = checkpoint_search(model, dataset, all_checkpoints,
+                                     gpu, log_base, encoder_layers)
         except Exception as e:
             print(f"  [ERROR] {model}/layers{encoder_layers}/{dataset}: {e}")
             import traceback; traceback.print_exc()
@@ -417,19 +406,11 @@ def run_forecast_sweep(models: list, layer_configs: list,
         print(f"{'='*60}")
 
         procs = []
-        for model in layered_models:
+        for model in layered_models + random_models:
             gpu  = MODEL_GPU[model]
             proc = launch_worker(model, n_layers, gpu, datasets, log_dir, dry_run)
             if proc is not None:
                 procs.append(proc)
-
-        # Launch random baseline once alongside the first layer config
-        if n_layers == layer_configs[0]:
-            for model in random_models:
-                gpu  = MODEL_GPU[model]
-                proc = launch_worker(model, 0, gpu, datasets, log_dir, dry_run)
-                if proc is not None:
-                    procs.append(proc)
 
         if dry_run or not procs:
             continue

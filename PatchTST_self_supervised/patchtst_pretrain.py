@@ -154,11 +154,10 @@ def pretrain_func(lr=args.lr):
 
 
 if __name__ == '__main__':
-    
+
     args.dset = args.dset_pretrain
-    suggested_lr = find_lr()
     # Pretrain
-    pretrain_func(suggested_lr)
+    pretrain_func(args.lr)
     print('pretraining completed')
     
 

@@ -219,18 +219,24 @@ if __name__ == '__main__':
     if args.is_finetune:
         args.dset = args.dset_finetune
         # Finetune
-        suggested_lr = find_lr(head_type='prediction')        
-        finetune_func(suggested_lr)        
+        if args.random_encoder:
+            suggested_lr = args.lr
+        else:
+            suggested_lr = find_lr(head_type='prediction')
+        finetune_func(suggested_lr)
         print('finetune completed')
         # Test
-        out = test_func(args.save_path+args.save_finetuned_model)         
+        out = test_func(args.save_path+args.save_finetuned_model)
         print('----------- Complete! -----------')
 
     elif args.is_linear_probe:
         args.dset = args.dset_finetune
         # Finetune
-        suggested_lr = find_lr(head_type='prediction')        
-        linear_probe_func(suggested_lr)        
+        if args.random_encoder:
+            suggested_lr = args.lr
+        else:
+            suggested_lr = find_lr(head_type='prediction')
+        linear_probe_func(suggested_lr)
         print('finetune completed')
         # Test
         out = test_func(args.save_path+args.save_finetuned_model)        
