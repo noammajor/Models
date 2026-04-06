@@ -166,14 +166,17 @@ def _config_to_dino_args(cfg):
 def run_dino(skip_train: bool = False,
              pretrain_dataset: str = None,
              forecast_dataset: str = None,
+             classification_dataset=None,
              pred_lens=None,
              checkpoints=None,
              pretrain_only: bool = False,
              encoder_layers: int = None,
              predictor_layers: int = None,
              lr: float = None):
-    dino_dir = Path(__file__).parent / "TSDiNO"
+    dino_dir  = Path(__file__).parent / "TSDiNO"
+    djepa_dir = Path(__file__).parent / "Discrete_JEPA"
     _add_path(dino_dir)
+    _add_path(djepa_dir)
 
     from config import config as dino_cfg
     import main as dino_main
@@ -293,7 +296,27 @@ def run_dino(skip_train: bool = False,
             print(f"\n[DINO] Best checkpoint at pred_len={pred_lens[0]}: "
                   f"epoch {best_ckpt} (MSE={best_mse:.6f})")
 
-    return best_ckpt, best_mse
+    # ── classification downstream ─────────────────────────────────────────────
+    cls_acc = None
+    if classification_dataset is not None:
+        from data_loaders.data_puller import ClassificationDataPuller
+        cls_dir = dino_cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
+        cls_bs  = dino_cfg.get("batch_size_classification", 64)
+        p_s     = args.patch_len
+        _mk = lambda split: torch.utils.data.DataLoader(
+            ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
+            batch_size=cls_bs, shuffle=(split == "train"))
+        cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
+        n_classes = cls_train.dataset.n_classes
+        args.path_num = best_ckpt if best_ckpt is not None else 0
+        cls_acc = dino_main.train_classification(
+            args, cls_train, cls_val, cls_test, n_classes)
+        print(f"\n{'='*60}")
+        print(f"  [DINO] Classification on {classification_dataset}")
+        print(f"  Test Accuracy: {cls_acc:.4f}")
+        print(f"{'='*60}")
+
+    return best_ckpt, best_mse, cls_acc
 
 
 # ── Discrete JEPA ─────────────────────────────────────────────────────────────
@@ -734,6 +757,7 @@ def run_jepa2(skip_train: bool = False,
 def run_jepa_simple(skip_train: bool = False,
                     pretrain_dataset: str = None,
                     forecast_dataset: str = None,
+                    classification_dataset=None,
                     pred_lens=None,
                     checkpoints=None,
                     pretrain_only: bool = False,
@@ -909,7 +933,7 @@ def run_jepa_simple(skip_train: bool = False,
         forcasting_test  = test_loader_fc,
     )
 
-    # ── pretraining ───────────────────────────────────────────────────────────
+    # ── pretraining ──────���────────────────────────────────────────────────────
     if not skip_train:
         print("\n[JEPA] Starting pretraining …")
         model.train_and_evaluate()
@@ -956,16 +980,37 @@ def run_jepa_simple(skip_train: bool = False,
             print(f"\n[JEPA simple] Best checkpoint at pred_len={pred_lens[0]}: "
                   f"epoch {best_ckpt} (mix MSE={best_mse:.4f})")
 
-    return best_ckpt, best_mse
+    # ── classification downstream ─────────────────────────────────────────────
+    cls_acc = None
+    if classification_dataset is not None:
+        from data_loaders.data_puller import ClassificationDataPuller
+        cls_dir  = config.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
+        cls_bs   = config.get("batch_size", 64)
+        p_s      = config["patch_size_forcasting"]
+        _mk = lambda split: torch.utils.data.DataLoader(
+            ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
+            batch_size=cls_bs, shuffle=(split == "train"))
+        cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
+        n_classes = cls_train.dataset.n_classes
+        ckpt_tag  = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
+        cls_acc   = model.classification_zeroshot(ckpt_tag, cls_train, cls_val, cls_test, n_classes)
+        print(f"\n{'='*60}")
+        print(f"  [JEPA simple] Classification on {classification_dataset}")
+        print(f"  Test Accuracy: {cls_acc:.4f}")
+        print(f"{'='*60}")
+
+    return best_ckpt, best_mse, cls_acc
 
 
 # ── PatchTST ──────────────────────────────────────────────────────────────────
 
 def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
-                 pretrain_only: bool = False, pred_len: int = None, checkpoints=None,
-                 random_encoder: bool = False, encoder_layers: int = None,
+                 classification_dataset=None, pretrain_only: bool = False, pred_len: int = None,
+                 checkpoints=None, random_encoder: bool = False, encoder_layers: int = None,
                  predictor_layers: int = None, lr: float = None):
     patchtst_dir = Path(__file__).parent / "PatchTST_self_supervised"
+    djepa_dir    = Path(__file__).parent / "Discrete_JEPA"
+    _add_path(djepa_dir)
 
     import importlib.util
     _spec = importlib.util.spec_from_file_location(
@@ -1106,20 +1151,42 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         "masked_patchtst", cfg.get("model_type", "based_model"),
         f"*_tw{_target_points}_*_acc.csv"
     ))
+    mse_val = None
     if acc_files:
         import pandas as _pd
         acc = _pd.read_csv(sorted(acc_files)[-1])
         mse_val = float(acc["mse"].iloc[0])
         print(f"[PatchTST] MSE on {_forecast_dset}: {mse_val:.4f}")
-        return mse_val
-    return None
+
+    # ── classification downstream ─────────────────────────────────────────────
+    cls_acc = None
+    if classification_dataset is not None:
+        sys.path.insert(0, patchtst_dir)
+        from patchtst_classification import classification_zeroshot as ptst_classify
+        from data_loaders.data_puller import ClassificationDataPuller
+        cls_dir = cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
+        cls_bs  = cfg.get("batch_size", 64)
+        p_s     = cfg.get("patch_len", 16)
+        _mk = lambda split: torch.utils.data.DataLoader(
+            ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
+            batch_size=cls_bs, shuffle=(split == "train"))
+        cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
+        n_classes = cls_train.dataset.n_classes
+        cls_acc = ptst_classify(cfg, pretrained_model_path, cls_train, cls_val, cls_test, n_classes)
+        print(f"\n{'='*60}")
+        print(f"  [PatchTST] Classification on {classification_dataset}")
+        print(f"  Test Accuracy: {cls_acc:.4f}")
+        print(f"{'='*60}")
+
+    return mse_val, cls_acc
 
 
 # ── NPT (NTP pretraining on PatchTST) ─────────────────────────────────────────
 
 def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
-            pretrain_only: bool = False, pred_len: int = None, checkpoints=None,
-            encoder_layers: int = None, predictor_layers: int = None, lr: float = None):
+            classification_dataset=None, pretrain_only: bool = False, pred_len: int = None,
+            checkpoints=None, encoder_layers: int = None, predictor_layers: int = None,
+            lr: float = None):
     npt_dir = Path(__file__).parent / "NPT"
     _add_path(npt_dir)
 
@@ -1181,6 +1248,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     else:
         print("[NPT] Skipping pretraining.")
 
+    mse_trained = None
     if _forecast_dset:
         if pred_len is not None:
             cfg["horizon_t"] = pred_len // cfg["patch_size"]
@@ -1194,10 +1262,29 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
             print(f"  {'':20s}  {'MSE':>8}  {'MAE':>8}")
             print(f"  {'NPT (pretrained)':20s}  {mse_trained:8.4f}  {mae_trained:8.4f}")
             print(f"{'='*60}")
-        return mse_trained
     else:
         print("[NPT] No forecast_dataset set — skipping forecasting.")
-        return None
+
+    # ── classification downstream ─────────────────────────────────────────────
+    cls_acc = None
+    if classification_dataset is not None:
+        from ntp_classification import classification_zeroshot as npt_classify
+        from data_loaders.data_puller import ClassificationDataPuller
+        cls_dir = cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
+        cls_bs  = cfg.get("batch_size", 64)
+        p_s     = cfg["patch_size"]
+        _mk = lambda split: torch.utils.data.DataLoader(
+            ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
+            batch_size=cls_bs, shuffle=(split == "train"))
+        cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
+        n_classes = cls_train.dataset.n_classes
+        cls_acc = npt_classify(cfg, _ckpt_path, cls_train, cls_val, cls_test, n_classes)
+        print(f"\n{'='*60}")
+        print(f"  [NPT] Classification on {classification_dataset}")
+        print(f"  Test Accuracy: {cls_acc:.4f}")
+        print(f"{'='*60}")
+
+    return mse_trained, cls_acc
 
 
 # ── LE-JEPA ───────────────────────────────────────────────────────────────────
@@ -1205,6 +1292,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
 def run_lejepa(skip_train: bool = False,
                pretrain_dataset: str = None,
                forecast_dataset: str = None,
+               classification_dataset=None,
                pretrain_only: bool = False,
                pred_lens=None,
                checkpoints=None,
@@ -1413,7 +1501,26 @@ def run_lejepa(skip_train: bool = False,
             print(f"\n[LE-JEPA] Best checkpoint at pred_len={pred_lens[0]}: "
                   f"epoch {best_ckpt} (MSE={best_mse:.4f})")
 
-    return best_ckpt, best_mse
+    # ── classification downstream ─────────────────────────────────────────────
+    cls_acc = None
+    if classification_dataset is not None:
+        from data_loaders.data_puller import ClassificationDataPuller
+        cls_dir = config.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
+        cls_bs  = config.get("batch_size", 64)
+        p_s     = config["patch_size_forcasting"]
+        _mk = lambda split: torch.utils.data.DataLoader(
+            ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
+            batch_size=cls_bs, shuffle=(split == "train"))
+        cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
+        n_classes = cls_train.dataset.n_classes
+        ckpt_tag  = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
+        cls_acc   = model.classification_zeroshot(ckpt_tag, cls_train, cls_val, cls_test, n_classes)
+        print(f"\n{'='*60}")
+        print(f"  [LE-JEPA] Classification on {classification_dataset}")
+        print(f"  Test Accuracy: {cls_acc:.4f}")
+        print(f"{'='*60}")
+
+    return best_ckpt, best_mse, cls_acc
 
 
 # ── Random baseline ───────────────────────────────────────────────────────────
@@ -1456,10 +1563,13 @@ RUNNERS = {
     "random":          run_random,
 }
 
-def run(model: str, skip_train: bool = False,
+def run(model: str,
+        task: str = None,
+        skip_train: bool = False,
         dataset: str = None,
         pretrain_dataset: str = None,
         forecast_dataset: str = None,
+        classification_dataset=None,
         pred_lens=None,
         checkpoints=None,
         pretrain_only: bool = False,
@@ -1468,17 +1578,41 @@ def run(model: str, skip_train: bool = False,
         predictor_layers: int = None,
         lr: float = None):
     """
-    Call this directly from a notebook:
+    Unified entry point. Each run handles ONE task.
 
-        run(model="jepa",  dataset="etth1", skip_train=False)
-        run(model="dino",  dataset="etth1", pred_lens=[96, 192, 336, 720], skip_train=False)
-        run(model="patchtst", pretrain_dataset="ettm1", forecast_dataset="etth1")
+    task="pretrain"   — pretrain only (same as pretrain_only=True)
+    task="forecast"   — skip pretraining, run forecasting only (same as skip_train=True)
+    task="classify"   — skip pretraining, run classification only
 
-    dataset        — shorthand to use the same CSV for pretraining and forecasting.
-    pred_lens      — list of forecast horizons (default [96, 192, 336, 720]).
-    checkpoints    — list of checkpoint epochs to evaluate (model-specific default if None).
-    Available datasets: ettm1, etth1, etth2, ettm2, weather, electricity, traffic
+    Backwards compatible — old flags (skip_train, pretrain_only) still work when task=None.
+
+    Examples:
+        run(model="jepa_simple", task="pretrain")
+        run(model="jepa_simple", task="forecast", forecast_dataset="etth1", skip_train=True)
+        run(model="jepa_simple", task="classify",
+            classification_dataset="EthanolConcentration", skip_train=True)
+
+        # Old style still works:
+        run(model="jepa_simple", skip_train=False)
+        run(model="jepa_simple", pretrain_only=True)
     """
+    # ── resolve task → old flags (backwards compat) ───────────────────────────
+    if task is not None:
+        task = task.lower()
+        if task == "pretrain":
+            pretrain_only = True
+            skip_train    = False
+        elif task == "forecast":
+            skip_train    = True
+            pretrain_only = False
+            classification_dataset = None   # force no classification
+        elif task == "classify":
+            skip_train    = True
+            pretrain_only = False
+            forecast_dataset = None         # force no forecasting
+        else:
+            raise ValueError(f"Unknown task '{task}'. Choose: pretrain | forecast | classify")
+
     _set_seed()
     model = model.lower()
     if model not in RUNNERS:
@@ -1493,13 +1627,14 @@ def run(model: str, skip_train: bool = False,
     kwargs = dict(skip_train=skip_train,
                   pretrain_dataset=pretrain_dataset,
                   forecast_dataset=forecast_dataset)
-    if 'pretrain_only'    in sig.parameters: kwargs['pretrain_only']    = pretrain_only
-    if 'pred_lens'        in sig.parameters: kwargs['pred_lens']        = pred_lens
-    if 'checkpoints'      in sig.parameters: kwargs['checkpoints']      = checkpoints
-    if 'pred_len'         in sig.parameters: kwargs['pred_len']         = pred_len
-    if 'encoder_layers'   in sig.parameters: kwargs['encoder_layers']   = encoder_layers
-    if 'predictor_layers' in sig.parameters: kwargs['predictor_layers'] = predictor_layers
-    if 'lr'               in sig.parameters: kwargs['lr']               = lr
+    if 'pretrain_only'          in sig.parameters: kwargs['pretrain_only']          = pretrain_only
+    if 'pred_lens'              in sig.parameters: kwargs['pred_lens']              = pred_lens
+    if 'checkpoints'            in sig.parameters: kwargs['checkpoints']            = checkpoints
+    if 'pred_len'               in sig.parameters: kwargs['pred_len']               = pred_len
+    if 'encoder_layers'         in sig.parameters: kwargs['encoder_layers']         = encoder_layers
+    if 'predictor_layers'       in sig.parameters: kwargs['predictor_layers']       = predictor_layers
+    if 'lr'                     in sig.parameters: kwargs['lr']                     = lr
+    if 'classification_dataset' in sig.parameters: kwargs['classification_dataset'] = classification_dataset
     return runner(**kwargs)
 
 
@@ -1531,6 +1666,12 @@ if __name__ == "__main__":
         choices=["true", "false"],
         help="Run pretraining only, skip downstream evaluation (true | false)",
     )
+    parser.add_argument("--task", type=str, default=None,
+                        choices=["pretrain", "forecast", "classify"],
+                        help="Task to run: pretrain | forecast | classify. "
+                             "Overrides --skip_train / --pretrain_only when set.")
+    parser.add_argument("--classification_dataset", type=str, default=None,
+                        help="Dataset name for classification (subfolder under Classification_TS dir)")
     parser.add_argument("--encoder_layers",   type=int,   default=None,
                         help="Override number of encoder transformer layers")
     parser.add_argument("--predictor_layers", type=int,   default=None,
@@ -1539,10 +1680,12 @@ if __name__ == "__main__":
                         help="Override pretraining learning rate")
     args = parser.parse_args()
     run(model=args.model,
+        task=args.task,
         skip_train=args.skip_train.lower() == "true",
         pretrain_dataset=args.pretrain_dataset,
         forecast_dataset=args.forecast_dataset,
         pretrain_only=args.pretrain_only.lower() == "true",
+        classification_dataset=args.classification_dataset,
         encoder_layers=args.encoder_layers,
         predictor_layers=args.predictor_layers,
         lr=args.lr)

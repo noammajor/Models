@@ -11,6 +11,9 @@ from JEPA.Decoder import LinearDecoder
 from JEPA.Forecasting import (
     forcasting_zeroshot,
 )
+from JEPA.Classification import (
+    classification_zeroshot,
+)
 from JEPA.losses import (
     _calculate_vicreg_loss,
 )
@@ -151,7 +154,10 @@ class JEPA(nn.Module):
 JEPA._calculate_vicreg_loss       = _calculate_vicreg_loss
 
 # Bind forecasting methods from Forecasting.py as methods on the class
-JEPA.forcasting_zeroshot    = forcasting_zeroshot
+JEPA.forcasting_zeroshot      = forcasting_zeroshot
+
+# Bind classification methods from Classification.py as methods on the class
+JEPA.classification_zeroshot  = classification_zeroshot
 
 # Bind training methods from Training.py as methods on the class
 JEPA.compute_jepa_loss           = compute_jepa_loss

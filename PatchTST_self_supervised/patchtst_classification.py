@@ -1,0 +1,142 @@
+"""
+PatchTST linear-probe classification.
+
+Frozen pretrained PatchTST backbone + ClassificationHead trained on the
+classification split. Head: last patch → flatten(n_vars * d_model) → dropout
+→ linear → n_classes. Identical pattern to DINO/NPT ClassificationHead.
+"""
+
+import os
+import sys
+import torch
+import torch.nn.functional as F
+
+_DIR     = os.path.dirname(os.path.abspath(__file__))
+_ROOT    = os.path.dirname(_DIR)
+_DJEPA   = os.path.join(_ROOT, "Discrete_JEPA")
+
+for _p in [_DIR, _ROOT, _DJEPA]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from src.models.patchTST import PatchTST
+
+
+def classification_zeroshot(config, checkpoint_path, classification_train,
+                             classification_val, classification_test, n_classes):
+    """
+    Linear-probe classification with frozen PatchTST backbone.
+
+    Args:
+        config                : dict from config_patchtst.py
+        checkpoint_path       : path to pretrained .pth file
+        classification_train/val/test : DataLoaders from ClassificationDataPuller
+                                        each batch: (patches [B, P, PL, n_vars], labels [B])
+        n_classes             : total number of target classes
+    Returns:
+        test accuracy (float)
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    print(f"\n=== PatchTST Classification (linear probe) ===")
+    print(f"Loading checkpoint: {checkpoint_path}")
+
+    # Infer shape from first batch
+    sample_patches, _ = next(iter(classification_train))
+    num_patch = sample_patches.shape[1]   # [B, P, PL, n_vars]
+    n_v       = sample_patches.shape[-1]
+    patch_len = sample_patches.shape[2]
+
+    # Build model with classification head
+    model = PatchTST(
+        c_in         = n_v,
+        target_dim   = n_classes,
+        patch_len    = patch_len,
+        stride       = patch_len,
+        num_patch    = num_patch,
+        n_layers     = config.get("n_layers",  3),
+        n_heads      = config.get("n_heads",   16),
+        d_model      = config.get("d_model",   128),
+        shared_embedding = True,
+        d_ff         = config.get("d_ff",      512),
+        dropout      = config.get("dropout",   0.2),
+        head_dropout = config.get("head_dropout", 0.2),
+        act          = "gelu",
+        head_type    = "classification",
+        res_attention = False,
+    ).to(device)
+
+    # Load pretrained backbone weights (ignore head)
+    ckpt = torch.load(checkpoint_path, map_location="cpu")
+    state = ckpt.get("model", ckpt)
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    print(f"  Loaded backbone — missing: {len(missing)}, unexpected: {len(unexpected)}")
+
+    # Freeze backbone, train only head
+    for name, p in model.named_parameters():
+        p.requires_grad = ("head" in name)
+
+    n_epochs  = config.get("epoch_classification", 20)
+    optimizer = torch.optim.Adam(
+        [p for p in model.parameters() if p.requires_grad],
+        lr=config.get("lr_classification", 1e-3),
+        weight_decay=1e-4,
+    )
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer, max_lr=config.get("lr_classification", 1e-3),
+        total_steps=n_epochs * len(classification_train),
+        pct_start=0.3, anneal_strategy='cos',
+    )
+
+    best_val_acc = 0.0
+    best_state   = None
+
+    for epoch in range(n_epochs):
+        model.train()
+        correct, total = 0, 0
+        for patches, labels in classification_train:
+            # PatchTST expects [B, P, n_vars, PL]
+            x = patches.permute(0, 1, 3, 2).to(device)
+            labels = labels.to(device)
+            optimizer.zero_grad()
+            logits = model(x)
+            loss   = F.cross_entropy(logits, labels)
+            loss.backward()
+            optimizer.step()
+            scheduler.step()
+            correct += (logits.argmax(1) == labels).sum().item()
+            total   += len(labels)
+        train_acc = correct / total
+
+        # Validation
+        model.eval()
+        vc, vt = 0, 0
+        with torch.no_grad():
+            for patches, labels in classification_val:
+                x = patches.permute(0, 1, 3, 2).to(device)
+                labels = labels.to(device)
+                logits = model(x)
+                vc += (logits.argmax(1) == labels).sum().item()
+                vt += len(labels)
+        val_acc = vc / vt
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_state   = {k: v.clone() for k, v in model.state_dict().items()}
+        if epoch % 5 == 0:
+            print(f"  Epoch {epoch:3d} | train acc {train_acc:.4f} | val acc {val_acc:.4f}")
+
+    # Test with best checkpoint
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    model.eval()
+    tc, tt = 0, 0
+    with torch.no_grad():
+        for patches, labels in classification_test:
+            x = patches.permute(0, 1, 3, 2).to(device)
+            labels = labels.to(device)
+            logits = model(x)
+            tc += (logits.argmax(1) == labels).sum().item()
+            tt += len(labels)
+    test_acc = tc / tt
+    print(f"[PatchTST] Test Accuracy: {test_acc:.4f}  (best val: {best_val_acc:.4f})")
+    return test_acc

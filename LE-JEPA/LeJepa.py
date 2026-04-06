@@ -11,6 +11,7 @@ from Training import (
     train_and_evaluate,
 )
 from Forecasting import forcasting_zeroshot
+from Classification import classification_zeroshot
 
 
 class LeJEPA(nn.Module):
@@ -117,4 +118,5 @@ LeJEPA.compute_lejepa_loss = compute_lejepa_loss
 LeJEPA.evaluate            = evaluate
 LeJEPA.save_model          = save_model
 LeJEPA.train_and_evaluate  = train_and_evaluate
-LeJEPA.forcasting_zeroshot = forcasting_zeroshot
+LeJEPA.forcasting_zeroshot    = forcasting_zeroshot
+LeJEPA.classification_zeroshot = classification_zeroshot

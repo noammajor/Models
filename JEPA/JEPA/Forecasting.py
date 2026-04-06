@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import os
 import matplotlib.pyplot as plt
 from data_loaders.data_puller import ForcastingDataPullerDescrete
-from JEPA.Decoder import LinearDecoder, PredictionHead
+from JEPA.Decoder import LinearDecoder, PredictionHead, ClassificationHead
 from JEPA.Training import _instance_norm
 
 

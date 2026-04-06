@@ -653,3 +653,112 @@ class SyntheticArrowDataPullerJEPA(Dataset):
             num_blocks=self.num_blocks,
         )
         return patches_tensor, context_idx.squeeze(0), target_idx.squeeze(0)
+
+
+# ── Classification (UCR/UEA) ──────────────────────────────────────────────────
+
+class ClassificationDataPuller(Dataset):
+    """
+    Loads a pre-split classification dataset from:
+        {data_dir}/{dataset_name}/X_train.npy  [N, seq_len, n_vars]
+        {data_dir}/{dataset_name}/y_train.npy  [N]  (integer labels, 0-indexed)
+        {data_dir}/{dataset_name}/X_test.npy   [N, seq_len, n_vars]
+        {data_dir}/{dataset_name}/y_test.npy   [N]
+
+    Windows are patched into [n_patches, patch_size, n_vars] on the fly.
+
+    Args:
+        data_dir      : root dir, e.g. "/home/shared/datasets/Classification_TS"
+        dataset_name  : subdirectory name, e.g. "EthanolConcentration"
+        patch_size    : patch length (must divide seq_len evenly)
+        which         : "train" | "val" | "test"
+        val_fraction  : fraction of train split to use as val (default 0.1)
+    """
+
+    def __init__(self, data_dir: str, dataset_names, patch_size: int,
+                 which: str = "train", val_fraction: float = 0.1):
+        """
+        Args:
+            data_dir      : root dir, e.g. "/home/shared/datasets/Classification_TS"
+            dataset_names : str or list of str — one or more dataset subdirectories.
+                            All datasets are concatenated; labels are re-mapped per
+                            dataset so class indices are always 0-based and consistent.
+            patch_size    : patch length; seq_len is padded to a multiple of this.
+            which         : "train" | "val" | "test"
+            val_fraction  : fraction of train split used as val (default 0.1)
+        """
+        assert which in ("train", "val", "test")
+        self.patch_size = patch_size
+
+        if isinstance(dataset_names, str):
+            dataset_names = [dataset_names]
+
+        all_X, all_y = [], []
+        label_offset = 0
+
+        for dataset_name in dataset_names:
+            root = os.path.join(data_dir, dataset_name)
+            X_tr = np.load(os.path.join(root, "X_train.npy")).astype(np.float32)
+            y_tr = np.load(os.path.join(root, "y_train.npy")).astype(np.int64)
+            X_te = np.load(os.path.join(root, "X_test.npy")).astype(np.float32)
+            y_te = np.load(os.path.join(root, "y_test.npy")).astype(np.int64)
+
+            # 0-index labels within this dataset, then offset by accumulated classes
+            unique = np.unique(y_tr)
+            label_map = {v: i + label_offset for i, v in enumerate(sorted(unique))}
+            y_tr = np.array([label_map[v] for v in y_tr], dtype=np.int64)
+            y_te = np.array([label_map.get(v, v) for v in y_te], dtype=np.int64)
+            label_offset += len(unique)
+
+            # Fit StandardScaler on train set (per variable)
+            N, T, C = X_tr.shape
+            scaler = StandardScaler()
+            scaler.fit(X_tr.reshape(-1, C))
+            X_tr = scaler.transform(X_tr.reshape(-1, C)).reshape(N, T, C)
+            Nt, Tt, Ct = X_te.shape
+            X_te = scaler.transform(X_te.reshape(-1, Ct)).reshape(Nt, Tt, Ct)
+
+            # Train / val split per dataset
+            n_val   = max(1, int(len(X_tr) * val_fraction))
+            n_train = len(X_tr) - n_val
+
+            if which == "train":
+                all_X.append(X_tr[:n_train]); all_y.append(y_tr[:n_train])
+            elif which == "val":
+                all_X.append(X_tr[n_train:]); all_y.append(y_tr[n_train:])
+            else:
+                all_X.append(X_te);           all_y.append(y_te)
+
+        self.n_classes = label_offset
+
+        # Pad all arrays to the same seq_len (max across datasets, rounded up to patch_size)
+        max_T = max(x.shape[1] for x in all_X)
+        padded_T = int(np.ceil(max_T / patch_size)) * patch_size
+        padded = []
+        for x in all_X:
+            pad = padded_T - x.shape[1]
+            if pad > 0:
+                x = np.pad(x, ((0, 0), (0, pad), (0, 0)))
+            padded.append(x)
+
+        X_cat = np.concatenate(padded, axis=0)
+        y_cat = np.concatenate(all_y,  axis=0)
+
+        self.X = torch.tensor(X_cat)
+        self.y = torch.tensor(y_cat)
+        self.n_patches = padded_T // patch_size
+
+        names_str = ", ".join(dataset_names)
+        print(f"ClassificationDataPuller [{which}] ({names_str}): "
+              f"{len(self.X)} samples, {padded_T} timesteps → "
+              f"{self.n_patches} patches × {patch_size}, "
+              f"{X_cat.shape[2]} vars, {self.n_classes} classes")
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, idx):
+        # x: [seq_len, n_vars] → [n_patches, patch_size, n_vars]
+        x = self.X[idx]
+        patches = x.reshape(self.n_patches, self.patch_size, -1)
+        return patches, self.y[idx]
