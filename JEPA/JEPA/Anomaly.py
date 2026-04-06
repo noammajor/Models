@@ -1,0 +1,177 @@
+"""
+JEPA anomaly detection (reconstruction-based).
+
+Frozen pretrained target encoder + linear reconstruction decoder trained on
+normal data only. Anomaly score = per-timestep reconstruction MSE.
+Threshold = percentile of combined train+test energy.
+"""
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score
+
+from JEPA.Training import _instance_norm
+
+
+class _LinearReconDecoder(nn.Module):
+    """[B, P, embed_dim] → [B, T, n_vars]"""
+    def __init__(self, embed_dim: int, patch_size: int, n_vars: int):
+        super().__init__()
+        self.patch_size = patch_size
+        self.n_vars = n_vars
+        self.proj = nn.Linear(embed_dim, patch_size * n_vars)
+
+    def forward(self, z):
+        B, P, _ = z.shape
+        out = self.proj(z)
+        return out.reshape(B, P * self.patch_size, self.n_vars)
+
+
+def _adjustment(gt, pred):
+    anomaly_state = False
+    for i in range(len(gt)):
+        if gt[i] == 1 and pred[i] == 1 and not anomaly_state:
+            anomaly_state = True
+            for j in range(i, 0, -1):
+                if gt[j] == 0: break
+                if pred[j] == 0: pred[j] = 1
+            for j in range(i, len(gt)):
+                if gt[j] == 0: break
+                if pred[j] == 0: pred[j] = 1
+        elif gt[i] == 0:
+            anomaly_state = False
+        if anomaly_state:
+            pred[i] = 1
+    return gt, pred
+
+
+def anomaly_zeroshot(self, path, anomaly_train, anomaly_test,
+                     anomaly_ratio: float = 1.0):
+    """
+    Reconstruction-based anomaly detection with frozen JEPA encoder.
+
+    Args:
+        path          : checkpoint tag, e.g. "" or "_epoch50"
+        anomaly_train : DataLoader — batches of patches [B, P, patch_size, n_vars]
+        anomaly_test  : DataLoader — batches of (patches, labels [B, T])
+        anomaly_ratio : top-X% of combined energy flagged as anomaly
+    Returns:
+        dict with f1, precision, recall, accuracy, threshold
+    """
+    config          = self.config
+    checkpoint_path = f"{self.path_save}{path}best_model.pt"
+
+    print(f"\n=== JEPA Anomaly Detection ===")
+    print(f"Loading checkpoint: {checkpoint_path}")
+
+    ckpt = torch.load(checkpoint_path, map_location="cpu")
+    self.encoder_for.load_state_dict(ckpt["target_encoder"])
+    self.encoder_for.to(self.device)
+    self.encoder_for.eval()
+    for p in self.encoder_for.parameters():
+        p.requires_grad = False
+
+    embed_dim = config["encoder_embed_dim"]
+
+    # Infer shape from first batch
+    sample = next(iter(anomaly_train))
+    patches_sample = sample[0] if isinstance(sample, (list, tuple)) else sample
+    if patches_sample.dim() == 3:
+        patches_sample = patches_sample.unsqueeze(-1)
+    patch_size = patches_sample.shape[2]
+    n_vars     = patches_sample.shape[3]
+
+    decoder   = _LinearReconDecoder(embed_dim, patch_size, n_vars).to(self.device)
+    optimizer = torch.optim.Adam(decoder.parameters(),
+                                 lr=config.get("lr_anomaly", 1e-3))
+    n_epochs  = config.get("epoch_anomaly", 10)
+
+    def _encode(patches):
+        """patches [B, P, PL, C] → z [B, P, embed_dim]"""
+        if patches.dim() == 3:
+            patches = patches.unsqueeze(-1)
+        patches = patches.to(self.device)
+        B, P, PL, C = patches.shape
+        # JEPA encoder expects [B*C, P, PL]
+        x = patches.permute(0, 3, 1, 2).reshape(B * C, P, PL)
+        ctx_norm, _, _ = _instance_norm(x)
+        enc_out = self.encoder_for(ctx_norm)
+        z = enc_out["data_patches"]                       # [B*C, P, embed_dim]
+        return z.reshape(B, C, P, embed_dim).mean(dim=1)  # [B, P, embed_dim]
+
+    # ── (1) train decoder ────────────────────────────────────────────────────
+    print(f"  Training decoder ({n_epochs} epochs) …")
+    decoder.train()
+    for epoch in range(n_epochs):
+        total_loss = 0.0
+        for batch in anomaly_train:
+            patches = batch[0] if isinstance(batch, (list, tuple)) else batch
+            if patches.dim() == 3: patches = patches.unsqueeze(-1)
+            raw = patches.to(self.device)
+            B, P, PL, C = raw.shape
+            with torch.no_grad():
+                z = _encode(raw)
+            recon  = decoder(z)
+            target = raw.reshape(B, P * PL, C)
+            loss   = F.mse_loss(recon, target)
+            optimizer.zero_grad(); loss.backward(); optimizer.step()
+            total_loss += loss.item()
+        if epoch % max(1, n_epochs // 5) == 0:
+            print(f"    epoch {epoch:3d} | loss {total_loss/len(anomaly_train):.6f}")
+
+    # ── (2) train energy ─────────────────────────────────────────────────────
+    decoder.eval()
+    train_energy = []
+    with torch.no_grad():
+        for batch in anomaly_train:
+            patches = batch[0] if isinstance(batch, (list, tuple)) else batch
+            if patches.dim() == 3: patches = patches.unsqueeze(-1)
+            raw = patches.to(self.device)
+            B, P, PL, C = raw.shape
+            z      = _encode(raw)
+            recon  = decoder(z)
+            target = raw.reshape(B, P * PL, C)
+            score  = F.mse_loss(recon, target, reduction="none").mean(dim=-1)
+            train_energy.append(score.cpu().numpy())
+    train_energy = np.concatenate(train_energy).reshape(-1)
+
+    # ── (3) test energy ──────────────────────────────────────────────────────
+    test_energy, all_labels = [], []
+    with torch.no_grad():
+        for patches, labels in anomaly_test:
+            if patches.dim() == 3: patches = patches.unsqueeze(-1)
+            raw = patches.to(self.device)
+            B, P, PL, C = raw.shape
+            z      = _encode(raw)
+            recon  = decoder(z)
+            target = raw.reshape(B, P * PL, C)
+            score  = F.mse_loss(recon, target, reduction="none").mean(dim=-1)
+            test_energy.append(score.cpu().numpy())
+            all_labels.append(labels.numpy())
+    test_energy = np.concatenate(test_energy).reshape(-1)
+    gt          = np.concatenate(all_labels).reshape(-1).astype(int)
+
+    # ── (4) threshold & predict ───────────────────────────────────────────────
+    threshold = np.percentile(np.concatenate([train_energy, test_energy]),
+                              100 - anomaly_ratio)
+    pred = (test_energy > threshold).astype(int)
+
+    # ── (5) adjustment + metrics ──────────────────────────────────────────────
+    gt, pred = _adjustment(gt.copy(), pred.copy())
+    accuracy  = accuracy_score(gt, pred)
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        gt, pred, average="binary", zero_division=0)
+
+    print(f"\n{'='*60}")
+    print(f"  [JEPA] Anomaly Detection")
+    print(f"  Threshold: {threshold:.6f}  (top {anomaly_ratio}%)")
+    print(f"  Accuracy : {accuracy:.4f}")
+    print(f"  Precision: {precision:.4f}")
+    print(f"  Recall   : {recall:.4f}")
+    print(f"  F1       : {f1:.4f}")
+    print(f"{'='*60}\n")
+
+    return dict(f1=f1, precision=precision, recall=recall,
+                accuracy=accuracy, threshold=threshold)

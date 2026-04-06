@@ -14,6 +14,9 @@ from JEPA.Forecasting import (
 from JEPA.Classification import (
     classification_zeroshot,
 )
+from JEPA.Anomaly import (
+    anomaly_zeroshot,
+)
 from JEPA.losses import (
     _calculate_vicreg_loss,
 )
@@ -158,6 +161,9 @@ JEPA.forcasting_zeroshot      = forcasting_zeroshot
 
 # Bind classification methods from Classification.py as methods on the class
 JEPA.classification_zeroshot  = classification_zeroshot
+
+# Bind anomaly detection methods from Anomaly.py as methods on the class
+JEPA.anomaly_zeroshot         = anomaly_zeroshot
 
 # Bind training methods from Training.py as methods on the class
 JEPA.compute_jepa_loss           = compute_jepa_loss

@@ -657,38 +657,113 @@ class SyntheticArrowDataPullerJEPA(Dataset):
         return patches_tensor, context_idx.squeeze(0), target_idx.squeeze(0)
 
 
-# ── Classification (UCR/UEA) ──────────────────────────────────────────────────
+# ── Classification ────────────────────────────────────────────────────────────
+
+def _cls_load_dataset(root: Path, which: str, val_fraction: float):
+    """
+    Auto-detect dataset format and return (X [N,T,C] float32, y [N] int64).
+    StandardScaler is fit on the train split (per variable) and applied to all splits.
+
+    Supported formats
+    -----------------
+    1. Standard npy  : X_train.npy (N,T,C), y_train.npy (N,)
+                       X_test.npy  (N,T,C), y_test.npy  (N,)
+    2. Epilepsy npy  : train_d.npy (N,T,C), train_l.npy (N,)
+                       test_d.npy  (N,T,C), test_l.npy  (N,)
+    3. HAR pt        : train.pt, val.pt, test.pt
+                       each a dict {'samples': Tensor (N,C,T), 'labels': Tensor (N,)}
+    4. EEG pkl       : samples_train.pkl, samples_test.pkl
+                       each a list of (str_label, ndarray (T,C), int_label)
+    """
+    root = Path(root)
+    has_explicit_val = False
+
+    # ── Format 3: HAR (.pt dicts) ────────────────────────────────────────────
+    if (root / "train.pt").exists():
+        has_explicit_val = True
+        def _load_pt(p):
+            d = torch.load(p, map_location="cpu")
+            X = d["samples"].float().numpy()   # (N, C, T)
+            X = X.transpose(0, 2, 1)           # → (N, T, C)
+            y = d["labels"].long().numpy()
+            return X, y
+        X_tr, y_tr = _load_pt(root / "train.pt")
+        X_va, y_va = _load_pt(root / "val.pt")
+        X_te, y_te = _load_pt(root / "test.pt")
+
+    # ── Format 4: EEG (.pkl lists) ───────────────────────────────────────────
+    elif (root / "samples_train.pkl").exists():
+        def _load_pkl(p):
+            with open(p, "rb") as f:
+                samples = pickle.load(f)
+            X = np.stack([s[1] for s in samples], axis=0).astype(np.float32)  # (N,T,C)
+            y = np.array([s[2] for s in samples], dtype=np.int64)
+            return X, y
+        X_tr, y_tr = _load_pkl(root / "samples_train.pkl")
+        X_te, y_te = _load_pkl(root / "samples_test.pkl")
+
+    # ── Format 2: Epilepsy npy ───────────────────────────────────────────────
+    elif (root / "train_d.npy").exists():
+        X_tr = np.load(root / "train_d.npy").astype(np.float32)
+        y_tr = np.load(root / "train_l.npy").astype(np.int64)
+        X_te = np.load(root / "test_d.npy").astype(np.float32)
+        y_te = np.load(root / "test_l.npy").astype(np.int64)
+
+    # ── Format 1: Standard npy ───────────────────────────────────────────────
+    elif (root / "X_train.npy").exists():
+        X_tr = np.load(root / "X_train.npy").astype(np.float32)
+        y_tr = np.load(root / "y_train.npy").astype(np.int64)
+        X_te = np.load(root / "X_test.npy").astype(np.float32)
+        y_te = np.load(root / "y_test.npy").astype(np.int64)
+
+    else:
+        raise FileNotFoundError(
+            f"Cannot detect dataset format in {root}. "
+            "Expected one of: X_train.npy, train_d.npy, train.pt, samples_train.pkl")
+
+    # StandardScaler fit on train X (per variable) — applied to all splits
+    N, T, C = X_tr.shape
+    scaler = StandardScaler()
+    scaler.fit(X_tr.reshape(-1, C))
+    X_tr = scaler.transform(X_tr.reshape(-1, C)).reshape(N, T, C)
+    Nt, Tt, _ = X_te.shape
+    X_te = scaler.transform(X_te.reshape(-1, C)).reshape(Nt, Tt, C)
+
+    if has_explicit_val:
+        Nv, Tv, _ = X_va.shape
+        X_va = scaler.transform(X_va.reshape(-1, C)).reshape(Nv, Tv, C)
+    else:
+        n_val   = max(1, int(len(X_tr) * val_fraction))
+        n_train = len(X_tr) - n_val
+        X_va, y_va = X_tr[n_train:], y_tr[n_train:]
+        X_tr, y_tr = X_tr[:n_train], y_tr[:n_train]
+
+    if which == "train":
+        return X_tr, y_tr
+    elif which == "val":
+        return X_va, y_va
+    else:
+        return X_te, y_te
+
 
 class ClassificationDataPuller(Dataset):
     """
-    Loads a pre-split classification dataset from:
-        {data_dir}/{dataset_name}/X_train.npy  [N, seq_len, n_vars]
-        {data_dir}/{dataset_name}/y_train.npy  [N]  (integer labels, 0-indexed)
-        {data_dir}/{dataset_name}/X_test.npy   [N, seq_len, n_vars]
-        {data_dir}/{dataset_name}/y_test.npy   [N]
-
-    Windows are patched into [n_patches, patch_size, n_vars] on the fly.
+    Elastic classification dataset loader. Supports multiple datasets (concatenated
+    with re-mapped labels) and four file formats: standard npy, Epilepsy npy,
+    HAR .pt dicts, EEG .pkl lists. All splits are StandardScaler-normalised using
+    stats fit on the train split of each dataset.
 
     Args:
-        data_dir      : root dir, e.g. "/home/shared/datasets/Classification_TS"
-        dataset_name  : subdirectory name, e.g. "EthanolConcentration"
-        patch_size    : patch length (must divide seq_len evenly)
+        data_dir      : root directory containing dataset sub-folders
+                        (e.g. "/home/shared/datasets/Classification_TS")
+        dataset_names : str or list of str — dataset sub-folder names
+        patch_size    : patch length; seq_len is zero-padded to a multiple of this
         which         : "train" | "val" | "test"
-        val_fraction  : fraction of train split to use as val (default 0.1)
+        val_fraction  : fraction of train used as val for datasets without explicit val
     """
 
     def __init__(self, data_dir: str, dataset_names, patch_size: int,
                  which: str = "train", val_fraction: float = 0.1):
-        """
-        Args:
-            data_dir      : root dir, e.g. "/home/shared/datasets/Classification_TS"
-            dataset_names : str or list of str — one or more dataset subdirectories.
-                            All datasets are concatenated; labels are re-mapped per
-                            dataset so class indices are always 0-based and consistent.
-            patch_size    : patch length; seq_len is padded to a multiple of this.
-            which         : "train" | "val" | "test"
-            val_fraction  : fraction of train split used as val (default 0.1)
-        """
         assert which in ("train", "val", "test")
         self.patch_size = patch_size
 
@@ -699,44 +774,24 @@ class ClassificationDataPuller(Dataset):
         label_offset = 0
 
         for dataset_name in dataset_names:
-            root = os.path.join(data_dir, dataset_name)
-            X_tr = np.load(os.path.join(root, "X_train.npy")).astype(np.float32)
-            y_tr = np.load(os.path.join(root, "y_train.npy")).astype(np.int64)
-            X_te = np.load(os.path.join(root, "X_test.npy")).astype(np.float32)
-            y_te = np.load(os.path.join(root, "y_test.npy")).astype(np.int64)
+            root = Path(data_dir) / dataset_name
+            X, y = _cls_load_dataset(root, which, val_fraction)
 
             # 0-index labels within this dataset, then offset by accumulated classes
-            unique = np.unique(y_tr)
+            unique = np.unique(y)
             label_map = {v: i + label_offset for i, v in enumerate(sorted(unique))}
-            y_tr = np.array([label_map[v] for v in y_tr], dtype=np.int64)
-            y_te = np.array([label_map.get(v, v) for v in y_te], dtype=np.int64)
+            y = np.array([label_map[v] for v in y], dtype=np.int64)
             label_offset += len(unique)
 
-            # Fit StandardScaler on train set (per variable)
-            N, T, C = X_tr.shape
-            scaler = StandardScaler()
-            scaler.fit(X_tr.reshape(-1, C))
-            X_tr = scaler.transform(X_tr.reshape(-1, C)).reshape(N, T, C)
-            Nt, Tt, Ct = X_te.shape
-            X_te = scaler.transform(X_te.reshape(-1, Ct)).reshape(Nt, Tt, Ct)
-
-            # Train / val split per dataset
-            n_val   = max(1, int(len(X_tr) * val_fraction))
-            n_train = len(X_tr) - n_val
-
-            if which == "train":
-                all_X.append(X_tr[:n_train]); all_y.append(y_tr[:n_train])
-            elif which == "val":
-                all_X.append(X_tr[n_train:]); all_y.append(y_tr[n_train:])
-            else:
-                all_X.append(X_te);           all_y.append(y_te)
+            all_X.append(X)
+            all_y.append(y)
 
         self.n_classes = label_offset
 
-        # Pad all arrays to the same seq_len (max across datasets, rounded up to patch_size)
-        max_T = max(x.shape[1] for x in all_X)
+        # Pad all arrays to the same seq_len (max across datasets, rounded to patch_size)
+        max_T    = max(x.shape[1] for x in all_X)
         padded_T = int(np.ceil(max_T / patch_size)) * patch_size
-        padded = []
+        padded   = []
         for x in all_X:
             pad = padded_T - x.shape[1]
             if pad > 0:
@@ -746,8 +801,8 @@ class ClassificationDataPuller(Dataset):
         X_cat = np.concatenate(padded, axis=0)
         y_cat = np.concatenate(all_y,  axis=0)
 
-        self.X = torch.tensor(X_cat)
-        self.y = torch.tensor(y_cat)
+        self.X         = torch.tensor(X_cat)
+        self.y         = torch.tensor(y_cat)
         self.n_patches = padded_T // patch_size
 
         names_str = ", ".join(dataset_names)
@@ -760,7 +815,114 @@ class ClassificationDataPuller(Dataset):
         return len(self.X)
 
     def __getitem__(self, idx):
-        # x: [seq_len, n_vars] → [n_patches, patch_size, n_vars]
+        # [seq_len, n_vars] → [n_patches, patch_size, n_vars]
         x = self.X[idx]
         patches = x.reshape(self.n_patches, self.patch_size, -1)
         return patches, self.y[idx]
+
+
+# ── Anomaly Detection ─────────────────────────────────────────────────────────
+
+class AnomalyDataPuller(Dataset):
+    """
+    Loads a time-series anomaly detection dataset.
+
+    Stand-in path: /home/shared/datasets/Anomaly_TS/{dataset_name}/
+    Expected files (auto-detected):
+        train.npy          — [N, T, C]  float,  no labels (normal data only)
+        test.npy           — [N, T, C]  float
+        test_labels.npy    — [N, T]     int (0=normal, 1=anomaly)
+           or test_labels_processed.npy
+
+    All splits are StandardScaler-normalised using stats fit on the train split.
+    Windows are patched into [n_patches, patch_size, n_vars] on the fly.
+
+    Args:
+        data_dir   : root directory containing dataset sub-folders
+        dataset    : sub-folder name, e.g. "MSL"
+        patch_size : patch length; seq_len is zero-padded to a multiple of this
+        which      : "train" | "test"
+    """
+
+    def __init__(self, data_dir: str, dataset: str, patch_size: int, which: str = "train"):
+        assert which in ("train", "test")
+        root = Path(data_dir) / dataset
+
+        if not root.exists():
+            raise FileNotFoundError(
+                f"Anomaly dataset not found: {root}\n"
+                f"Place your dataset files under {root}/ and re-run.")
+
+        # ── load data ────────────────────────────────────────────────────────
+        X_tr = np.load(root / "train.npy", allow_pickle=True).astype(np.float32)
+        X_te = np.load(root / "test.npy",  allow_pickle=True).astype(np.float32)
+
+        # auto-detect label file name
+        for label_file in ("test_labels.npy", "test_labels_processed.npy",
+                           "test_label.npy", "labels_test.npy"):
+            if (root / label_file).exists():
+                labels = np.load(root / label_file, allow_pickle=True).astype(np.int64)
+                break
+        else:
+            raise FileNotFoundError(
+                f"No label file found in {root}. "
+                "Expected: test_labels.npy or test_labels_processed.npy")
+
+        # ensure [N, T, C] — swap if [N, C, T]
+        if X_tr.ndim == 2:
+            X_tr = X_tr[:, :, None]   # [N, T] → [N, T, 1]
+            X_te = X_te[:, :, None]
+        if X_tr.shape[1] < X_tr.shape[2]:
+            # likely [N, C, T] → transpose
+            X_tr = X_tr.transpose(0, 2, 1)
+            X_te = X_te.transpose(0, 2, 1)
+
+        # ── StandardScaler fit on train ──────────────────────────────────────
+        N, T, C = X_tr.shape
+        scaler = StandardScaler()
+        scaler.fit(X_tr.reshape(-1, C))
+        X_tr = scaler.transform(X_tr.reshape(-1, C)).reshape(N, T, C)
+        Nt, Tt, _ = X_te.shape
+        X_te = scaler.transform(X_te.reshape(-1, C)).reshape(Nt, Tt, C)
+
+        # ── pad to multiple of patch_size ────────────────────────────────────
+        padded_T = int(np.ceil(T / patch_size)) * patch_size
+        def _pad(x):
+            p = padded_T - x.shape[1]
+            return np.pad(x, ((0, 0), (0, p), (0, 0))) if p > 0 else x
+
+        X_tr = _pad(X_tr)
+        X_te = _pad(X_te)
+
+        # labels: [N, T] or [N*T] — keep per-timestep for scoring
+        # pad labels to same length
+        if labels.ndim == 1:
+            labels = labels.reshape(Nt, -1)
+        lp = padded_T - labels.shape[1]
+        if lp > 0:
+            labels = np.pad(labels, ((0, 0), (0, lp)))
+
+        self.patch_size = patch_size
+        self.n_patches  = padded_T // patch_size
+        self.n_vars     = C
+
+        if which == "train":
+            self.X      = torch.tensor(X_tr)
+            self.labels = None
+        else:
+            self.X      = torch.tensor(X_te)
+            self.labels = torch.tensor(labels)   # [N, T]
+
+        print(f"AnomalyDataPuller [{which}] ({dataset}): "
+              f"{len(self.X)} windows, {padded_T} timesteps → "
+              f"{self.n_patches} patches × {patch_size}, {C} vars")
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, idx):
+        # [T, C] → [n_patches, patch_size, C]
+        patches = self.X[idx].reshape(self.n_patches, self.patch_size, -1)
+        if self.labels is not None:
+            return patches, self.labels[idx]   # test: (patches, label_seq)
+        return patches                          # train: patches only

@@ -167,6 +167,7 @@ def run_dino(skip_train: bool = False,
              pretrain_dataset: str = None,
              forecast_dataset: str = None,
              classification_dataset=None,
+             anomaly_dataset: str = None,
              pred_lens=None,
              checkpoints=None,
              pretrain_only: bool = False,
@@ -334,7 +335,31 @@ def run_dino(skip_train: bool = False,
         print(f"  Test Accuracy: {cls_acc:.4f}")
         print(f"{'='*60}")
 
-    return best_ckpt, best_mse, cls_acc
+    # ── anomaly detection downstream ──────────────────────────────────────────
+    anom_result = None
+    if anomaly_dataset is not None:
+        import importlib.util as _ilu
+        _anom_spec = _ilu.spec_from_file_location("tsdino_anomaly", dino_dir / "Anomaly.py")
+        _anom_mod  = _ilu.module_from_spec(_anom_spec)
+        _anom_spec.loader.exec_module(_anom_mod)
+
+        from data_loaders.data_puller import AnomalyDataPuller
+        anom_dir = dino_cfg.get("anomaly_data_dir", "/home/shared/datasets/Anomaly_TS")
+        anom_bs  = dino_cfg.get("batch_size_anomaly", 64)
+        p_s      = args.patch_len
+        anom_train = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
+            batch_size=anom_bs, shuffle=False)
+        anom_test  = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
+            batch_size=anom_bs, shuffle=False)
+
+        args.path_num = best_ckpt if best_ckpt is not None else 0
+        anom_result = _anom_mod.anomaly_zeroshot(
+            args, args.path_num, anom_train, anom_test,
+            anomaly_ratio=dino_cfg.get("anomaly_ratio", 1.0))
+
+    return best_ckpt, best_mse, cls_acc, anom_result
 
 
 # ── Discrete JEPA ─────────────────────────────────────────────────────────────
@@ -776,6 +801,7 @@ def run_jepa_simple(skip_train: bool = False,
                     pretrain_dataset: str = None,
                     forecast_dataset: str = None,
                     classification_dataset=None,
+                    anomaly_dataset: str = None,
                     pred_lens=None,
                     checkpoints=None,
                     pretrain_only: bool = False,
@@ -1017,13 +1043,31 @@ def run_jepa_simple(skip_train: bool = False,
         print(f"  Test Accuracy: {cls_acc:.4f}")
         print(f"{'='*60}")
 
-    return best_ckpt, best_mse, cls_acc
+    # ── anomaly detection downstream ──────────────────────────────────────────
+    anom_result = None
+    if anomaly_dataset is not None:
+        from data_loaders.data_puller import AnomalyDataPuller
+        anom_dir = config.get("anomaly_data_dir", "/home/shared/datasets/Anomaly_TS")
+        anom_bs  = config.get("batch_size", 64)
+        p_s      = config["patch_size_forcasting"]
+        anom_train = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
+            batch_size=anom_bs, shuffle=False)
+        anom_test  = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
+            batch_size=anom_bs, shuffle=False)
+        ckpt_tag   = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
+        anom_result = model.anomaly_zeroshot(ckpt_tag, anom_train, anom_test,
+                                             anomaly_ratio=config.get("anomaly_ratio", 1.0))
+
+    return best_ckpt, best_mse, cls_acc, anom_result
 
 
 # ── PatchTST ──────────────────────────────────────────────────────────────────
 
 def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
-                 classification_dataset=None, pretrain_only: bool = False, pred_len: int = None,
+                 classification_dataset=None, anomaly_dataset: str = None,
+                 pretrain_only: bool = False, pred_len: int = None,
                  checkpoints=None, random_encoder: bool = False, encoder_layers: int = None,
                  predictor_layers: int = None, lr: float = None):
     patchtst_dir = Path(__file__).parent / "PatchTST_self_supervised"
@@ -1038,6 +1082,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     cfg = dict(_mod.config)
     if encoder_layers is not None:
         cfg['n_layers'] = encoder_layers
+        cfg['pretrained_model_id'] = encoder_layers  # unique checkpoint per layer config
 
     pretrain_source = _resolve_pretrain_source(cfg)
     _pretrain_dset  = pretrain_dataset or cfg.get("pretrain_dataset", "ettm1")
@@ -1194,13 +1239,31 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         print(f"  Test Accuracy: {cls_acc:.4f}")
         print(f"{'='*60}")
 
-    return mse_val, cls_acc
+    # ── anomaly detection downstream ──────────────────────────────────────────
+    anom_result = None
+    if anomaly_dataset is not None:
+        from patchtst_anomaly import anomaly_zeroshot as ptst_anomaly
+        from data_loaders.data_puller import AnomalyDataPuller
+        anom_dir = cfg.get("anomaly_data_dir", "/home/shared/datasets/Anomaly_TS")
+        anom_bs  = cfg.get("batch_size", 64)
+        p_s      = cfg.get("patch_len", 16)
+        anom_train = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
+            batch_size=anom_bs, shuffle=False)
+        anom_test  = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
+            batch_size=anom_bs, shuffle=False)
+        anom_result = ptst_anomaly(cfg, pretrained_model_path, anom_train, anom_test,
+                                   anomaly_ratio=cfg.get("anomaly_ratio", 1.0))
+
+    return mse_val, cls_acc, anom_result
 
 
 # ── NPT (NTP pretraining on PatchTST) ─────────────────────────────────────────
 
 def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
-            classification_dataset=None, pretrain_only: bool = False, pred_len: int = None,
+            classification_dataset=None, anomaly_dataset: str = None,
+            pretrain_only: bool = False, pred_len: int = None,
             checkpoints=None, encoder_layers: int = None, predictor_layers: int = None,
             lr: float = None):
     npt_dir = Path(__file__).parent / "NPT"
@@ -1213,6 +1276,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     cfg = dict(_mod.config)
     if encoder_layers is not None:
         cfg['n_layers'] = encoder_layers
+        cfg['pretrained_model_id'] = encoder_layers  # unique checkpoint per layer config
     if lr is not None:
         cfg['lr'] = lr
 
@@ -1300,7 +1364,24 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         print(f"  Test Accuracy: {cls_acc:.4f}")
         print(f"{'='*60}")
 
-    return mse_trained, cls_acc
+    # ── anomaly detection downstream ──────────────────────────────────────────
+    anom_result = None
+    if anomaly_dataset is not None:
+        from ntp_anomaly import anomaly_zeroshot as npt_anomaly
+        from data_loaders.data_puller import AnomalyDataPuller
+        anom_dir = cfg.get("anomaly_data_dir", "/home/shared/datasets/Anomaly_TS")
+        anom_bs  = cfg.get("batch_size", 64)
+        p_s      = cfg["patch_size"]
+        anom_train = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
+            batch_size=anom_bs, shuffle=False)
+        anom_test  = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
+            batch_size=anom_bs, shuffle=False)
+        anom_result = npt_anomaly(cfg, _ckpt_path, anom_train, anom_test,
+                                  anomaly_ratio=cfg.get("anomaly_ratio", 1.0))
+
+    return mse_trained, cls_acc, anom_result
 
 
 # ── LE-JEPA ───────────────────────────────────────────────────────────────────
@@ -1309,6 +1390,7 @@ def run_lejepa(skip_train: bool = False,
                pretrain_dataset: str = None,
                forecast_dataset: str = None,
                classification_dataset=None,
+               anomaly_dataset: str = None,
                pretrain_only: bool = False,
                pred_lens=None,
                checkpoints=None,
@@ -1542,7 +1624,24 @@ def run_lejepa(skip_train: bool = False,
         print(f"  Test Accuracy: {cls_acc:.4f}")
         print(f"{'='*60}")
 
-    return best_ckpt, best_mse, cls_acc
+    # ── anomaly detection downstream ──────────────────────────────────────────
+    anom_result = None
+    if anomaly_dataset is not None:
+        from data_loaders.data_puller import AnomalyDataPuller
+        anom_dir = config.get("anomaly_data_dir", "/home/shared/datasets/Anomaly_TS")
+        anom_bs  = config.get("batch_size", 64)
+        p_s      = config["patch_size_forcasting"]
+        anom_train = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
+            batch_size=anom_bs, shuffle=False)
+        anom_test  = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
+            batch_size=anom_bs, shuffle=False)
+        ckpt_tag    = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
+        anom_result = model.anomaly_zeroshot(ckpt_tag, anom_train, anom_test,
+                                             anomaly_ratio=config.get("anomaly_ratio", 1.0))
+
+    return best_ckpt, best_mse, cls_acc, anom_result
 
 
 # ── Random baseline ───────────────────────────────────────────────────────────
@@ -1580,7 +1679,7 @@ RUNNERS = {
     "jepa_simple":     run_jepa_simple,
     "lejepa":          run_lejepa,
     "patchtst":        run_patchtst,
-    "patchtst_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, pretrain_only=False, pred_len=None, checkpoints=None: run_patchtst(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, pretrain_only=pretrain_only, pred_len=pred_len, checkpoints=checkpoints, random_encoder=True),
+    "patchtst_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, pretrain_only=False, pred_len=None, checkpoints=None, encoder_layers=None: run_patchtst(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, pretrain_only=pretrain_only, pred_len=pred_len, checkpoints=checkpoints, random_encoder=True, encoder_layers=encoder_layers),
     "npt":             run_ntp,
     "random":          run_random,
 }
@@ -1592,6 +1691,8 @@ def run(model: str,
         pretrain_dataset: str = None,
         forecast_dataset: str = None,
         classification_dataset=None,
+        anomaly_dataset: str = None,
+        checkpoint: str = None,
         pred_lens=None,
         checkpoints=None,
         pretrain_only: bool = False,
@@ -1631,9 +1732,15 @@ def run(model: str,
         elif task == "classify":
             skip_train    = True
             pretrain_only = False
-            forecast_dataset = None         # force no forecasting
+            forecast_dataset  = None        # force no forecasting
+            anomaly_dataset   = None
+        elif task == "anomaly":
+            skip_train    = True
+            pretrain_only = False
+            forecast_dataset       = None
+            classification_dataset = None
         else:
-            raise ValueError(f"Unknown task '{task}'. Choose: pretrain | forecast | classify")
+            raise ValueError(f"Unknown task '{task}'. Choose: pretrain | forecast | classify | anomaly")
 
     _set_seed()
     model = model.lower()
@@ -1657,6 +1764,8 @@ def run(model: str,
     if 'predictor_layers'       in sig.parameters: kwargs['predictor_layers']       = predictor_layers
     if 'lr'                     in sig.parameters: kwargs['lr']                     = lr
     if 'classification_dataset' in sig.parameters: kwargs['classification_dataset'] = classification_dataset
+    if 'anomaly_dataset'        in sig.parameters: kwargs['anomaly_dataset']        = anomaly_dataset
+    if 'checkpoint'             in sig.parameters: kwargs['checkpoint']             = checkpoint
     return runner(**kwargs)
 
 
@@ -1694,6 +1803,10 @@ if __name__ == "__main__":
                              "Overrides --skip_train / --pretrain_only when set.")
     parser.add_argument("--classification_dataset", type=str, default=None,
                         help="Dataset name for classification (subfolder under Classification_TS dir)")
+    parser.add_argument("--anomaly_dataset",  type=str, default=None,
+                        help="Dataset name for anomaly detection (subfolder under Anomaly_TS dir)")
+    parser.add_argument("--checkpoint",       type=str, default=None,
+                        help="Path to pretrained checkpoint to load for classification")
     parser.add_argument("--encoder_layers",   type=int,   default=None,
                         help="Override number of encoder transformer layers")
     parser.add_argument("--predictor_layers", type=int,   default=None,
@@ -1708,6 +1821,8 @@ if __name__ == "__main__":
         forecast_dataset=args.forecast_dataset,
         pretrain_only=args.pretrain_only.lower() == "true",
         classification_dataset=args.classification_dataset,
+        anomaly_dataset=args.anomaly_dataset,
+        checkpoint=args.checkpoint,
         encoder_layers=args.encoder_layers,
         predictor_layers=args.predictor_layers,
         lr=args.lr)
