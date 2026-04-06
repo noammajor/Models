@@ -1197,6 +1197,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
          "--target_points",   str(_target_points),
          "--pretrained_model", pretrained_model_path,
          "--random_encoder",   str(int(random_encoder)),
+         "--batch_size",       str(cfg.get("batch_size", 64)),
+         "--num_workers",      str(cfg.get("num_workers", 0)),
          "--seed",             "42"],
         cwd=patchtst_dir, capture_output=True, text=True,
     )
