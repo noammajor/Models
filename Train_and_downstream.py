@@ -1338,6 +1338,12 @@ def run_lejepa(skip_train: bool = False,
 
     from data_loaders.data_puller import (DataPullerDJepa, MonashDataPullerJEPA,
                                           SyntheticArrowDataPullerJEPA, PatchTSTForcastingAdapter)
+    # Re-pin lejepa_dir to sys.path[0] — data_puller imports may have pushed JEPA/JEPA ahead of it,
+    # causing `from Classification import` in LeJepa.py to grab the wrong Classification.py.
+    _lj = str(lejepa_dir)
+    if _lj in sys.path:
+        sys.path.remove(_lj)
+    sys.path.insert(0, _lj)
     from LeJepa import LeJEPA
 
     forecast_dataset = forecast_dataset or config.get('forecast_dataset')
