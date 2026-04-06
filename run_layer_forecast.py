@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent.resolve()
 sys.path.insert(0, str(ROOT))
 
-LAYER_CONFIGS = [2, 6, 12, 24]
+LAYER_CONFIGS = [2, 4, 8, 12, 24]
 DATASETS      = ["etth1", "etth2", "ettm1", "ettm2", "weather", "electricity", "traffic"]
 PRED_LENS     = [96, 192, 336, 720]
 
