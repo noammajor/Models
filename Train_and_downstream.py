@@ -178,12 +178,24 @@ def run_dino(skip_train: bool = False,
     _add_path(dino_dir)
     _add_path(djepa_dir)
 
-    import sys as _sys
-    # Force fresh import from dino_dir to avoid collision with other 'main'/'config' modules
-    for _mod_name in ("config", "main"):
-        _sys.modules.pop(_mod_name, None)
-    from config import config as dino_cfg
-    import main as dino_main
+    import sys as _sys, importlib.util as _ilu
+
+    # Load TSDiNO config.py directly by file path — avoids any sys.path collision
+    _cfg_spec = _ilu.spec_from_file_location("_dino_config", dino_dir / "config.py")
+    _cfg_mod  = _ilu.module_from_spec(_cfg_spec)
+    _cfg_spec.loader.exec_module(_cfg_mod)
+    dino_cfg  = dict(_cfg_mod.config)
+
+    # Inject under the bare name so that main.py's `from config import config as cfg` resolves
+    # to our freshly loaded version, not whatever 'config' may already be cached in sys.modules.
+    _sys.modules["config"] = _cfg_mod
+
+    # Load TSDiNO main.py directly by file path
+    _sys.modules.pop("main", None)                       # evict any stale 'main'
+    _main_spec = _ilu.spec_from_file_location("_dino_main", dino_dir / "main.py")
+    dino_main  = _ilu.module_from_spec(_main_spec)
+    _sys.modules["main"] = dino_main                     # register before exec (handles internal refs)
+    _main_spec.loader.exec_module(dino_main)
 
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
