@@ -178,6 +178,10 @@ def run_dino(skip_train: bool = False,
     _add_path(dino_dir)
     _add_path(djepa_dir)
 
+    import sys as _sys
+    # Force fresh import from dino_dir to avoid collision with other 'main'/'config' modules
+    for _mod_name in ("config", "main"):
+        _sys.modules.pop(_mod_name, None)
     from config import config as dino_cfg
     import main as dino_main
 
@@ -244,6 +248,11 @@ def run_dino(skip_train: bool = False,
         dino_cfg["data_path_forecast_test"]        = ds_fore["csv_path"]
         dino_cfg["parms_for_training_forecasting"] = ds_fore["columns"]
         dino_cfg["parms_for_testing_forecasting"]  = ds_fore["columns"]
+
+    # Propagate overrides into the module-level cfg dict that train_TS_DINO reads directly.
+    # cfg in main.py is imported as `from config import config as cfg` — it's a reference
+    # to the same dict object, so updating it in-place propagates everywhere.
+    dino_main.cfg.update(dino_cfg)
 
     args = _config_to_dino_args(dino_cfg)
 
