@@ -232,6 +232,7 @@ if __name__ == '__main__':
     elif args.is_linear_probe:
         args.dset = args.dset_finetune
         # Finetune
+        print('linear probing only - training linear head with frozen encoder')
         if args.random_encoder:
             suggested_lr = args.lr
         else:
