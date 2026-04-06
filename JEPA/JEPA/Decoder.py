@@ -9,6 +9,30 @@ import torch
 import torch.nn as nn
 
 
+class ClassificationHead(nn.Module):
+    """Linear classification head for JEPA encoder output.
+
+    Encoder outputs data_patches: [B*n_vars, num_patches, D].
+    We take the last patch embedding per variable, flatten across variables,
+    and project to n_classes — identical pattern to PatchTST's ClassificationHead.
+
+    Expected input (after reshape): [B, n_vars, D, num_patches]
+    Output: [B, n_classes]
+    """
+    def __init__(self, n_vars: int, d_model: int, n_classes: int, head_dropout: float = 0.0):
+        super().__init__()
+        self.flatten = nn.Flatten(start_dim=1)
+        self.dropout = nn.Dropout(head_dropout)
+        self.linear  = nn.Linear(n_vars * d_model, n_classes)
+
+    def forward(self, x):
+        """x: [B, n_vars, D, num_patches]  →  [B, n_classes]"""
+        x = x[:, :, :, -1]      # last patch: [B, n_vars, D]
+        x = self.flatten(x)      # [B, n_vars * D]
+        x = self.dropout(x)
+        return self.linear(x)    # [B, n_classes]
+
+
 class LinearDecoder(nn.Module):
     def __init__(self, emb_dim, patch_size):
         super(LinearDecoder, self).__init__()

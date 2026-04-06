@@ -33,9 +33,36 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.resolve()
 
-LAYER_CONFIGS = [2, 4,8, 12, 24]
-#2, 4, 8, 12, 24
+LAYER_CONFIGS = [2, 4, 8, 12, 24]
 
+# Per-layer learning rate: larger models need lower LR to stay stable.
+# jepa_simple/lejepa use SGD+OneCycleLR (max_lr), so these are conservative.
+# dino/npt/patchtst use Adam, so they can afford slightly higher LR.
+LAYER_LR = {
+    2:  3e-3,
+    4:  1e-3,
+    8:  5e-4,
+    12: 2e-4,
+    24: 1e-4,
+}
+
+# DINO uses AdamW with cosine schedule — separate LR tuning.
+DINO_LAYER_LR = {
+    2:  3e-3,
+    4:  1e-3,
+    8:  5e-4,
+    12: 2e-4,
+    24: 1e-4,
+}
+
+# NPT and PatchTST use Adam — lower LR, scale down aggressively with depth.
+NPT_PATCHTST_LAYER_LR = {
+    2:  3e-4,
+    4:  1e-4,
+    8:  5e-5,
+    12: 2e-5,
+    24: 1e-5,
+}
 
 # Model → GPU assignment (change to fit your server)
 MODEL_GPU = {
@@ -56,6 +83,12 @@ def predictor_layers_for(encoder_layers: int) -> int:
 def launch_model(model: str, encoder_layers: int, gpu: int,
                  log_dir: Path, dry_run: bool):
     pred_layers = predictor_layers_for(encoder_layers)
+    if model == "dino":
+        lr = DINO_LAYER_LR[encoder_layers]
+    elif model in ("npt", "patchtst"):
+        lr = NPT_PATCHTST_LAYER_LR[encoder_layers]
+    else:
+        lr = LAYER_LR[encoder_layers]
     log_path = log_dir / f"{model}_layers{encoder_layers}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -66,13 +99,14 @@ def launch_model(model: str, encoder_layers: int, gpu: int,
         "--pretrain_only",    "true",
         "--encoder_layers",   str(encoder_layers),
         "--predictor_layers", str(pred_layers),
+        "--lr",               str(lr),
     ]
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
     print(f"  [{model:12s}] GPU={gpu}  layers={encoder_layers}  pred={pred_layers}"
-          f"  log={log_path.relative_to(ROOT)}")
+          f"  lr={lr}  log={log_path.relative_to(ROOT)}")
 
     if dry_run:
         print(f"    CMD: {' '.join(cmd)}")

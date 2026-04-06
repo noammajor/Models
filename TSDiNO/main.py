@@ -288,14 +288,19 @@ def train_TS_DINO(args):
             teacher = nn.SyncBatchNorm.convert_sync_batchnorm(teacher)
         else:
             print("Skipping SyncBatchNorm on Mac/CPU—using standard BatchNorm instead.")
-        teacher = nn.parallel.DistributedDataParallel(teacher, device_ids=device_ids, find_unused_parameters=True)
-        teacher_without_ddp = teacher.module
+        if getattr(args, 'distributed', False):
+            teacher = nn.parallel.DistributedDataParallel(teacher, device_ids=device_ids, find_unused_parameters=True)
+            teacher_without_ddp = teacher.module
+        else:
+            teacher_without_ddp = teacher
     else:
         # teacher_without_ddp and teacher are the same thing
         teacher_without_ddp = teacher
-    student = nn.parallel.DistributedDataParallel(student, device_ids=device_ids,find_unused_parameters=True)
-    # teacher and student start with the same weights
-    teacher_without_ddp.load_state_dict(student.module.state_dict())
+    if getattr(args, 'distributed', False):
+        student = nn.parallel.DistributedDataParallel(student, device_ids=device_ids, find_unused_parameters=True)
+        teacher_without_ddp.load_state_dict(student.module.state_dict())
+    else:
+        teacher_without_ddp.load_state_dict(student.state_dict())
     # there is no backpropagation through the teacher, so no need for gradients
     for p in teacher.parameters():
         p.requires_grad = False
