@@ -367,7 +367,8 @@ def train_TS_DINO(args):
 
     for epoch in range(start_epoch, args.epochs):
         print(f'Starting epoch {epoch}/{args.epochs}')
-        data_loader.sampler.set_epoch(epoch)
+        if hasattr(data_loader.sampler, 'set_epoch'):
+            data_loader.sampler.set_epoch(epoch)
         train_stats = train_one_epoch(
             student,
             teacher,
