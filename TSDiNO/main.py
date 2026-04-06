@@ -557,8 +557,12 @@ class DINOLoss(nn.Module):
         Update center used for teacher output.
         """
         batch_center = torch.sum(teacher_output, dim=0, keepdim=True)
-        dist.all_reduce(batch_center)
-        batch_center = batch_center / (len(teacher_output) * dist.get_world_size())
+        if dist.is_available() and dist.is_initialized():
+            dist.all_reduce(batch_center)
+            world_size = dist.get_world_size()
+        else:
+            world_size = 1
+        batch_center = batch_center / (len(teacher_output) * world_size)
 
         # ema update
         self.center = self.center * self.center_momentum + batch_center * (1 - self.center_momentum)
@@ -894,48 +898,60 @@ def test_run(args):
         print(f"{'='*60}\n")
         return float(final_mse.mean())
         
-def train_classification(args):
-    """Train classification head on top of pretrained or random encoder"""
+def train_classification(args, classification_train=None, classification_val=None,
+                         classification_test=None, n_classes=None):
+    """Train classification head on top of pretrained DINO encoder.
+
+    If classification_train/val/test DataLoaders are provided they are used directly
+    (elastic ClassificationDataPuller path). Otherwise falls back to the legacy
+    DataPullerClassification path for backwards compatibility.
+    """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Training classification on {device}")
 
-    # Load datasets
-    train_dataset = dpuller.DataPullerClassification(
-        data_dir=args.data_path_classification,
-        split='train',
-        c_in=args.c_in_classification,
-        seq_len=args.seq_len_classification,
-        normalize=True
-    )
-    test_dataset = dpuller.DataPullerClassification(
-        data_dir=args.data_path_classification,
-        split='test',
-        c_in=args.c_in_classification,
-        seq_len=args.seq_len_classification,
-        normalize=True
-    )
-
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=args.batch_size_classification,
-        shuffle=True,
-        num_workers=args.num_workers,
-        pin_memory=True
-    )
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset,
-        batch_size=args.batch_size_classification,
-        shuffle=False,
-        num_workers=args.num_workers,
-        pin_memory=True
-    )
+    if classification_train is not None:
+        # ── elastic path: callers supply pre-built DataLoaders ────────────────
+        train_loader = classification_train
+        val_loader   = classification_val
+        test_loader  = classification_test
+        # infer shape from first batch
+        _x, _ = next(iter(train_loader))  # [B, n_patches, patch_size, n_vars]
+        n_vars    = _x.shape[-1]
+        num_patch = _x.shape[1]
+        n_cls     = n_classes
+    else:
+        # ── legacy UCI HAR path ───────────────────────────────────────────────
+        train_dataset = dpuller.DataPullerClassification(
+            data_dir=args.data_path_classification,
+            split='train',
+            c_in=args.c_in_classification,
+            seq_len=args.seq_len_classification,
+            normalize=True
+        )
+        test_dataset = dpuller.DataPullerClassification(
+            data_dir=args.data_path_classification,
+            split='test',
+            c_in=args.c_in_classification,
+            seq_len=args.seq_len_classification,
+            normalize=True
+        )
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset, batch_size=args.batch_size_classification,
+            shuffle=True, num_workers=args.num_workers, pin_memory=True)
+        val_loader   = None
+        test_loader  = torch.utils.data.DataLoader(
+            test_dataset, batch_size=args.batch_size_classification,
+            shuffle=False, num_workers=args.num_workers, pin_memory=True)
+        n_vars    = args.c_in_classification
+        num_patch = args.seq_len_classification // args.patch_len
+        n_cls     = args.n_classes
 
     # Create model with classification head
     model = PatchTST(
-        c_in=args.c_in_classification,
-        target_dim=args.n_classes,  # Number of classes
+        c_in=n_vars,
+        target_dim=n_cls,
         patch_len=args.patch_len,
-        num_patch=args.seq_len_classification // args.patch_len,  # Compute num_patch from seq_len
+        num_patch=num_patch,
         n_layers=args.n_layers,
         n_heads=args.n_heads,
         d_model=args.embed_dim,
@@ -944,9 +960,9 @@ def train_classification(args):
         dropout=args.dropout,
         head_dropout=args.head_dropout,
         act='gelu',
-        head_type='classification',  # Use classification head
+        head_type='classification',
         res_attention=False,
-        step_size=args.patch_len  # No overlap for classification
+        step_size=args.patch_len
     ).to(device)
 
     # Load pretrained encoder if path_num > 0
@@ -1004,7 +1020,8 @@ def train_classification(args):
 
     print(f"Starting classification training for {args.epochs_classification} epochs...")
 
-    best_acc = 0.0
+    best_acc   = 0.0
+    best_state = None
     for epoch in range(args.epochs_classification):
         model.train()
         train_loss = 0.0
@@ -1032,46 +1049,60 @@ def train_classification(args):
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()
         train_loss /= len(train_loader)
-        train_acc = 100. * correct / total
+        train_acc = correct / total
+
+        # Use val_loader for best-model selection if available, else test_loader
+        eval_loader = val_loader if val_loader is not None else test_loader
         model.eval()
-        test_loss = 0.0
+        val_loss = 0.0
         correct = 0
         total = 0
-
         with torch.no_grad():
-            for inputs, labels in test_loader:
+            for inputs, labels in eval_loader:
                 inputs, labels = inputs.to(device), labels.to(device)
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
-
-                test_loss += loss.item()
+                val_loss += loss.item()
                 _, predicted = outputs.max(1)
                 total += labels.size(0)
                 correct += predicted.eq(labels).sum().item()
-
-        test_loss /= len(test_loader)
-        test_acc = 100. * correct / total
+        val_loss /= len(eval_loader)
+        val_acc = correct / total
 
         print(f"Epoch [{epoch+1}/{args.epochs_classification}] "
-              f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% | "
-              f"Test Loss: {test_loss:.4f} | Test Acc: {test_acc:.2f}%")
+              f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | "
+              f"Val Acc: {val_acc:.4f}")
 
-        # Save best model
-        if test_acc > best_acc:
-            best_acc = test_acc
+        if val_acc > best_acc:
+            best_acc = val_acc
+            best_state = {k: v.clone() for k, v in model.state_dict().items()}
             save_dict = {
                 'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'epoch': epoch,
                 'args': args,
-                'test_acc': test_acc
+                'val_acc': val_acc
             }
             save_path = os.path.join(args.output_dir, f'classification_best_checkpoint{args.path_num:04d}.pth')
             torch.save(save_dict, save_path)
-            print(f"Saved best model with test acc: {best_acc:.2f}%")
 
-    print(f"\nTraining complete! Best test accuracy: {best_acc:.2f}%")
-    return best_acc
+    # Final test accuracy with best checkpoint
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    model.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for inputs, labels in test_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = model(inputs)
+            _, predicted = outputs.max(1)
+            total += labels.size(0)
+            correct += predicted.eq(labels).sum().item()
+    test_acc = correct / total
+
+    print(f"\n[DINO] Classification complete! Test Accuracy: {test_acc:.4f}  (best val: {best_acc:.4f})")
+    return test_acc
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('DINO', parents=[get_args_parser()])
