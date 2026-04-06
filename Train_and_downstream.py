@@ -86,6 +86,7 @@ def _config_to_dino_args(cfg):
         data_path_classification    = cfg.get("data_path_classification", "UCI HAR Dataset"),
         num_workers                 = cfg.get("num_workers", 0),
         batch_size_per_gpu          = cfg.get("batch_size_per_gpu", 64),
+        batch_size_forecast         = cfg.get("batch_size_forecast", 256),
 
         # ── model architecture ────────────────────────────────────────────
         c_in                        = cfg.get("c_in", 7),
@@ -514,9 +515,10 @@ def run_jepa(skip_train: bool = False,
         forecasting_data = ForcastingDataPullerDescrete(config)
         val_fc   = copy.copy(forecasting_data); val_fc.which  = "val";  val_fc.rebuild()
         test_fc  = copy.copy(forecasting_data); test_fc.which = "test"; test_fc.rebuild()
-        train_loader_fc = torch.utils.data.DataLoader(forecasting_data, batch_size=config["batch_size"], shuffle=True)
-        val_loader_fc   = torch.utils.data.DataLoader(val_fc,           batch_size=config["batch_size"], shuffle=True)
-        test_loader_fc  = torch.utils.data.DataLoader(test_fc,          batch_size=config["batch_size"], shuffle=False)
+        _fc_bs = config.get("batch_size_forecast", 256)
+        train_loader_fc = torch.utils.data.DataLoader(forecasting_data, batch_size=_fc_bs, shuffle=True)
+        val_loader_fc   = torch.utils.data.DataLoader(val_fc,           batch_size=_fc_bs, shuffle=True)
+        test_loader_fc  = torch.utils.data.DataLoader(test_fc,          batch_size=_fc_bs, shuffle=False)
 
     # ── model ─────────────────────────────────────────────────────────────────
     model = DiscreteJEPA(
@@ -565,12 +567,13 @@ def run_jepa(skip_train: bool = False,
         for ds in [forecasting_data, val_fc, test_fc]:
             ds.h = h_t
             ds.target_raw_len = h_t * p_s
+        _fc_bs = config.get("batch_size_forecast", 256)
         train_loader_fc = torch.utils.data.DataLoader(
-            forecasting_data, batch_size=config["batch_size"], shuffle=True)
+            forecasting_data, batch_size=_fc_bs, shuffle=True)
         val_loader_fc   = torch.utils.data.DataLoader(
-            val_fc,           batch_size=config["batch_size"], shuffle=True)
+            val_fc,           batch_size=_fc_bs, shuffle=True)
         test_loader_fc  = torch.utils.data.DataLoader(
-            test_fc,          batch_size=config["batch_size"], shuffle=False)
+            test_fc,          batch_size=_fc_bs, shuffle=False)
         model.forcast_train = train_loader_fc
         model.forcast_val   = val_loader_fc
         model.forcast_test  = test_loader_fc
@@ -720,9 +723,10 @@ def run_jepa2(skip_train: bool = False,
     forecasting_data = ForcastingDataPullerDescrete(config)
     val_fc   = copy.copy(forecasting_data); val_fc.which  = "val";  val_fc.rebuild()
     test_fc  = copy.copy(forecasting_data); test_fc.which = "test"; test_fc.rebuild()
-    train_loader_fc = torch.utils.data.DataLoader(forecasting_data, batch_size=config["batch_size"], shuffle=True)
-    val_loader_fc   = torch.utils.data.DataLoader(val_fc,           batch_size=config["batch_size"], shuffle=True)
-    test_loader_fc  = torch.utils.data.DataLoader(test_fc,          batch_size=config["batch_size"], shuffle=False)
+    _fc_bs = config.get("batch_size_forecast", 256)
+    train_loader_fc = torch.utils.data.DataLoader(forecasting_data, batch_size=_fc_bs, shuffle=True)
+    val_loader_fc   = torch.utils.data.DataLoader(val_fc,           batch_size=_fc_bs, shuffle=True)
+    test_loader_fc  = torch.utils.data.DataLoader(test_fc,          batch_size=_fc_bs, shuffle=False)
 
     model = DiscreteJEPA(
         config            = config,
@@ -760,12 +764,13 @@ def run_jepa2(skip_train: bool = False,
         for ds in [forecasting_data, val_fc, test_fc]:
             ds.h = h_t
             ds.target_raw_len = h_t * p_s
+        _fc_bs = config.get("batch_size_forecast", 256)
         train_loader_fc = torch.utils.data.DataLoader(
-            forecasting_data, batch_size=config["batch_size"], shuffle=True)
+            forecasting_data, batch_size=_fc_bs, shuffle=True)
         val_loader_fc   = torch.utils.data.DataLoader(
-            val_fc,           batch_size=config["batch_size"], shuffle=True)
+            val_fc,           batch_size=_fc_bs, shuffle=True)
         test_loader_fc  = torch.utils.data.DataLoader(
-            test_fc,          batch_size=config["batch_size"], shuffle=False)
+            test_fc,          batch_size=_fc_bs, shuffle=False)
         model.forcast_train = train_loader_fc
         model.forcast_val   = val_loader_fc
         model.forcast_test  = test_loader_fc
@@ -953,15 +958,16 @@ def run_jepa_simple(skip_train: bool = False,
         _csv = config["path_data_forcasting"][0]
         _p_s = config["patch_size_forcasting"]
         _pl0 = pred_lens[0] if pred_lens else 96
+        _fc_bs = config.get("batch_size_forecast", 256)
         train_loader_fc = torch.utils.data.DataLoader(
             PatchTSTForcastingAdapter(_csv, 'train', _PATCHTST_SEQ_LEN, _pl0, _p_s),
-            batch_size=config["batch_size"], shuffle=True)
+            batch_size=_fc_bs, shuffle=True)
         val_loader_fc = torch.utils.data.DataLoader(
             PatchTSTForcastingAdapter(_csv, 'val',   _PATCHTST_SEQ_LEN, _pl0, _p_s),
-            batch_size=config["batch_size"], shuffle=False)
+            batch_size=_fc_bs, shuffle=False)
         test_loader_fc = torch.utils.data.DataLoader(
             PatchTSTForcastingAdapter(_csv, 'test',  _PATCHTST_SEQ_LEN, _pl0, _p_s),
-            batch_size=config["batch_size"], shuffle=False)
+            batch_size=_fc_bs, shuffle=False)
 
     # ── model ─────────────────────────────────────────────────────────────────
     model = JEPA(
@@ -1199,6 +1205,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
          "--random_encoder",   str(int(random_encoder)),
          "--batch_size",       str(cfg.get("batch_size", 64)),
          "--num_workers",      str(cfg.get("num_workers", 0)),
+         "--lr",               str(cfg.get("finetune_lr", 1e-4)),
          "--seed",             "42"],
         cwd=patchtst_dir, capture_output=True, text=True,
     )

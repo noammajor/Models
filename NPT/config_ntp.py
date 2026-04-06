@@ -34,6 +34,7 @@ config = {
     # ── Training ──────────────────────────────────────────────────────────────
     "num_epochs":    20,
     "batch_size":    64,
+    "batch_size_forecast": 256,
     "lr":            1e-4,
     "revin":         True,
     "num_workers":   0,

@@ -154,8 +154,9 @@ config = {
     # ── Downstream: Forecasting ───────────────────────────────────────────────
     "pred_len": 96,
     "epochs_forecasting": 20,
-    "lr_forecasting": 1e-4,
-    "min_lr_forecasting": 1e-5,
+    "lr_forecasting": 2e-4,
+    "min_lr_forecasting": 2e-5,
+    "batch_size_forecast": 256,
     "parms_for_training_forecasting": ['HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'OT'],
     "parms_for_testing_forecasting":  ['HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'OT'],
 

@@ -75,6 +75,8 @@ def get_args_parser():
     parser.add_argument('--num_patches', default=32, type=int,help='Batch size')
     parser.add_argument('--batch_size_per_gpu', default=64, type=int,
         help='Per-GPU batch-size : number of distinct images loaded on one GPU.')
+    parser.add_argument('--batch_size_forecast', default=256, type=int,
+        help='Batch size for forecasting head training.')
     parser.add_argument('--epochs', default=100, type=int, help='Number of epochs of training.')
     parser.add_argument('--freeze_last_layer', default=1, type=int, help="""Number of epochs
         during which we keep the output layer fixed. Typically doing so during
@@ -708,7 +710,7 @@ def test_run(args):
     data_loader_forecasting_train = torch.utils.data.DataLoader(
         dataset_forecasting_train,
         sampler=torch.utils.data.distributed.DistributedSampler(dataset_forecasting_train, shuffle=False) if _is_distributed else torch.utils.data.SequentialSampler(dataset_forecasting_train),
-        batch_size=args.batch_size_per_gpu,
+        batch_size=args.batch_size_forecast,
         num_workers=args.num_workers,
         pin_memory=True,
         drop_last=False,
@@ -716,7 +718,7 @@ def test_run(args):
     data_loader_forecasting_test = torch.utils.data.DataLoader(
         dataset_forecasting_test,
         sampler=torch.utils.data.distributed.DistributedSampler(dataset_forecasting_test, shuffle=False) if _is_distributed else torch.utils.data.SequentialSampler(dataset_forecasting_test),
-        batch_size=args.batch_size_per_gpu,
+        batch_size=args.batch_size_forecast,
         num_workers=args.num_workers,
         pin_memory=True,
         drop_last=False,
