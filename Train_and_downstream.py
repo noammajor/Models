@@ -239,9 +239,6 @@ def run_dino(skip_train: bool = False,
         print(f"  MODEL: DINO  (TSDiNO)")
         print(f"  pretrain: {pretrain_dataset}   forecast: {forecast_dataset}")
         print("="*60)
-    # Propagate resolved config to the module-level cfg used by train_TS_DINO
-    dino_main.cfg.update(dino_cfg)
-
     if not pretrain_only:
         dino_cfg["data_path_forecast_training"]    = ds_fore["csv_path"]
         dino_cfg["data_path_forecast_test"]        = ds_fore["csv_path"]
@@ -1094,11 +1091,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     else:
         print("[PatchTST] Skipping pretraining.")
 
-    if pretrain_only:
-        print("\n[PatchTST] Pretrain-only mode — skipping forecasting.")
-        return
-
-    # ── forecasting downstream ────────────────────────────────────────────────
+    # ── resolve checkpoint path (needed for both forecast and classify) ────────
     n_ep    = cfg.get("n_epochs_pretrain", 10)
     ctx     = cfg.get("context_points", 512)
     p_len   = cfg.get("patch_len", 12)
@@ -1107,16 +1100,18 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     m_id    = cfg.get("pretrained_model_id", 1)
     model_fname_base = (f"patchtst_pretrained_cw{ctx}_patch{p_len}_stride{stride}"
                         f"_epochs-pretrain{n_ep}_mask{m_ratio}_model{m_id}")
-    # If a specific epoch checkpoint is requested (0-indexed, as saved by SaveModelCB)
     _ckpt_epoch = checkpoints[0] if (checkpoints and checkpoints[0] is not None) else None
-    if _ckpt_epoch is not None:
-        model_fname = f"{model_fname_base}_{_ckpt_epoch}.pth"
-    else:
-        model_fname = f"{model_fname_base}.pth"
+    model_fname = f"{model_fname_base}_{_ckpt_epoch}.pth" if _ckpt_epoch is not None else f"{model_fname_base}.pth"
     pretrained_model_path = os.path.join(
         patchtst_dir, "saved_models", _pretrain_dset,
         "masked_patchtst", cfg.get("model_type", "based_model"), model_fname
     )
+
+    if pretrain_only:
+        print("\n[PatchTST] Pretrain-only mode — skipping forecasting.")
+        return
+
+    # ── forecasting downstream ────────────────────────────────────────────────
     _target_points = pred_len if pred_len is not None else cfg.get("target_points", 96)
     print(f"\n[PatchTST] Running forecasting fine-tuning on {_forecast_dset} (target_points={_target_points}) …")
     result = subprocess.run(
@@ -1558,7 +1553,7 @@ RUNNERS = {
     "jepa_simple":     run_jepa_simple,
     "lejepa":          run_lejepa,
     "patchtst":        run_patchtst,
-    "patchtst_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, pretrain_only=False, pred_len=None, checkpoints=None: run_patchtst(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, pretrain_only=pretrain_only, pred_len=pred_len, checkpoints=checkpoints, random_encoder=True),
+    "patchtst_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, pretrain_only=False, pred_len=None, checkpoints=None: run_patchtst(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, pretrain_only=pretrain_only, pred_len=pred_len, checkpoints=checkpoints, random_encoder=True),
     "npt":             run_ntp,
     "random":          run_random,
 }
