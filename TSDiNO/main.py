@@ -409,6 +409,7 @@ def train_TS_DINO(args):
     print('Training time {}'.format(total_time_str))
 
 def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loader, optimizer, epoch, fp16_scaler, lr_schedule, wd_schedule, momentum_schedule, args, student_recon=None, teacher_recon_decoder=None):
+    student_without_ddp = student.module if hasattr(student, 'module') else student
     student.train()
     teacher.train()  # teacher is in eval mode but we need to keep track of BN stats
     if student_recon is not None:
