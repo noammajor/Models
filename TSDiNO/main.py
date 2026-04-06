@@ -298,9 +298,10 @@ def train_TS_DINO(args):
         teacher_without_ddp = teacher
     if getattr(args, 'distributed', False):
         student = nn.parallel.DistributedDataParallel(student, device_ids=device_ids, find_unused_parameters=True)
-        teacher_without_ddp.load_state_dict(student.module.state_dict())
+        student_without_ddp = student.module
     else:
-        teacher_without_ddp.load_state_dict(student.state_dict())
+        student_without_ddp = student
+    teacher_without_ddp.load_state_dict(student_without_ddp.state_dict())
     # there is no backpropagation through the teacher, so no need for gradients
     for p in teacher.parameters():
         p.requires_grad = False
@@ -450,7 +451,7 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
                     # [B, num_patch, n_vars, d_model]
 
                 # Student encodes masked original
-                s_tokens = student.module.backbone.forward_recon(masked_orig)
+                s_tokens = student_without_ddp.backbone.forward_recon(masked_orig)
                 # [B, num_patch, n_vars, d_model]
 
                 B, num_patch, n_vars, d_model = t_tokens.shape
@@ -489,7 +490,7 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
         # EMA update for the teacher
         with torch.no_grad():
             m = momentum_schedule[it_global]  # momentum parameter
-            for param_q, param_k in zip(student.module.parameters(), teacher_without_ddp.parameters()):
+            for param_q, param_k in zip(student_without_ddp.parameters(), teacher_without_ddp.parameters()):
                 param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
             # EMA update for the reconstruction teacher decoder
             if use_recon_this:
