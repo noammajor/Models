@@ -1035,6 +1035,9 @@ def train_classification(args, classification_train=None, classification_val=Non
                 param_group['lr'] = lr_schedule[step]
 
             inputs, labels = inputs.to(device), labels.to(device)
+            # ClassificationDataPuller: [B, P, PL, n_vars] → model expects [B, P, n_vars, PL]
+            if inputs.dim() == 4:
+                inputs = inputs.permute(0, 1, 3, 2)
 
             # Forward pass
             outputs = model(inputs)  # [batch_size, n_classes]
@@ -1060,6 +1063,8 @@ def train_classification(args, classification_train=None, classification_val=Non
         with torch.no_grad():
             for inputs, labels in eval_loader:
                 inputs, labels = inputs.to(device), labels.to(device)
+                if inputs.dim() == 4:
+                    inputs = inputs.permute(0, 1, 3, 2)
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
                 val_loss += loss.item()
@@ -1095,6 +1100,8 @@ def train_classification(args, classification_train=None, classification_val=Non
     with torch.no_grad():
         for inputs, labels in test_loader:
             inputs, labels = inputs.to(device), labels.to(device)
+            if inputs.dim() == 4:
+                inputs = inputs.permute(0, 1, 3, 2)
             outputs = model(inputs)
             _, predicted = outputs.max(1)
             total += labels.size(0)
