@@ -61,7 +61,7 @@ config = {
     "freeze_last_layer": 1,
 
     # ── DINO pretraining ──────────────────────────────────────────────────────
-    "epochs": 12,
+    "epochs": 20,
 
     # ── DWT defaults (shared across all dwt_* aug types) ─────────────────────
     #
