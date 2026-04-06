@@ -205,7 +205,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                 )
 
             elif model == "patchtst":
-                return run(
+                result = run(
                     model="patchtst",
                     skip_train=True,
                     forecast_dataset=dataset,
@@ -213,15 +213,17 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     checkpoints=[ckpt] if ckpt is not None else None,
                     encoder_layers=encoder_layers,
                 )
+                return result[0] if isinstance(result, tuple) else result
 
             elif model == "patchtst_random":
-                return run(
+                result = run(
                     model="patchtst_random",
                     skip_train=True,
                     forecast_dataset=dataset,
                     pred_len=pred_len,
                     encoder_layers=encoder_layers,
                 )
+                return result[0] if isinstance(result, tuple) else result
 
         except Exception as e:
             print(f"[ERROR] {model}/{dataset}/pred{pred_len}/ckpt{ckpt_tag}: {e}")
