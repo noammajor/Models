@@ -20,8 +20,8 @@ config = {
     "data_path_forecast_training": "data/ETTh1.csv",
     "data_path_forecast_test": "data/ETTh1.csv",
     "data_path_classification": "UCI HAR Dataset",
-    "num_workers": 0,
-    "batch_size_per_gpu": 32,
+    "num_workers": 6,
+    "batch_size_per_gpu": 128,
 
     # ── Model architecture ────────────────────────────────────────────────────
     "c_in": 7,          # number of input variables  (9 for UCI HAR)
@@ -61,7 +61,7 @@ config = {
     "freeze_last_layer": 1,
 
     # ── DINO pretraining ──────────────────────────────────────────────────────
-    "epochs": 8,
+    "epochs": 12,
 
     # ── DWT defaults (shared across all dwt_* aug types) ─────────────────────
     #
