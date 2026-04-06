@@ -91,11 +91,12 @@ def discover_checkpoints(model: str, encoder_layers: int) -> list:
         _cfg = _mod.config
         # override n_layers to build correct filename prefix
         _cfg = dict(_cfg); _cfg['n_layers'] = encoder_layers
+        _cfg['pretrained_model_id'] = encoder_layers  # mirrors run_ntp save-side logic
         _prefix = (f"ntp_pretrained"
                    f"_patch{_cfg['patch_size']}"
                    f"_patches{_cfg['ratio_patches']}"
                    f"_epochs{_cfg['num_epochs']}"
-                   f"_model{_cfg.get('pretrained_model_id', 1)}_epoch")
+                   f"_model{_cfg['pretrained_model_id']}_epoch")
         save_dir = ROOT / "NPT" / "saved_models"
         found = sorted(set(
             int(m.group(1))
@@ -112,6 +113,7 @@ def discover_checkpoints(model: str, encoder_layers: int) -> list:
                     ROOT / "PatchTST_self_supervised" / "config_patchtst.py")
         _mod = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_mod)
         _cfg = dict(_mod.config); _cfg['n_layers'] = encoder_layers
+        _cfg['pretrained_model_id'] = encoder_layers  # mirrors run_patchtst save-side logic
         _prefix = (f"patchtst_pretrained"
                    f"_cw{_cfg['context_points']}"
                    f"_patch{_cfg['patch_len']}"
