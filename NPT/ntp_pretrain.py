@@ -186,7 +186,7 @@ def pretrain_ntp(config):
         optimizer, T_max=config['num_epochs'], eta_min=config['lr'] * 0.1)
     loss_fn = nn.MSELoss()
 
-    save_dir  = os.path.join(_NPT_DIR, 'saved_models', pretrain_dset, 'ntp')
+    save_dir  = os.path.join(_NPT_DIR, 'saved_models', pretrain_dset, 'ntp', f"layers{config['n_layers']}")
     os.makedirs(save_dir, exist_ok=True)
     save_name = _model_fname(config, pretrain_dset)
 

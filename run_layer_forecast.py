@@ -97,10 +97,10 @@ def discover_checkpoints(model: str, encoder_layers: int) -> list:
                    f"_patches{_cfg['ratio_patches']}"
                    f"_epochs{_cfg['num_epochs']}"
                    f"_model{_cfg['pretrained_model_id']}_epoch")
-        save_dir = ROOT / "NPT" / "saved_models"
+        save_dir = ROOT / "NPT" / "saved_models" / "monash" / "ntp" / f"layers{encoder_layers}"
         found = sorted(set(
             int(m.group(1))
-            for p in save_dir.rglob("*.pt")
+            for p in save_dir.glob("*.pt")
             if p.stem.startswith(_prefix)
             for m in [_re.search(r'_epoch(\d+)$', p.stem)]
             if m
@@ -121,9 +121,9 @@ def discover_checkpoints(model: str, encoder_layers: int) -> list:
                    f"_epochs-pretrain{_cfg['n_epochs_pretrain']}"
                    f"_mask{_cfg['mask_ratio']}"
                    f"_model{_cfg['pretrained_model_id']}_")
-        save_dir = ROOT / "PatchTST_self_supervised" / "saved_models"
+        save_dir = ROOT / "PatchTST_self_supervised" / "saved_models" / "monash" / "masked_patchtst" / "based_model" / f"layers{encoder_layers}"
         found = set()
-        for p in save_dir.rglob("*.pth"):
+        for p in save_dir.glob("*.pth"):
             if p.stem.startswith(_prefix):
                 sfx = p.stem[len(_prefix):]
                 if sfx.isdigit():

@@ -1170,7 +1170,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     model_fname = f"{model_fname_base}_{_ckpt_epoch}.pth" if _ckpt_epoch is not None else f"{model_fname_base}.pth"
     pretrained_model_path = os.path.join(
         patchtst_dir, "saved_models", _pretrain_dset,
-        "masked_patchtst", cfg.get("model_type", "based_model"), model_fname
+        "masked_patchtst", cfg.get("model_type", "based_model"),
+        f"layers{cfg['n_layers']}", model_fname
     )
 
     if pretrain_only:
@@ -1314,7 +1315,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     from ntp_forecasting import zeroshot_forecasting
 
     # Resolve checkpoint path (used whether we train or skip)
-    _save_dir = npt_dir / "saved_models" / _pretrain_dset / "ntp"
+    _save_dir = npt_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}"
     _base_name = _model_fname(cfg, _pretrain_dset)
     _ckpt_epoch = checkpoints[0] if (checkpoints and checkpoints[0] is not None) else None
     if _ckpt_epoch is not None:
