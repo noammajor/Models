@@ -1203,7 +1203,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
          "--target_points",   str(_target_points),
          "--pretrained_model", pretrained_model_path,
          "--random_encoder",   str(int(random_encoder)),
-         "--batch_size",       str(cfg.get("batch_size", 64)),
+         "--batch_size",       str(cfg.get("batch_size_forecast", 256)),
          "--num_workers",      str(cfg.get("num_workers", 0)),
          "--lr",               str(cfg.get("finetune_lr", 1e-4)),
          "--seed",             "42"],
