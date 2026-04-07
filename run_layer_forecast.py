@@ -27,8 +27,11 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
+import numpy 
+
 ROOT = Path(__file__).parent.resolve()
 sys.path.insert(0, str(ROOT))
+ # noqa: ensure numpy is in sys.modules before lazy imports
 
 LAYER_CONFIGS = [2, 4, 8, 12, 24]
 DATASETS      = ["etth1", "etth2", "ettm1", "ettm2", "weather", "electricity", "traffic"]
