@@ -195,7 +195,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                 return result[1] if result else None
 
             elif model == "npt":
-                return run(
+                result = run(
                     model="npt",
                     skip_train=True,
                     forecast_dataset=dataset,
@@ -203,6 +203,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     checkpoints=[ckpt] if ckpt is not None else None,
                     encoder_layers=encoder_layers,
                 )
+                return result[0] if isinstance(result, tuple) else result
 
             elif model == "patchtst":
                 result = run(
