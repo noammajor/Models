@@ -81,7 +81,7 @@ def predictor_layers_for(encoder_layers: int) -> int:
 
 
 def launch_model(model: str, encoder_layers: int, gpu: int,
-                 log_dir: Path, dry_run: bool):
+                 log_dir: Path, dry_run: bool, pretrain_source: str = None):
     pred_layers = predictor_layers_for(encoder_layers)
     if model == "dino":
         lr = DINO_LAYER_LR[encoder_layers]
@@ -89,7 +89,8 @@ def launch_model(model: str, encoder_layers: int, gpu: int,
         lr = NPT_PATCHTST_LAYER_LR[encoder_layers]
     else:
         lr = LAYER_LR[encoder_layers]
-    log_path = log_dir / f"{model}_layers{encoder_layers}.log"
+    src_tag   = f"_{pretrain_source}" if pretrain_source and pretrain_source != "monash" else ""
+    log_path  = log_dir / f"{model}{src_tag}_layers{encoder_layers}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
@@ -101,6 +102,8 @@ def launch_model(model: str, encoder_layers: int, gpu: int,
         "--predictor_layers", str(pred_layers),
         "--lr",               str(lr),
     ]
+    if pretrain_source is not None:
+        cmd += ["--pretrain_source", pretrain_source]
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -120,8 +123,10 @@ def launch_model(model: str, encoder_layers: int, gpu: int,
     return proc
 
 
-def run_sweep(models: list, layer_configs: list, dry_run: bool):
+def run_sweep(models: list, layer_configs: list, dry_run: bool,
+              pretrain_source: str = None, gpu_overrides: dict = None):
     log_dir = ROOT / "logs" / "layer_sweep"
+    gpu_overrides = gpu_overrides or {}
 
     for n_layers in layer_configs:
         print(f"\n{'='*60}")
@@ -130,8 +135,8 @@ def run_sweep(models: list, layer_configs: list, dry_run: bool):
 
         procs = []
         for model in models:
-            gpu = MODEL_GPU[model]
-            proc = launch_model(model, n_layers, gpu, log_dir, dry_run)
+            gpu = gpu_overrides.get(model, MODEL_GPU[model])
+            proc = launch_model(model, n_layers, gpu, log_dir, dry_run, pretrain_source)
             if proc is not None:
                 procs.append(proc)
 
@@ -164,16 +169,30 @@ def main():
                         metavar="MODEL")
     parser.add_argument("--dry_run", action="store_true",
                         help="Print commands without running them")
+    parser.add_argument("--pretrain_source", type=str, default=None,
+                        choices=["monash", "synthetic", "monash+synthetic"],
+                        help="Override pretrain data source (dino only). Checkpoints saved to a separate folder.")
+    parser.add_argument("--dino_gpu", type=int, default=None,
+                        help="Override GPU for DINO (default: 0)")
     args = parser.parse_args()
+
+    gpu_overrides = {}
+    if args.dino_gpu is not None:
+        gpu_overrides["dino"] = args.dino_gpu
 
     print(f"Layer sweep")
     print(f"  Models:  {args.models}")
     print(f"  Layers:  {args.layers}")
-    print(f"  GPU map: { {m: MODEL_GPU[m] for m in args.models} }")
+    if args.pretrain_source:
+        print(f"  Pretrain source: {args.pretrain_source}")
+    effective_gpus = {m: gpu_overrides.get(m, MODEL_GPU[m]) for m in args.models}
+    print(f"  GPU map: {effective_gpus}")
     if args.dry_run:
         print("  DRY RUN — no processes will be started\n")
 
-    run_sweep(args.models, args.layers, args.dry_run)
+    run_sweep(args.models, args.layers, args.dry_run,
+              pretrain_source=args.pretrain_source,
+              gpu_overrides=gpu_overrides)
 
 
 if __name__ == "__main__":

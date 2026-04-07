@@ -174,7 +174,8 @@ def run_dino(skip_train: bool = False,
              pretrain_only: bool = False,
              encoder_layers: int = None,
              predictor_layers: int = None,
-             lr: float = None):
+             lr: float = None,
+             pretrain_source: str = None):
     dino_dir  = Path(__file__).parent / "TSDiNO"
     djepa_dir = Path(__file__).parent / "Discrete_JEPA"
     _add_path(dino_dir)
@@ -203,9 +204,12 @@ def run_dino(skip_train: bool = False,
         pred_lens = [96, 192, 336, 720]
 
     dino_cfg = dict(dino_cfg)
+    if pretrain_source is not None:
+        dino_cfg['pretrain_source'] = pretrain_source
     if encoder_layers is not None:
         dino_cfg['n_layers'] = encoder_layers
-        dino_cfg['output_dir'] = dino_cfg.get('output_dir', './checkpoints').rstrip('/') + f'_layers{encoder_layers}'
+        _src_tag = '' if dino_cfg.get('pretrain_source', 'monash') == 'monash' else f"_{dino_cfg['pretrain_source'].replace('+', '_')}"
+        dino_cfg['output_dir'] = dino_cfg.get('output_dir', './checkpoints').rstrip('/') + f'{_src_tag}_layers{encoder_layers}'
     if lr is not None:
         dino_cfg['lr'] = lr
     pretrain_source = _resolve_pretrain_source(dino_cfg)
@@ -1719,7 +1723,8 @@ def run(model: str,
         pred_len: int = None,
         encoder_layers: int = None,
         predictor_layers: int = None,
-        lr: float = None):
+        lr: float = None,
+        pretrain_source: str = None):
     """
     Unified entry point. Each run handles ONE task.
 
@@ -1786,6 +1791,7 @@ def run(model: str,
     if 'classification_dataset' in sig.parameters: kwargs['classification_dataset'] = classification_dataset
     if 'anomaly_dataset'        in sig.parameters: kwargs['anomaly_dataset']        = anomaly_dataset
     if 'checkpoint'             in sig.parameters: kwargs['checkpoint']             = checkpoint
+    if 'pretrain_source'        in sig.parameters: kwargs['pretrain_source']        = pretrain_source
     return runner(**kwargs)
 
 
@@ -1833,6 +1839,9 @@ if __name__ == "__main__":
                         help="Override number of predictor layers (JEPA models only)")
     parser.add_argument("--lr",               type=float, default=None,
                         help="Override pretraining learning rate")
+    parser.add_argument("--pretrain_source",  type=str,   default=None,
+                        choices=["monash", "synthetic", "monash+synthetic"],
+                        help="Override pretrain data source (dino only)")
     args = parser.parse_args()
     run(model=args.model,
         task=args.task,
@@ -1845,4 +1854,5 @@ if __name__ == "__main__":
         checkpoint=args.checkpoint,
         encoder_layers=args.encoder_layers,
         predictor_layers=args.predictor_layers,
-        lr=args.lr)
+        lr=args.lr,
+        pretrain_source=args.pretrain_source)
