@@ -447,7 +447,7 @@ def main():
                         metavar="MODEL")
     parser.add_argument("--datasets", nargs="+", default=DATASETS,   metavar="DATASET")
     parser.add_argument("--dry_run",  action="store_true")
-    parser.add_argument("--gpu",      type=int,  default=None,
+    parser.add_argument("--gpu_override", type=int, default=None,
                         help="Override GPU for all models in this run")
 
     # internal worker mode
@@ -476,7 +476,7 @@ def main():
     if args.dry_run:
         print("  DRY RUN\n")
 
-    run_forecast_sweep(args.models, args.layers, args.datasets, args.dry_run, gpu_override=args.gpu)
+    run_forecast_sweep(args.models, args.layers, args.datasets, args.dry_run, gpu_override=args.gpu_override)
 
 
 if __name__ == "__main__":
