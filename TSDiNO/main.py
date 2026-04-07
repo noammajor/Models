@@ -840,9 +840,12 @@ def test_run(args):
             accumulated_mae += batch_mae * batch_size
             num_samples += batch_size
 
-            # Save visualization for first batch only
+            # Save visualization for first batch only (skip for large multivariate datasets)
             if not first_batch_saved:
                 n_vars = outputs.shape[-1]
+                if n_vars > 20:
+                    first_batch_saved = True  # skip plotting
+                    continue
                 fig, axes = plt.subplots(n_vars, 1, figsize=(12, 3 * n_vars), sharex=True)
                 if n_vars == 1: axes = [axes]
 
