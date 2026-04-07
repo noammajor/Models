@@ -594,12 +594,13 @@ def run_jepa(skip_train: bool = False,
               + (""  if is_search else f"  [best ckpt={ckpts_to_run[0]}]"))
         for epoch in ckpts_to_run:
             print(f"  → checkpoint epoch {epoch}")
+            ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
             for mode in modes:
                 method_name = _MODE_MAP.get(mode)
                 if method_name is None:
                     print(f"  [JEPA] Unknown forecasting mode '{mode}', skipping.")
                     continue
-                mse = getattr(model, method_name)(f"_epoch{epoch}")
+                mse = getattr(model, method_name)(ckpt_tag)
                 # During the pred_len=96 sweep, track the best checkpoint by MSE
                 if is_search and mode == modes[0] and mse is not None and mse < best_mse:
                     best_mse  = mse
@@ -1032,7 +1033,8 @@ def run_jepa_simple(skip_train: bool = False,
               + ("" if is_search else f"  [best ckpt={ckpts_to_run[0]}]"))
         for epoch in ckpts_to_run:
             print(f"  → checkpoint epoch {epoch}")
-            mse = model.forcasting_zeroshot(f"_epoch{epoch}")
+            ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
+            mse = model.forcasting_zeroshot(ckpt_tag)
             if is_search and mse is not None and mse < best_mse:
                 best_mse  = mse
                 best_ckpt = epoch
@@ -1620,7 +1622,8 @@ def run_lejepa(skip_train: bool = False,
 
         for epoch in ckpts_to_run:
             print(f"  → checkpoint epoch {epoch}")
-            mse = model.forcasting_zeroshot(f"_epoch{epoch}")
+            ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
+            mse = model.forcasting_zeroshot(ckpt_tag)
             if is_search and mse is not None and mse < best_mse:
                 best_mse  = mse
                 best_ckpt = epoch

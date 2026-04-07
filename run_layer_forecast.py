@@ -309,7 +309,7 @@ def eval_best(model: str, dataset: str, pred_len: int,
             from Train_and_downstream import run
             if model in ("jepa_simple", "lejepa", "dino"):
                 result = run(model=model, skip_train=True, forecast_dataset=dataset,
-                             pred_lens=[pred_len], checkpoints=[""],
+                             pred_lens=[pred_len], checkpoints=["best"],
                              encoder_layers=encoder_layers)
                 return result[1] if result else None
             elif model == "npt":
