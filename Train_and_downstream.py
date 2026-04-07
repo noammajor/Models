@@ -84,7 +84,7 @@ def _config_to_dino_args(cfg):
         data_path_forecast_training = cfg.get("data_path_forecast_training", ""),
         data_path_forecast_test     = cfg.get("data_path_forecast_test", ""),
         data_path_classification    = cfg.get("data_path_classification", "UCI HAR Dataset"),
-        num_workers                 = cfg.get("num_workers", 0),
+        num_workers                 = cfg.get("num_workers", 4),
         batch_size_per_gpu          = cfg.get("batch_size_per_gpu", 64),
         batch_size_forecast         = cfg.get("batch_size_forecast", 256),
 
@@ -516,7 +516,7 @@ def run_jepa(skip_train: bool = False,
         val_fc   = copy.copy(forecasting_data); val_fc.which  = "val";  val_fc.rebuild()
         test_fc  = copy.copy(forecasting_data); test_fc.which = "test"; test_fc.rebuild()
         _fc_bs = config.get("batch_size_forecast", 256)
-        _fc_nw = config.get("num_workers", 0)
+        _fc_nw = config.get("num_workers", 4)
         train_loader_fc = torch.utils.data.DataLoader(forecasting_data, batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
         val_loader_fc   = torch.utils.data.DataLoader(val_fc,           batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
         test_loader_fc  = torch.utils.data.DataLoader(test_fc,          batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
@@ -569,7 +569,7 @@ def run_jepa(skip_train: bool = False,
             ds.h = h_t
             ds.target_raw_len = h_t * p_s
         _fc_bs = config.get("batch_size_forecast", 256)
-        _fc_nw = config.get("num_workers", 0)
+        _fc_nw = config.get("num_workers", 4)
         train_loader_fc = torch.utils.data.DataLoader(
             forecasting_data, batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
         val_loader_fc   = torch.utils.data.DataLoader(
@@ -726,7 +726,7 @@ def run_jepa2(skip_train: bool = False,
     val_fc   = copy.copy(forecasting_data); val_fc.which  = "val";  val_fc.rebuild()
     test_fc  = copy.copy(forecasting_data); test_fc.which = "test"; test_fc.rebuild()
     _fc_bs = config.get("batch_size_forecast", 256)
-    _fc_nw = config.get("num_workers", 0)
+    _fc_nw = config.get("num_workers", 4)
     train_loader_fc = torch.utils.data.DataLoader(forecasting_data, batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
     val_loader_fc   = torch.utils.data.DataLoader(val_fc,           batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
     test_loader_fc  = torch.utils.data.DataLoader(test_fc,          batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
@@ -768,7 +768,7 @@ def run_jepa2(skip_train: bool = False,
             ds.h = h_t
             ds.target_raw_len = h_t * p_s
         _fc_bs = config.get("batch_size_forecast", 256)
-        _fc_nw = config.get("num_workers", 0)
+        _fc_nw = config.get("num_workers", 4)
         train_loader_fc = torch.utils.data.DataLoader(
             forecasting_data, batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
         val_loader_fc   = torch.utils.data.DataLoader(
@@ -963,7 +963,7 @@ def run_jepa_simple(skip_train: bool = False,
         _p_s = config["patch_size_forcasting"]
         _pl0 = pred_lens[0] if pred_lens else 96
         _fc_bs = config.get("batch_size_forecast", 256)
-        _fc_nw = config.get("num_workers", 0)
+        _fc_nw = config.get("num_workers", 4)
         train_loader_fc = torch.utils.data.DataLoader(
             PatchTSTForcastingAdapter(_csv, 'train', _PATCHTST_SEQ_LEN, _pl0, _p_s),
             batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
@@ -1209,7 +1209,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
          "--pretrained_model", pretrained_model_path,
          "--random_encoder",   str(int(random_encoder)),
          "--batch_size",       str(cfg.get("batch_size_forecast", 256)),
-         "--num_workers",      str(cfg.get("num_workers", 0)),
+         "--num_workers",      str(cfg.get("num_workers", 4)),
          "--lr",               str(cfg.get("finetune_lr", 1e-4)),
          "--seed",             "42"],
         cwd=patchtst_dir, capture_output=True, text=True,
