@@ -26,7 +26,7 @@ config = {
     # ── Model architecture ────────────────────────────────────────────────────
     "c_in": 7,          # number of input variables  (9 for UCI HAR)
     "patch_len": 16,
-    "step_size": 512,   # stride between patches (non-overlapping windows)
+    "step_size": 256,   # stride between patches — 256 fits synthetic series (15k pts); window=(32-1)*256+16=7952
     "num_patches": 32,  # window length in patches
     "n_layers": 5,
     "n_heads": 16,
