@@ -1547,9 +1547,10 @@ def run_lejepa(skip_train: bool = False,
             val_dataset  = copy.copy(train_dataset); val_dataset.which  = "val"
             test_dataset = copy.copy(train_dataset); test_dataset.which = "test"
 
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True,  num_workers=0)
-        val_loader   = torch.utils.data.DataLoader(val_dataset,   batch_size=config["batch_size"], shuffle=False, num_workers=0)
-        test_loader  = torch.utils.data.DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False, num_workers=0)
+        _nw = config.get("num_workers", 4)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True,  num_workers=_nw)
+        val_loader   = torch.utils.data.DataLoader(val_dataset,   batch_size=config["batch_size"], shuffle=False, num_workers=_nw)
+        test_loader  = torch.utils.data.DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False, num_workers=_nw)
 
         sample      = train_dataset[0]
         patch_sample = sample[0] if isinstance(sample, (list, tuple)) else sample
