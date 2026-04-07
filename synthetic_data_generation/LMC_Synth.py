@@ -26,7 +26,7 @@ from sklearn.gaussian_process.kernels import (
 )
 from tqdm.auto import tqdm
 
-LENGTH = 20000
+LENGTH = 2500
 KERNEL_BANK = [
     ExpSineSquared(periodicity=24 / LENGTH),  # H
     ExpSineSquared(periodicity=48 / LENGTH),  # 0.5H
