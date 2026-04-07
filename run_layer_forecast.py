@@ -398,7 +398,7 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
 
 
 def run_forecast_sweep(models: list, layer_configs: list,
-                       datasets: list, dry_run: bool):
+                       datasets: list, dry_run: bool, gpu_override: int = None):
     log_dir = ROOT / "logs" / "layer_forecast"
 
     # patchtst_random runs once (no layer sweep)
@@ -412,7 +412,7 @@ def run_forecast_sweep(models: list, layer_configs: list,
 
         procs = []
         for model in layered_models + random_models:
-            gpu  = MODEL_GPU[model]
+            gpu  = gpu_override if gpu_override is not None else MODEL_GPU[model]
             proc = launch_worker(model, n_layers, gpu, datasets, log_dir, dry_run)
             if proc is not None:
                 procs.append(proc)
@@ -447,6 +447,8 @@ def main():
                         metavar="MODEL")
     parser.add_argument("--datasets", nargs="+", default=DATASETS,   metavar="DATASET")
     parser.add_argument("--dry_run",  action="store_true")
+    parser.add_argument("--gpu",      type=int,  default=None,
+                        help="Override GPU for all models in this run")
 
     # internal worker mode
     parser.add_argument("--_worker",        action="store_true",  help=argparse.SUPPRESS)
@@ -474,7 +476,7 @@ def main():
     if args.dry_run:
         print("  DRY RUN\n")
 
-    run_forecast_sweep(args.models, args.layers, args.datasets, args.dry_run)
+    run_forecast_sweep(args.models, args.layers, args.datasets, args.dry_run, gpu_override=args.gpu)
 
 
 if __name__ == "__main__":
