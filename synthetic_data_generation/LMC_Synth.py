@@ -193,12 +193,12 @@ def generate_time_series(dirichlet_min, dirichlet_max, weibull_shape, weibul_sca
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-N", "--num-series", type=int, default=15000)
+    parser.add_argument("-N", "--num-series", type=int, default=10000)
     parser.add_argument("-J", "--max-kernels", type=int, default=5)
     parser.add_argument("-C", "--num-channels", type=int, default=160)
     parser.add_argument("-O", "--output", type=str, default="LMC_synth_MTS.arrow")
     parser.add_argument("-D", "--directory", type=str, default="./")
-    parser.add_argument("-L", "--length", type=int, default=20000)
+    parser.add_argument("-L", "--length", type=int, default=10000)
     parser.add_argument("-P", "--jobs", type=int, default=4)
     parser.add_argument("-M", "--dirichlet_min", type=float)
     parser.add_argument("-X", "--dirichlet_max", type=float)

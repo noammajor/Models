@@ -187,9 +187,9 @@ def generate_time_series(max_kernels: int = 5):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-N", "--num-series", type=int, default=20000)
+    parser.add_argument("-N", "--num-series", type=int, default=10000)
     parser.add_argument("-J", "--max-kernels", type=int, default=5)
-    parser.add_argument("-L", "--length", type=int, default=20000)
+    parser.add_argument("-L", "--length", type=int, default=10000)
     parser.add_argument("-P", "--jobs", type=int, default=4)
     args = parser.parse_args()
     LENGTH = args.length
