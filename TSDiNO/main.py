@@ -218,6 +218,18 @@ def train_TS_DINO(args):
         )
         combined_dataset = ConcatDataset([dataset1, dataset2])
 
+    # ── val dataset (same source, split='val') ────────────────────────────────
+    _val_kwargs = dict(_shared_kwargs, split='val')
+    if _pretrain_source in ('monash', 'monash+synthetic'):
+        val_dataset = dpuller.MonashDataPuller(data_dir=cfg['monash_data_dir'], **_val_kwargs)
+        if _pretrain_source == 'monash+synthetic':
+            syn_val = dpuller.SyntheticArrowDataPuller(data_dir=cfg['synthetic_data_dir'], **_val_kwargs)
+            val_dataset = ConcatDataset([val_dataset, syn_val])
+    elif _pretrain_source == 'synthetic':
+        val_dataset = dpuller.SyntheticArrowDataPuller(data_dir=cfg['synthetic_data_dir'], **_val_kwargs)
+    else:
+        val_dataset = None  # CSV/UCI — no val split used
+
     _is_distributed = utils.is_dist_avail_and_initialized()
     data_loader = torch.utils.data.DataLoader(
         combined_dataset,
@@ -227,6 +239,13 @@ def train_TS_DINO(args):
         pin_memory=True,
         drop_last=True,
     )
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset,
+        batch_size=args.batch_size_per_gpu,
+        num_workers=args.num_workers,
+        pin_memory=True,
+        drop_last=False,
+    ) if val_dataset is not None and len(val_dataset) > 0 else None
 
 
 
@@ -364,6 +383,7 @@ def train_TS_DINO(args):
     )
 #----------------Train Loop --------------------
     start_epoch = 0
+    best_val_loss = float('inf')
 
     start_time = time.time()
     print("Starting TS - DINO training !")
@@ -402,6 +422,28 @@ def train_TS_DINO(args):
         #utils.save_on_master(save_dict, os.path.join(args.output_dir, 'checkpoint.pth'))
         if args.saveckp_freq and epoch % args.saveckp_freq == 0:
             utils.save_on_master(save_dict, os.path.join(args.output_dir, f'checkpoint{epoch}.pth'))
+
+        # ── validation + best model ───────────────────────────────────────────
+        if val_loader is not None and utils.is_main_process():
+            student.eval()
+            val_loss_sum = 0.0
+            val_n = 0
+            with torch.no_grad():
+                for val_batch in val_loader:
+                    val_batch = val_batch.cuda(non_blocking=True)
+                    teacher_out = teacher(val_batch)
+                    student_out = student(val_batch)
+                    v_loss = dino_loss(student_out, teacher_out, epoch)
+                    val_loss_sum += v_loss.item() * val_batch.size(0)
+                    val_n += val_batch.size(0)
+            val_loss = val_loss_sum / max(val_n, 1)
+            print(f"Epoch {epoch} — val loss: {val_loss:.6f}")
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                utils.save_on_master(save_dict, os.path.join(args.output_dir, 'checkpoint_best.pth'))
+                print(f"  → New best val loss: {best_val_loss:.6f} — saved checkpoint_best.pth")
+            student.train()
+
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()}, 'epoch': epoch}
         if utils.is_main_process():
             with (Path(args.output_dir) / "log.txt").open("a") as f:

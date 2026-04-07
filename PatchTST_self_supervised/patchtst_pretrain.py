@@ -135,7 +135,7 @@ def pretrain_func(lr=args.lr):
     cbs += [
          PatchMaskCB(patch_len=args.patch_len, stride=args.stride, mask_ratio=args.mask_ratio),
          SaveModelCB(monitor='valid_loss', fname=args.save_pretrained_model,
-                        path=args.save_path, every_epoch=1)
+                        path=args.save_path)
         ]
     # define learner
     learn = Learner(dls, model, 

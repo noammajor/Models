@@ -299,8 +299,32 @@ def checkpoint_search(model: str, dataset: str, all_checkpoints: list,
 
 # ── per-model worker (runs as subprocess) ────────────────────────────────────
 
+def eval_best(model: str, dataset: str, pred_len: int,
+              gpu: int, log_dir: Path, encoder_layers: int) -> float:
+    """Evaluate all pred_lens using only the best checkpoint (no tournament)."""
+    log_path = log_dir / f"pred{pred_len}_ckptbest.log"
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
+    with log_to_file(log_path):
+        try:
+            from Train_and_downstream import run
+            if model in ("jepa_simple", "lejepa", "dino"):
+                result = run(model=model, skip_train=True, forecast_dataset=dataset,
+                             pred_lens=[pred_len], checkpoints=[""],
+                             encoder_layers=encoder_layers)
+                return result[1] if result else None
+            elif model == "npt":
+                result = run(model="npt", skip_train=True, forecast_dataset=dataset,
+                             pred_len=pred_len, checkpoints=None,
+                             encoder_layers=encoder_layers)
+                return result[0] if isinstance(result, tuple) else result
+        except Exception as e:
+            print(f"[ERROR] {model}/{dataset}/pred{pred_len}/best: {e}")
+            import traceback; traceback.print_exc()
+            return None
+
+
 def run_model_worker(model: str, encoder_layers: int, gpu: int,
-                     datasets: list, out_csv: Path):
+                     datasets: list, out_csv: Path, best_only: bool = False):
     """Run full forecasting for one model at one layer config. Called in subprocess."""
     log_base = ROOT / "logs" / "layer_forecast"
     fieldnames = ["model", "encoder_layers", "dataset", "pred_len", "mse", "timestamp"]
@@ -330,8 +354,16 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
         print(f"\n--- {model} / layers={encoder_layers} / {dataset} ---")
 
         try:
-            mses = checkpoint_search(model, dataset, all_checkpoints,
-                                     gpu, log_base, encoder_layers)
+            if best_only:
+                log_dir = log_base / f"layers{encoder_layers}" / model / dataset
+                mses = {}
+                for pl in PRED_LENS:
+                    mse = eval_best(model, dataset, pl, gpu, log_dir, encoder_layers)
+                    if mse is not None:
+                        mses[pl] = mse
+            else:
+                mses = checkpoint_search(model, dataset, all_checkpoints,
+                                         gpu, log_base, encoder_layers)
         except Exception as e:
             print(f"  [ERROR] {model}/layers{encoder_layers}/{dataset}: {e}")
             import traceback; traceback.print_exc()
@@ -364,7 +396,8 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
 # ── parallel launcher ─────────────────────────────────────────────────────────
 
 def launch_worker(model: str, encoder_layers: int, gpu: int,
-                  datasets: list, log_dir: Path, dry_run: bool):
+                  datasets: list, log_dir: Path, dry_run: bool,
+                  best_only: bool = False):
     out_csv = ROOT / "results" / f"layer_forecast_{model}_layers{encoder_layers}.csv"
     log_path = log_dir / f"{model}_layers{encoder_layers}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -378,6 +411,8 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
         "--datasets",       *datasets,
         "--out_csv",        str(out_csv),
     ]
+    if best_only:
+        cmd.append("--best_only")
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -398,7 +433,8 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
 
 
 def run_forecast_sweep(models: list, layer_configs: list,
-                       datasets: list, dry_run: bool, gpu_override: int = None):
+                       datasets: list, dry_run: bool, gpu_override: int = None,
+                       best_only: bool = False):
     log_dir = ROOT / "logs" / "layer_forecast"
 
     # patchtst_random runs once (no layer sweep)
@@ -413,7 +449,7 @@ def run_forecast_sweep(models: list, layer_configs: list,
         procs = []
         for model in layered_models + random_models:
             gpu  = gpu_override if gpu_override is not None else MODEL_GPU[model]
-            proc = launch_worker(model, n_layers, gpu, datasets, log_dir, dry_run)
+            proc = launch_worker(model, n_layers, gpu, datasets, log_dir, dry_run, best_only=best_only)
             if proc is not None:
                 procs.append(proc)
 
@@ -449,6 +485,8 @@ def main():
     parser.add_argument("--dry_run",  action="store_true")
     parser.add_argument("--gpu_override", type=int, default=None,
                         help="Override GPU for all models in this run")
+    parser.add_argument("--best_only", action="store_true",
+                        help="Skip tournament — evaluate only the best checkpoint for all pred_lens")
 
     # internal worker mode
     parser.add_argument("--_worker",        action="store_true",  help=argparse.SUPPRESS)
@@ -466,6 +504,7 @@ def main():
             gpu=args.gpu,
             datasets=args.datasets,
             out_csv=Path(args.out_csv),
+            best_only=args.best_only,
         )
         return
 
@@ -476,7 +515,8 @@ def main():
     if args.dry_run:
         print("  DRY RUN\n")
 
-    run_forecast_sweep(args.models, args.layers, args.datasets, args.dry_run, gpu_override=args.gpu_override)
+    run_forecast_sweep(args.models, args.layers, args.datasets, args.dry_run,
+                       gpu_override=args.gpu_override, best_only=args.best_only)
 
 
 if __name__ == "__main__":
