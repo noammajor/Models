@@ -516,9 +516,10 @@ def run_jepa(skip_train: bool = False,
         val_fc   = copy.copy(forecasting_data); val_fc.which  = "val";  val_fc.rebuild()
         test_fc  = copy.copy(forecasting_data); test_fc.which = "test"; test_fc.rebuild()
         _fc_bs = config.get("batch_size_forecast", 256)
-        train_loader_fc = torch.utils.data.DataLoader(forecasting_data, batch_size=_fc_bs, shuffle=True)
-        val_loader_fc   = torch.utils.data.DataLoader(val_fc,           batch_size=_fc_bs, shuffle=True)
-        test_loader_fc  = torch.utils.data.DataLoader(test_fc,          batch_size=_fc_bs, shuffle=False)
+        _fc_nw = config.get("num_workers", 0)
+        train_loader_fc = torch.utils.data.DataLoader(forecasting_data, batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
+        val_loader_fc   = torch.utils.data.DataLoader(val_fc,           batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
+        test_loader_fc  = torch.utils.data.DataLoader(test_fc,          batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
 
     # ── model ─────────────────────────────────────────────────────────────────
     model = DiscreteJEPA(
@@ -568,12 +569,13 @@ def run_jepa(skip_train: bool = False,
             ds.h = h_t
             ds.target_raw_len = h_t * p_s
         _fc_bs = config.get("batch_size_forecast", 256)
+        _fc_nw = config.get("num_workers", 0)
         train_loader_fc = torch.utils.data.DataLoader(
-            forecasting_data, batch_size=_fc_bs, shuffle=True)
+            forecasting_data, batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
         val_loader_fc   = torch.utils.data.DataLoader(
-            val_fc,           batch_size=_fc_bs, shuffle=True)
+            val_fc,           batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
         test_loader_fc  = torch.utils.data.DataLoader(
-            test_fc,          batch_size=_fc_bs, shuffle=False)
+            test_fc,          batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
         model.forcast_train = train_loader_fc
         model.forcast_val   = val_loader_fc
         model.forcast_test  = test_loader_fc
@@ -724,9 +726,10 @@ def run_jepa2(skip_train: bool = False,
     val_fc   = copy.copy(forecasting_data); val_fc.which  = "val";  val_fc.rebuild()
     test_fc  = copy.copy(forecasting_data); test_fc.which = "test"; test_fc.rebuild()
     _fc_bs = config.get("batch_size_forecast", 256)
-    train_loader_fc = torch.utils.data.DataLoader(forecasting_data, batch_size=_fc_bs, shuffle=True)
-    val_loader_fc   = torch.utils.data.DataLoader(val_fc,           batch_size=_fc_bs, shuffle=True)
-    test_loader_fc  = torch.utils.data.DataLoader(test_fc,          batch_size=_fc_bs, shuffle=False)
+    _fc_nw = config.get("num_workers", 0)
+    train_loader_fc = torch.utils.data.DataLoader(forecasting_data, batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
+    val_loader_fc   = torch.utils.data.DataLoader(val_fc,           batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
+    test_loader_fc  = torch.utils.data.DataLoader(test_fc,          batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
 
     model = DiscreteJEPA(
         config            = config,
@@ -765,12 +768,13 @@ def run_jepa2(skip_train: bool = False,
             ds.h = h_t
             ds.target_raw_len = h_t * p_s
         _fc_bs = config.get("batch_size_forecast", 256)
+        _fc_nw = config.get("num_workers", 0)
         train_loader_fc = torch.utils.data.DataLoader(
-            forecasting_data, batch_size=_fc_bs, shuffle=True)
+            forecasting_data, batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
         val_loader_fc   = torch.utils.data.DataLoader(
-            val_fc,           batch_size=_fc_bs, shuffle=True)
+            val_fc,           batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
         test_loader_fc  = torch.utils.data.DataLoader(
-            test_fc,          batch_size=_fc_bs, shuffle=False)
+            test_fc,          batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
         model.forcast_train = train_loader_fc
         model.forcast_val   = val_loader_fc
         model.forcast_test  = test_loader_fc
@@ -959,15 +963,16 @@ def run_jepa_simple(skip_train: bool = False,
         _p_s = config["patch_size_forcasting"]
         _pl0 = pred_lens[0] if pred_lens else 96
         _fc_bs = config.get("batch_size_forecast", 256)
+        _fc_nw = config.get("num_workers", 0)
         train_loader_fc = torch.utils.data.DataLoader(
             PatchTSTForcastingAdapter(_csv, 'train', _PATCHTST_SEQ_LEN, _pl0, _p_s),
-            batch_size=_fc_bs, shuffle=True)
+            batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
         val_loader_fc = torch.utils.data.DataLoader(
             PatchTSTForcastingAdapter(_csv, 'val',   _PATCHTST_SEQ_LEN, _pl0, _p_s),
-            batch_size=_fc_bs, shuffle=False)
+            batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
         test_loader_fc = torch.utils.data.DataLoader(
             PatchTSTForcastingAdapter(_csv, 'test',  _PATCHTST_SEQ_LEN, _pl0, _p_s),
-            batch_size=_fc_bs, shuffle=False)
+            batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
 
     # ── model ─────────────────────────────────────────────────────────────────
     model = JEPA(

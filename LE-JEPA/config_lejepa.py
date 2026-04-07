@@ -3,6 +3,7 @@ config = {
     "seed": 42,
     "num_epochs": 20,
     "batch_size": 128,
+    "num_workers": 4,
     "clip_grad": 1.0,
     "warmup_ratio": 0.05,
     # Optimizer: "adamw" or "sgd"

@@ -37,7 +37,7 @@ config = {
     "batch_size_forecast": 256,
     "lr":            1e-4,
     "revin":         True,
-    "num_workers":   0,
+    "num_workers":   4,
 
     # ── Zero-Shot Forecasting ─────────────────────────────────────────────────
     # horizon_t          = number of future patches to forecast

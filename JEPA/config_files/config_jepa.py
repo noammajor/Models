@@ -45,6 +45,7 @@ config = {
     "checkpoint_print": 30,
     "ratio_patches": 32,
     "batch_size": 64,
+    "num_workers": 4,
 
     # loader
     "clip_grad": 1.0,
