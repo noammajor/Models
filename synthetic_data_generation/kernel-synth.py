@@ -24,7 +24,7 @@ from sklearn.gaussian_process.kernels import (
 )
 from tqdm.auto import tqdm
 
-LENGTH = 1024
+LENGTH = 20000
 KERNEL_BANK = [
     ExpSineSquared(periodicity=24 / LENGTH),  # H
     ExpSineSquared(periodicity=48 / LENGTH),  # 0.5H
@@ -189,10 +189,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-N", "--num-series", type=int, default=20000)
     parser.add_argument("-J", "--max-kernels", type=int, default=5)
+    parser.add_argument("-L", "--length", type=int, default=20000)
+    parser.add_argument("-P", "--jobs", type=int, default=4)
     args = parser.parse_args()
-    path = Path(__file__).parent / "ind-kernelsynth-largechannel.arrow"
+    LENGTH = args.length
+    path = Path(__file__).parent / "kernel_synth.arrow"
 
-    generated_dataset = Parallel(n_jobs=-1)(
+    generated_dataset = Parallel(n_jobs=args.jobs)(
         delayed(generate_time_series)(max_kernels=args.max_kernels)
         for _ in tqdm(range(args.num_series))
     )

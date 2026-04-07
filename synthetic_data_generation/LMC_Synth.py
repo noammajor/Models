@@ -26,7 +26,7 @@ from sklearn.gaussian_process.kernels import (
 )
 from tqdm.auto import tqdm
 
-LENGTH = 1024
+LENGTH = 20000
 KERNEL_BANK = [
     ExpSineSquared(periodicity=24 / LENGTH),  # H
     ExpSineSquared(periodicity=48 / LENGTH),  # 0.5H
@@ -198,7 +198,8 @@ if __name__ == "__main__":
     parser.add_argument("-C", "--num-channels", type=int, default=160)
     parser.add_argument("-O", "--output", type=str, default="LMC_synth_MTS.arrow")
     parser.add_argument("-D", "--directory", type=str, default="./")
-    parser.add_argument("-L", "--length", type=int, default=1024)
+    parser.add_argument("-L", "--length", type=int, default=20000)
+    parser.add_argument("-P", "--jobs", type=int, default=4)
     parser.add_argument("-M", "--dirichlet_min", type=float)
     parser.add_argument("-X", "--dirichlet_max", type=float)
     parser.add_argument("-W", "--weibull_shape", type=float)
@@ -209,7 +210,7 @@ if __name__ == "__main__":
 
     LENGTH = args.length
 
-    generated_dataset = Parallel(n_jobs=-1)(
+    generated_dataset = Parallel(n_jobs=args.jobs)(
         delayed(generate_time_series)(max_kernels=args.max_kernels, num_channels=args.num_channels, dirichlet_min = args.dirichlet_min, dirichlet_max = args.dirichlet_max, weibull_shape = args.weibull_shape, weibul_scale = args.weibul_scale)
         for _ in tqdm(range(args.num_series))
     )
