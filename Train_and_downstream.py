@@ -1590,17 +1590,19 @@ def run_lejepa(skip_train: bool = False,
     best_ckpt = None
     ckpts     = checkpoints if checkpoints is not None else list(range(config["num_epochs"]))
 
+    _fc_bs = config.get("batch_size_forecast", 256)
+    _fc_nw = config.get("num_workers", 4)
     for pred_len in pred_lens:
         h_t = pred_len // p_s
         model.forcast_train = torch.utils.data.DataLoader(
             PatchTSTForcastingAdapter(_csv, 'train', _PATCHTST_SEQ_LEN, pred_len, p_s),
-            batch_size=config["batch_size"], shuffle=True,  num_workers=0)
+            batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
         model.forcast_val   = torch.utils.data.DataLoader(
             PatchTSTForcastingAdapter(_csv, 'val',   _PATCHTST_SEQ_LEN, pred_len, p_s),
-            batch_size=config["batch_size"], shuffle=False, num_workers=0)
+            batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
         model.forcast_test  = torch.utils.data.DataLoader(
             PatchTSTForcastingAdapter(_csv, 'test',  _PATCHTST_SEQ_LEN, pred_len, p_s),
-            batch_size=config["batch_size"], shuffle=False, num_workers=0)
+            batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
         model.config["horizon_t"] = h_t
 
         is_search    = (pred_len == pred_lens[0])
