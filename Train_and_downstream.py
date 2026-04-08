@@ -172,6 +172,7 @@ def run_dino(skip_train: bool = False,
              pred_lens=None,
              checkpoints=None,
              pretrain_only: bool = False,
+             classification_only: bool = False,
              encoder_layers: int = None,
              predictor_layers: int = None,
              lr: float = None,
@@ -223,9 +224,10 @@ def run_dino(skip_train: bool = False,
     if use_global_data:
         # No pretrain CSV needed; c_in = 1 (univariate global data)
         dino_cfg["c_in"] = 1
-        if not pretrain_only:
+        if not pretrain_only and classification_dataset is None:
             if forecast_dataset is None:
                 raise ValueError("forecast_dataset must be set when pretraining on global data")
+        if not pretrain_only and forecast_dataset is not None:
             ds_fore = get_dataset_info(forecast_dataset)
             dino_cfg["c_in"] = ds_fore["c_in"]
         if pretrain_source in ('monash', 'monash+synthetic'):
@@ -295,30 +297,34 @@ def run_dino(skip_train: bool = False,
         print("\n[DINO] Pretrain-only mode — skipping forecasting.")
         return
 
-    # ── forecasting downstream ────────────────────────────────────────────────
-    print("\n[DINO] Running forecasting downstream task …")
-    ckpts = checkpoints if checkpoints is not None else [80, 120, 160, 200, 240, 300]
-    best_ckpt = None
-    best_mse  = float('inf')
+    best_ckpt = "best"
+    best_mse  = None
 
-    for pred_len in pred_lens:
-        args.pred_len = pred_len
-        is_search = (pred_len == pred_lens[0])
-        ckpts_to_run = ckpts if is_search else [best_ckpt if best_ckpt is not None else ckpts[-1]]
+    if not classification_only:
+        # ── forecasting downstream ────────────────────────────────────────────
+        print("\n[DINO] Running forecasting downstream task …")
+        ckpts = checkpoints if checkpoints is not None else [80, 120, 160, 200, 240, 300]
+        best_ckpt = None
+        best_mse  = float('inf')
 
-        print(f"\n[DINO] pred_len={pred_len}"
-              + ("" if is_search else f"  [best ckpt={ckpts_to_run[0]}]"))
-        for ckpt in ckpts_to_run:
-            args.path_num = ckpt
-            print(f"  → checkpoint {ckpt} ({'random init' if ckpt == 0 else f'epoch {ckpt}'})")
-            mse = dino_main.test_run(args)
-            if is_search and mse is not None and mse < best_mse:
-                best_mse  = mse
-                best_ckpt = ckpt
+        for pred_len in pred_lens:
+            args.pred_len = pred_len
+            is_search = (pred_len == pred_lens[0])
+            ckpts_to_run = ckpts if is_search else [best_ckpt if best_ckpt is not None else ckpts[-1]]
 
-        if is_search:
-            print(f"\n[DINO] Best checkpoint at pred_len={pred_lens[0]}: "
-                  f"epoch {best_ckpt} (MSE={best_mse:.6f})")
+            print(f"\n[DINO] pred_len={pred_len}"
+                  + ("" if is_search else f"  [best ckpt={ckpts_to_run[0]}]"))
+            for ckpt in ckpts_to_run:
+                args.path_num = ckpt
+                print(f"  → checkpoint {ckpt} ({'random init' if ckpt == 0 else f'epoch {ckpt}'})")
+                mse = dino_main.test_run(args)
+                if is_search and mse is not None and mse < best_mse:
+                    best_mse  = mse
+                    best_ckpt = ckpt
+
+            if is_search:
+                print(f"\n[DINO] Best checkpoint at pred_len={pred_lens[0]}: "
+                      f"epoch {best_ckpt} (MSE={best_mse:.6f})")
 
     # ── classification downstream ─────────────────────────────────────────────
     cls_acc = None
@@ -414,10 +420,10 @@ def run_jepa(skip_train: bool = False,
     pretrain_source = _resolve_pretrain_source(config)
     use_global_data = pretrain_source is not None
 
-    # Resolve forecast dataset (always needed for downstream, optional for pretrain_only)
+    # Resolve forecast dataset (always needed for downstream, optional for pretrain_only/classify)
     forecast_dataset = forecast_dataset or config.get("forecast_dataset")
     if use_global_data:
-        if not pretrain_only and forecast_dataset is None:
+        if not pretrain_only and classification_dataset is None and forecast_dataset is None:
             raise ValueError("forecast_dataset must be set when pretraining on global data")
         if pretrain_source in ('monash', 'monash+synthetic'):
             monash_dir = config.get('monash_data_dir', '../Monash')
@@ -821,7 +827,8 @@ def run_jepa_simple(skip_train: bool = False,
                     pretrain_only: bool = False,
                     encoder_layers: int = None,
                     predictor_layers: int = None,
-                    lr: float = None):
+                    lr: float = None,
+                    pretrain_source: str = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -838,9 +845,15 @@ def run_jepa_simple(skip_train: bool = False,
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     config = dict(_mod.config)
+    if pretrain_source is not None:
+        config['pretrain_source'] = pretrain_source
+        _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source != 'monash' else ''
+        base_path = './output_model/JEPA'
+        config['path_save'] = base_path + _src_tag + '/'
     if encoder_layers is not None:
         config['num_encoder_layers'] = encoder_layers
-        config['path_save'] = config.get('path_save', './output_model/JEPA/').rstrip('/') + f'_layers{encoder_layers}/'
+        _src_tag = f"_{config['pretrain_source'].replace('+', '_')}" if config.get('pretrain_source', 'monash') != 'monash' else ''
+        config['path_save'] = f'./output_model/JEPA{_src_tag}_layers{encoder_layers}/'
     if predictor_layers is not None:
         config['predictor_num_layers'] = predictor_layers
     if lr is not None:
@@ -862,7 +875,7 @@ def run_jepa_simple(skip_train: bool = False,
 
     forecast_dataset = forecast_dataset or config.get("forecast_dataset")
     if use_global_data:
-        if not pretrain_only and forecast_dataset is None:
+        if not pretrain_only and classification_dataset is None and forecast_dataset is None:
             raise ValueError("forecast_dataset must be set when pretraining on global data")
         if pretrain_source in ('monash', 'monash+synthetic'):
             monash_dir = config.get('monash_data_dir', '../Monash')
@@ -901,7 +914,7 @@ def run_jepa_simple(skip_train: bool = False,
         print(f"  pretrain: {pretrain_dataset}   forecast: {forecast_dataset}")
         print("="*60)
 
-    if not pretrain_only:
+    if not pretrain_only and forecast_dataset is not None:
         config["path_data_forcasting"]       = [_resolve_jepa_path(ds_fore["csv_path"], jepa_dir)]
         config["timestampcols_forcasting"]   = [ds_fore["timestamp_col"]]
         config["input_variables_forcasting"] = [ds_fore["columns"]]
@@ -1419,7 +1432,8 @@ def run_lejepa(skip_train: bool = False,
                checkpoints=None,
                encoder_layers: int = None,
                predictor_layers: int = None,
-               lr: float = None):
+               lr: float = None,
+               pretrain_source: str = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -1435,9 +1449,14 @@ def run_lejepa(skip_train: bool = False,
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     config = dict(_mod.config)
+    if pretrain_source is not None:
+        config['pretrain_source'] = pretrain_source
+        _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source != 'monash' else ''
+        config['path_save'] = f'./output_model/LE-JEPA{_src_tag}/'
     if encoder_layers is not None:
         config['num_encoder_layers'] = encoder_layers
-        config['path_save'] = config.get('path_save', './output_model/LE-JEPA/').rstrip('/') + f'_layers{encoder_layers}/'
+        _src_tag = f"_{config['pretrain_source'].replace('+', '_')}" if config.get('pretrain_source', 'monash') != 'monash' else ''
+        config['path_save'] = f'./output_model/LE-JEPA{_src_tag}_layers{encoder_layers}/'
     if lr is not None:
         config['lr_sgd'] = lr
 
@@ -1463,7 +1482,7 @@ def run_lejepa(skip_train: bool = False,
     use_global_data = pretrain_source is not None
 
     if use_global_data:
-        if not pretrain_only and forecast_dataset is None:
+        if not pretrain_only and classification_dataset is None and forecast_dataset is None:
             raise ValueError("forecast_dataset must be set when pretraining on global data")
         if pretrain_source in ('monash', 'monash+synthetic'):
             monash_dir = config.get('monash_data_dir', '../Monash')
@@ -1506,7 +1525,7 @@ def run_lejepa(skip_train: bool = False,
         print(f"  pretrain: {pretrain_dataset}   forecast: {forecast_dataset}")
         print("="*60)
 
-    if not pretrain_only:
+    if not pretrain_only and forecast_dataset is not None:
         ds_fore = get_dataset_info(forecast_dataset)
         config["path_data_forcasting"]       = [str((lejepa_dir / ds_fore["csv_path"]).resolve())]
         config["timestampcols_forcasting"]   = [ds_fore["timestamp_col"]]
@@ -1748,6 +1767,7 @@ def run(model: str,
         run(model="jepa_simple", pretrain_only=True)
     """
     # ── resolve task → old flags (backwards compat) ───────────────────────────
+    classification_only = False
     if task is not None:
         task = task.lower()
         if task == "pretrain":
@@ -1758,10 +1778,11 @@ def run(model: str,
             pretrain_only = False
             classification_dataset = None   # force no classification
         elif task == "classify":
-            skip_train    = True
-            pretrain_only = False
-            forecast_dataset  = None        # force no forecasting
-            anomaly_dataset   = None
+            skip_train           = True
+            pretrain_only        = False
+            classification_only  = True
+            forecast_dataset     = None     # force no forecasting
+            anomaly_dataset      = None
         elif task == "anomaly":
             skip_train    = True
             pretrain_only = False
@@ -1785,6 +1806,7 @@ def run(model: str,
                   pretrain_dataset=pretrain_dataset,
                   forecast_dataset=forecast_dataset)
     if 'pretrain_only'          in sig.parameters: kwargs['pretrain_only']          = pretrain_only
+    if 'classification_only'   in sig.parameters: kwargs['classification_only']   = classification_only
     if 'pred_lens'              in sig.parameters: kwargs['pred_lens']              = pred_lens
     if 'checkpoints'            in sig.parameters: kwargs['checkpoints']            = checkpoints
     if 'pred_len'               in sig.parameters: kwargs['pred_len']               = pred_len
