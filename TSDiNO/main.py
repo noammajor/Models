@@ -430,12 +430,13 @@ def train_TS_DINO(args):
             val_n = 0
             with torch.no_grad():
                 for val_batch in val_loader:
-                    val_batch = val_batch.cuda(non_blocking=True)
-                    teacher_out = teacher(val_batch)
-                    student_out = student(val_batch)
+                    val_batch = [s.to(device, non_blocking=True) for s in val_batch]
+                    dino_val = val_batch[:n_global + len(cfg['local_crops'])]
+                    teacher_out = teacher(dino_val[:n_global])
+                    student_out = student(dino_val)
                     v_loss = dino_loss(student_out, teacher_out, epoch)
-                    val_loss_sum += v_loss.item() * val_batch.size(0)
-                    val_n += val_batch.size(0)
+                    val_loss_sum += v_loss.item() * val_batch[0].size(0)
+                    val_n += val_batch[0].size(0)
             val_loss = val_loss_sum / max(val_n, 1)
             print(f"Epoch {epoch} — val loss: {val_loss:.6f}")
             if val_loss < best_val_loss:
