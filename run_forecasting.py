@@ -197,7 +197,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     skip_train=True,
                     forecast_dataset=dataset,
                     pred_lens=[pred_len],
-                    checkpoints=[ckpt],
+                    checkpoints=["best"] if ckpt is None else [ckpt],
                 )
                 # result is (best_ckpt, best_mse)
                 return result[1] if result else None
@@ -310,10 +310,12 @@ def checkpoint_search(model: str, dataset: str, all_checkpoints: list,
 
 def main():
     parser = argparse.ArgumentParser(description="Checkpoint search + forecasting evaluation")
-    parser.add_argument("--models",   nargs="+", default=MODELS,   choices=MODELS,   metavar="MODEL")
-    parser.add_argument("--datasets", nargs="+", default=DATASETS, choices=DATASETS, metavar="DATASET")
-    parser.add_argument("--gpu",      type=int,  default=0)
-    parser.add_argument("--out_csv",  type=str,  default=None,
+    parser.add_argument("--models",    nargs="+", default=MODELS,   choices=MODELS,   metavar="MODEL")
+    parser.add_argument("--datasets",  nargs="+", default=DATASETS, choices=DATASETS, metavar="DATASET")
+    parser.add_argument("--gpu",       type=int,  default=0)
+    parser.add_argument("--best_only", action="store_true",
+                        help="Skip tournament — evaluate only the best checkpoint for all pred_lens")
+    parser.add_argument("--out_csv",   type=str,  default=None,
                         help="Output CSV path (default: results/forecasting_results.csv)")
     args = parser.parse_args()
 
@@ -357,7 +359,7 @@ def main():
             print(f"\n--- {model} / {dataset} ---")
 
             try:
-                if model == "patchtst_random":
+                if model == "patchtst_random" or args.best_only:
                     log_dir = log_base / model / dataset
                     mses = {}
                     for pl in PRED_LENS:

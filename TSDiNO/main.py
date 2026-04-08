@@ -793,7 +793,10 @@ def test_run(args):
     optimizer = torch.optim.Adam(model.head.parameters(), lr=args.lr_forecasting, weight_decay=1e-4)
     model = model.to(device)
     if args.path_num != 0:
-        path = os.path.join(args.output_dir, f'checkpoint{args.path_num}.pth')
+        if args.path_num == "best":
+            path = os.path.join(args.output_dir, 'checkpoint_best.pth')
+        else:
+            path = os.path.join(args.output_dir, f'checkpoint{args.path_num}.pth')
         print(f"Loading checkpoint: {path}")
         if not os.path.exists(path):
             print(f"  WARNING: checkpoint not found at {path}, using random init.")
