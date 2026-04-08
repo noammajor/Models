@@ -70,7 +70,7 @@ config = {
     "pretrain_source":    "monash",
     "monash_data_dir":    "/home/shared/datasets/Monash",
     "monash_min_len":     512,
-    "synthetic_data_dir": "/home/shared/datasets/synthetic",  # dir containing .arrow files
+    "synthetic_data_dir": "/home/shared/datasets/synthetic_data_TS",  # dir containing .arrow files
 
     # ── Forecasting downstream ────────────────────────────────────────────────
     "epoch_t": 20,
