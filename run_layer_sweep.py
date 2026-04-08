@@ -175,11 +175,16 @@ def main():
                         help="Override pretrain data source (dino only). Checkpoints saved to a separate folder.")
     parser.add_argument("--dino_gpu", type=int, default=None,
                         help="Override GPU for DINO (default: 0)")
+    parser.add_argument("--gpu_override", type=int, default=None,
+                        help="Override GPU for all models in this run")
     args = parser.parse_args()
 
     gpu_overrides = {}
     if args.dino_gpu is not None:
         gpu_overrides["dino"] = args.dino_gpu
+    if args.gpu_override is not None:
+        for m in (args.models or ALL_MODELS):
+            gpu_overrides[m] = args.gpu_override
 
     print(f"Layer sweep")
     print(f"  Models:  {args.models}")
