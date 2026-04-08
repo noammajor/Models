@@ -320,6 +320,11 @@ def eval_best(model: str, dataset: str, pred_len: int,
                              pred_len=pred_len, checkpoints=None,
                              encoder_layers=encoder_layers)
                 return result[0] if isinstance(result, tuple) else result
+            elif model == "patchtst":
+                result = run(model="patchtst", skip_train=True, forecast_dataset=dataset,
+                             pred_len=pred_len, checkpoints=None,
+                             encoder_layers=encoder_layers)
+                return result[0] if isinstance(result, tuple) else result
         except Exception as e:
             print(f"[ERROR] {model}/{dataset}/pred{pred_len}/best: {e}")
             import traceback; traceback.print_exc()
