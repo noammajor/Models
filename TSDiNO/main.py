@@ -431,8 +431,10 @@ def train_TS_DINO(args):
             with torch.no_grad():
                 for val_batch in val_loader:
                     val_batch = [s.to(device, non_blocking=True) for s in val_batch]
-                    dino_val = val_batch[:n_global + len(cfg['local_crops'])]
-                    teacher_out = teacher(dino_val[:n_global])
+                    _n_global = len(cfg['global_crops'])
+                    _n_dino   = _n_global + len(cfg['local_crops'])
+                    dino_val = val_batch[:_n_dino]
+                    teacher_out = teacher(dino_val[:_n_global])
                     student_out = student(dino_val)
                     v_loss = dino_loss(student_out, teacher_out, epoch)
                     val_loss_sum += v_loss.item() * val_batch[0].size(0)
