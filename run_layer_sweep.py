@@ -93,8 +93,9 @@ def launch_model(model: str, encoder_layers: int, gpu: int,
     log_path  = log_dir / f"{model}{src_tag}_layers{encoder_layers}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
+    _python = str(Path(sys.executable).parent / "python")
     cmd = [
-        sys.executable,
+        _python,
         str(ROOT / "Train_and_downstream.py"),
         "--model",            model,
         "--pretrain_only",    "true",
