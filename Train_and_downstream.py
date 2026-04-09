@@ -1101,7 +1101,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
                  classification_dataset=None, anomaly_dataset: str = None,
                  pretrain_only: bool = False, pred_len: int = None,
                  checkpoints=None, random_encoder: bool = False, encoder_layers: int = None,
-                 predictor_layers: int = None, lr: float = None):
+                 predictor_layers: int = None, lr: float = None, pretrain_source: str = None):
     patchtst_dir = Path(__file__).parent / "PatchTST_self_supervised"
     djepa_dir    = Path(__file__).parent / "Discrete_JEPA"
     _add_path(djepa_dir)
@@ -1112,6 +1112,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     cfg = dict(_mod.config)
+    if pretrain_source is not None:
+        cfg['pretrain_source'] = pretrain_source
     if encoder_layers is not None:
         cfg['n_layers'] = encoder_layers
         cfg['pretrained_model_id'] = encoder_layers  # unique checkpoint per layer config
@@ -1301,7 +1303,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
             classification_dataset=None, anomaly_dataset: str = None,
             pretrain_only: bool = False, pred_len: int = None,
             checkpoints=None, encoder_layers: int = None, predictor_layers: int = None,
-            lr: float = None):
+            lr: float = None, pretrain_source: str = None):
     npt_dir = Path(__file__).parent / "NPT"
     _add_path(npt_dir)
 
@@ -1310,6 +1312,8 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     _mod  = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     cfg = dict(_mod.config)
+    if pretrain_source is not None:
+        cfg['pretrain_source'] = pretrain_source
     if encoder_layers is not None:
         cfg['n_layers'] = encoder_layers
         cfg['pretrained_model_id'] = encoder_layers  # unique checkpoint per layer config
