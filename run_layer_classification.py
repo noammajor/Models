@@ -32,7 +32,7 @@ ROOT = Path(__file__).parent.resolve()
 sys.path.insert(0, str(ROOT))
 
 LAYER_CONFIGS           = [2, 4, 8, 12, 24]
-CLASSIFICATION_DATASETS = ["HAR"]   # extend as more datasets become available
+CLASSIFICATION_DATASETS = ["HAR", "Epilepsy-2", "eeg_no_big"]
 
 MODEL_GPU = {
     "dino":        0,
