@@ -1020,9 +1020,15 @@ def train_classification(args, classification_train=None, classification_val=Non
         step_size=args.patch_len
     ).to(device)
 
-    # Load pretrained encoder if path_num > 0
-    if args.path_num > 0:
-        checkpoint_path = os.path.join(args.output_dir, f'checkpoint{args.path_num:04d}.pth')
+    # Load pretrained encoder
+    if args.path_num == "best":
+        checkpoint_path = os.path.join(args.output_dir, 'checkpoint_best.pth')
+    elif args.path_num and int(args.path_num) > 0:
+        checkpoint_path = os.path.join(args.output_dir, f'checkpoint{args.path_num}.pth')
+    else:
+        checkpoint_path = None
+
+    if checkpoint_path is not None:
         if os.path.exists(checkpoint_path):
             checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
             state_dict = checkpoint['student']
