@@ -86,6 +86,7 @@ config = {
     "lr_forcasting": 4e-4,
     "batch_size_forecast": 128,
     "affine_revin": True,
+    
 
     # ── Forecasting modes ─────────────────────────────────────────────────────
     "forecasting_modes": ["zeroshot"],
