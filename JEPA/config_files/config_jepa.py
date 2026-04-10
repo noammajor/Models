@@ -84,7 +84,7 @@ config = {
     "patches_to_forcast": 8,
     "patches_size_forecasting": 16,
     "lr_forcasting": 4e-4,
-    "batch_size_forecast": 256,
+    "batch_size_forecast": 128,
     "affine_revin": True,
 
     # ── Forecasting modes ─────────────────────────────────────────────────────
