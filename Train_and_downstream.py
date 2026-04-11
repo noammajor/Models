@@ -1,7 +1,6 @@
 """
 Unified training + forecasting runner for:
   - dino        (TSDINOALT 4)
-  - jepa        (Discrete_JEPA / DiscreteJEPA)
   - jepa_simple (JEPA — P2P only, no VQ / semantic tokens)
   - lejepa      (LE-JEPA — two-view augmentation, SIGReg loss)
   - patchtst    (PatchTST_self_supervised)
@@ -9,7 +8,6 @@ Unified training + forecasting runner for:
 Usage
 -----
   python Train_and_downstream.py --model dino
-  python Train_and_downstream.py --model jepa  --skip_train true
   python Train_and_downstream.py --model lejepa
   python Train_and_downstream.py --model patchtst
 
@@ -177,10 +175,10 @@ def run_dino(skip_train: bool = False,
              predictor_layers: int = None,
              lr: float = None,
              pretrain_source: str = None):
-    dino_dir  = Path(__file__).parent / "TSDiNO"
-    djepa_dir = Path(__file__).parent / "Discrete_JEPA"
+    dino_dir       = Path(__file__).parent / "TSDiNO"
+    dataloader_dir = Path(__file__).parent / "Utils"
     _add_path(dino_dir)
-    _add_path(djepa_dir)
+    _add_path(dataloader_dir)
 
     import sys as _sys, importlib.util as _ilu
 
@@ -372,449 +370,6 @@ def run_dino(skip_train: bool = False,
 
     return best_ckpt, best_mse, cls_acc, anom_result
 
-
-# ── Discrete JEPA ─────────────────────────────────────────────────────────────
-
-def _resolve_jepa_path(p: str, jepa_dir: Path) -> str:
-    """Return *p* as-is if absolute, otherwise resolve relative to *jepa_dir*."""
-    if os.path.isabs(p):
-        return p
-    return str((jepa_dir / p.lstrip('./').lstrip('/')).resolve())
-
-
-def run_jepa(skip_train: bool = False,
-             pretrain_dataset: str = None,
-             forecast_dataset: str = None,
-             pretrain_only: bool = False,
-             pred_lens=None,
-             checkpoints=None,
-             encoder_layers: int = None,
-             predictor_layers: int = None):
-    if pred_lens is None:
-        pred_lens = [96, 192, 336, 720]
-
-    jepa_dir = Path(__file__).parent / "Discrete_JEPA"
-    _add_path(jepa_dir)
-
-    import torch
-    from config_files.config_pretrain import config
-    from data_loaders.data_puller import (DataPullerDJepa, ForcastingDataPullerDescrete,
-                                          MonashDataPullerJEPA, SyntheticArrowDataPullerJEPA)
-    from Discrete_JEPA.Discrete_Jepa import DiscreteJEPA
-
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    config = dict(config)
-    if encoder_layers is not None:
-        config['num_encoder_layers'] = encoder_layers
-        config['path_save'] = config.get('path_save', './output_model/DiscreteJEPA/').rstrip('/') + f'_layers{encoder_layers}/'
-    if predictor_layers is not None:
-        config['predictor_num_layers'] = predictor_layers
-
-    # Single-dataset pipeline: force same dataset for pretrain and forecast,
-    # disable Monash, and align split fractions so test never leaks into training.
-    if pretrain_dataset is not None and pretrain_dataset == forecast_dataset:
-        config['pretrain_source'] = None   # force CSV-only mode
-        config['val_prec']  = config.get('val_prec_forcasting',  0.1)
-        config['test_prec'] = config.get('test_prec_forcasting', 0.1)
-
-    pretrain_source = _resolve_pretrain_source(config)
-    use_global_data = pretrain_source is not None
-
-    # Resolve forecast dataset (always needed for downstream, optional for pretrain_only/classify)
-    forecast_dataset = forecast_dataset or config.get("forecast_dataset")
-    if use_global_data:
-        if not pretrain_only and classification_dataset is None and forecast_dataset is None:
-            raise ValueError("forecast_dataset must be set when pretraining on global data")
-        if pretrain_source in ('monash', 'monash+synthetic'):
-            monash_dir = config.get('monash_data_dir', '../Monash')
-            if not os.path.isabs(monash_dir):
-                config['monash_data_dir'] = str((jepa_dir / monash_dir).resolve())
-        if pretrain_source in ('synthetic', 'monash+synthetic'):
-            synth_dir = config.get('synthetic_data_dir', '../Monash')
-            if not os.path.isabs(synth_dir):
-                config['synthetic_data_dir'] = str((jepa_dir / synth_dir).resolve())
-        _src_label = {
-            'monash':           f"Monash ({config.get('monash_data_dir', '')})",
-            'synthetic':        f"Synthetic ({config.get('synthetic_data_dir', '')})",
-            'monash+synthetic': "Monash + Synthetic",
-        }.get(pretrain_source, pretrain_source)
-        print("\n" + "="*60)
-        print(f"  MODEL: Discrete JEPA")
-        if pretrain_only:
-            print(f"  pretrain: {_src_label}  [pretrain only]")
-        else:
-            ds_fore = get_dataset_info(forecast_dataset)
-            print(f"  pretrain: {_src_label}   forecast: {forecast_dataset}")
-        print("="*60)
-    else:
-        pretrain_dataset = pretrain_dataset or config.get("pretrain_dataset")
-        forecast_dataset = forecast_dataset or pretrain_dataset
-        if pretrain_dataset is None:
-            raise ValueError("pretrain_dataset not set — specify via run() or config_pretrain.py")
-        ds_pre  = get_dataset_info(pretrain_dataset)
-        ds_fore = get_dataset_info(forecast_dataset)
-        n_groups = len(ds_pre["jepa_groups"])
-        config["path_data"]       = [_resolve_jepa_path(ds_pre["csv_path"], jepa_dir)] * n_groups
-        config["timestampcols"]   = [ds_pre["timestamp_col"]] * n_groups
-        config["input_variables"] = ds_pre["jepa_groups"]
-        print("\n" + "="*60)
-        print(f"  MODEL: Discrete JEPA")
-        print(f"  pretrain: {pretrain_dataset}   forecast: {forecast_dataset}")
-        print("="*60)
-
-    if not pretrain_only:
-        # Set forecasting paths from forecast dataset
-        config["path_data_forcasting"]       = [_resolve_jepa_path(ds_fore["csv_path"], jepa_dir)]
-        config["timestampcols_forcasting"]   = [ds_fore["timestamp_col"]]
-        config["input_variables_forcasting"] = [ds_fore["columns"]]
-
-    # ── data ─────────────────────────────────────────────────────────────────
-    if skip_train and use_global_data:
-        # Skip loading pretrain data entirely — only need forecasting loaders
-        print("\n[JEPA] skip_train=True + global pretrain: skipping pretrain data load.")
-        input_dim   = config["patch_size"]  # univariate: input_dim = patch_size
-        num_patches = config["ratio_patches"]
-        train_loader = val_loader = test_loader = None
-    else:
-        print("\n[JEPA] Loading datasets …")
-        if use_global_data:
-            import torch.utils.data as _tud
-            if pretrain_source in ('monash', 'monash+synthetic'):
-                train_dataset = MonashDataPullerJEPA(config, which='train')
-                val_dataset   = MonashDataPullerJEPA(config, which='val')
-                test_dataset  = MonashDataPullerJEPA(config, which='test')
-            if pretrain_source in ('synthetic', 'monash+synthetic'):
-                syn_train = SyntheticArrowDataPullerJEPA(config, which='train')
-                syn_val   = SyntheticArrowDataPullerJEPA(config, which='val')
-                syn_test  = SyntheticArrowDataPullerJEPA(config, which='test')
-                if pretrain_source == 'monash+synthetic':
-                    train_dataset = _tud.ConcatDataset([train_dataset, syn_train])
-                    val_dataset   = _tud.ConcatDataset([val_dataset,   syn_val])
-                    test_dataset  = _tud.ConcatDataset([test_dataset,  syn_test])
-                else:
-                    train_dataset, val_dataset, test_dataset = syn_train, syn_val, syn_test
-        else:
-            train_dataset = DataPullerDJepa(
-                data_paths         = config["path_data"],
-                patch_size         = config["patch_size"],
-                batch_size         = config["batch_size"],
-                ratio_patches      = config["ratio_patches"],
-                mask_ratio         = config["mask_ratio"],
-                masking_type       = config["masking_type"],
-                num_semantic_tokens= config["num_semantic_tokens"],
-                input_variables    = config["input_variables"],
-                timestamp_cols     = config["timestampcols"],
-                type_data          = "train",
-                val_prec           = config["val_prec"],
-                test_prec          = config["test_prec"],
-                stride             = config.get("stride", None),
-                num_blocks         = config.get("num_blocks", 1),
-            )
-            val_dataset  = copy.copy(train_dataset); val_dataset.which  = "val"
-            test_dataset = copy.copy(train_dataset); test_dataset.which = "test"
-
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
-        val_loader   = torch.utils.data.DataLoader(val_dataset,   batch_size=config["batch_size"], shuffle=True)
-        test_loader  = torch.utils.data.DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False)
-        input_dim       = len(train_loader.dataset[0][0][0])
-        num_patches     = len(train_loader.dataset[0][0])
-
-    if pretrain_only:
-        train_loader_fc = val_loader_fc = test_loader_fc = None
-    else:
-        forecasting_data = ForcastingDataPullerDescrete(config)
-        val_fc   = copy.copy(forecasting_data); val_fc.which  = "val";  val_fc.rebuild()
-        test_fc  = copy.copy(forecasting_data); test_fc.which = "test"; test_fc.rebuild()
-        _fc_bs = config.get("batch_size_forecast", 256)
-        _fc_nw = config.get("num_workers", 4)
-        train_loader_fc = torch.utils.data.DataLoader(forecasting_data, batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
-        val_loader_fc   = torch.utils.data.DataLoader(val_fc,           batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
-        test_loader_fc  = torch.utils.data.DataLoader(test_fc,          batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
-
-    # ── model ─────────────────────────────────────────────────────────────────
-    model = DiscreteJEPA(
-        config            = config,
-        input_dim         = input_dim,
-        num_patches       = num_patches,
-        steps_per_epoch   = 1,
-        train_loader      = train_loader,
-        val_loader        = val_loader,
-        test_loader       = test_loader,
-        forcasting_train  = train_loader_fc,
-        forcasting_val    = val_loader_fc,
-        forcasting_test   = test_loader_fc,
-    )
-
-    # ── pretraining ───────────────────────────────────────────────────────────
-    if not skip_train:
-        print("\n[JEPA] Starting pretraining …")
-        model.train_and_evaluate()
-    else:
-        print("[JEPA] Skipping pretraining.")
-
-    if pretrain_only:
-        print("\n[JEPA] Pretrain-only mode — skipping forecasting.")
-        return
-
-    # ── forecasting downstream ────────────────────────────────────────────────
-    # CSV already loaded — update horizon on existing dataset objects per pred_len,
-    # recreate DataLoaders (size changes), then loop checkpoints.  Test split is
-    # never used during fine-tuning; only evaluated at the end of each run.
-    modes = config.get("forecasting_modes", ["zeroshot"])
-    _MODE_MAP = {
-        "zeroshot":          "forcasting_zeroshot",
-        "finetuning":        "finetuning_forecasting",
-        "predictor":         "predictor_forecasting",
-        "predictor_s2p_p2p": "predictor_s2p_p2p_forecasting",
-    }
-    ckpts = checkpoints if checkpoints is not None else [40, 60, 90, 120, 160]
-    p_s = config["patch_size_forcasting"]
-    best_ckpt = None
-    best_mse  = float('inf')
-
-    for pred_len in pred_lens:
-        h_t = pred_len // p_s
-        # Patch the already-loaded datasets in-place (no CSV re-read)
-        for ds in [forecasting_data, val_fc, test_fc]:
-            ds.h = h_t
-            ds.target_raw_len = h_t * p_s
-        _fc_bs = config.get("batch_size_forecast", 256)
-        _fc_nw = config.get("num_workers", 4)
-        train_loader_fc = torch.utils.data.DataLoader(
-            forecasting_data, batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
-        val_loader_fc   = torch.utils.data.DataLoader(
-            val_fc,           batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
-        test_loader_fc  = torch.utils.data.DataLoader(
-            test_fc,          batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
-        model.forcast_train = train_loader_fc
-        model.forcast_val   = val_loader_fc
-        model.forcast_test  = test_loader_fc
-        model.config["horizon_t"] = h_t
-
-        # pred_len=96 (first): sweep all checkpoints to find the best.
-        # Remaining pred_lens: use only the best checkpoint found above.
-        is_search = (pred_len == pred_lens[0])
-        ckpts_to_run = ckpts if is_search else [best_ckpt if best_ckpt is not None else ckpts[-1]]
-
-        print(f"\n[JEPA] pred_len={pred_len} (horizon_t={h_t})  modes={modes}"
-              + (""  if is_search else f"  [best ckpt={ckpts_to_run[0]}]"))
-        for epoch in ckpts_to_run:
-            print(f"  → checkpoint epoch {epoch}")
-            ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
-            for mode in modes:
-                method_name = _MODE_MAP.get(mode)
-                if method_name is None:
-                    print(f"  [JEPA] Unknown forecasting mode '{mode}', skipping.")
-                    continue
-                mse = getattr(model, method_name)(ckpt_tag)
-                # During the pred_len=96 sweep, track the best checkpoint by MSE
-                if is_search and mode == modes[0] and mse is not None and mse < best_mse:
-                    best_mse  = mse
-                    best_ckpt = epoch
-
-        if is_search:
-            print(f"\n[JEPA] Best checkpoint at pred_len={pred_lens[0]}: "
-                  f"epoch {best_ckpt} (mix MSE={best_mse:.4f})")
-
-    return best_ckpt, best_mse
-
-
-# ── Discrete JEPA 2 (RevIN, no StandardScaler, denorm forecasting) ────────────
-
-def run_jepa2(skip_train: bool = False,
-              pretrain_dataset: str = None,
-              forecast_dataset: str = None,
-              pred_lens=None,
-              checkpoints=None):
-    if pred_lens is None:
-        pred_lens = [96, 192, 336, 720]
-
-    jepa2_dir = Path(__file__).parent / "Discrete_JEPA_2"
-    _add_path(jepa2_dir)
-
-    import torch
-    from config_files.config_pretrain import config
-    from data_loaders.data_puller import (DataPullerDJepa, ForcastingDataPullerDescrete,
-                                          MonashDataPullerJEPA, SyntheticArrowDataPullerJEPA)
-    from Discrete_JEPA.Discrete_Jepa import DiscreteJEPA
-
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    config = dict(config)
-
-    if pretrain_dataset is not None and pretrain_dataset == forecast_dataset:
-        config['pretrain_source'] = None   # force CSV-only mode
-        config['val_prec']  = config.get('val_prec_forcasting',  0.1)
-        config['test_prec'] = config.get('test_prec_forcasting', 0.1)
-
-    pretrain_source = _resolve_pretrain_source(config)
-    use_global_data = pretrain_source is not None
-
-    forecast_dataset = forecast_dataset or config.get("forecast_dataset")
-    if use_global_data:
-        if forecast_dataset is None:
-            raise ValueError("forecast_dataset must be set when pretraining on global data")
-        ds_fore = get_dataset_info(forecast_dataset)
-        if pretrain_source in ('monash', 'monash+synthetic'):
-            monash_dir = config.get('monash_data_dir', '../Monash')
-            if not os.path.isabs(monash_dir):
-                config['monash_data_dir'] = str((jepa2_dir / monash_dir).resolve())
-        if pretrain_source in ('synthetic', 'monash+synthetic'):
-            synth_dir = config.get('synthetic_data_dir', '../Monash')
-            if not os.path.isabs(synth_dir):
-                config['synthetic_data_dir'] = str((jepa2_dir / synth_dir).resolve())
-        _src_label = {
-            'monash':           f"Monash ({config.get('monash_data_dir', '')})",
-            'synthetic':        f"Synthetic ({config.get('synthetic_data_dir', '')})",
-            'monash+synthetic': "Monash + Synthetic",
-        }.get(pretrain_source, pretrain_source)
-        print("\n" + "="*60)
-        print(f"  MODEL: Discrete JEPA 2  (RevIN)")
-        print(f"  pretrain: {_src_label}   forecast: {forecast_dataset}")
-        print("="*60)
-    else:
-        pretrain_dataset = pretrain_dataset or config.get("pretrain_dataset")
-        forecast_dataset = forecast_dataset or pretrain_dataset
-        if pretrain_dataset is None:
-            raise ValueError("pretrain_dataset not set — specify via run() or config_pretrain.py")
-        ds_pre  = get_dataset_info(pretrain_dataset)
-        ds_fore = get_dataset_info(forecast_dataset)
-        n_groups = len(ds_pre["jepa_groups"])
-        config["path_data"]       = [_resolve_jepa_path(ds_pre["csv_path"], jepa2_dir)] * n_groups
-        config["timestampcols"]   = [ds_pre["timestamp_col"]] * n_groups
-        config["input_variables"] = ds_pre["jepa_groups"]
-        print("\n" + "="*60)
-        print(f"  MODEL: Discrete JEPA 2  (RevIN)")
-        print(f"  pretrain: {pretrain_dataset}   forecast: {forecast_dataset}")
-        print("="*60)
-
-    config["path_data_forcasting"]       = [_resolve_jepa_path(ds_fore["csv_path"], jepa2_dir)]
-    config["timestampcols_forcasting"]   = [ds_fore["timestamp_col"]]
-    config["input_variables_forcasting"] = [ds_fore["columns"]]
-
-    print("\n[JEPA2] Loading datasets …")
-    if use_global_data:
-        import torch.utils.data as _tud
-        if pretrain_source in ('monash', 'monash+synthetic'):
-            train_dataset = MonashDataPullerJEPA(config, which='train')
-            val_dataset   = MonashDataPullerJEPA(config, which='val')
-            test_dataset  = MonashDataPullerJEPA(config, which='test')
-        if pretrain_source in ('synthetic', 'monash+synthetic'):
-            syn_train = SyntheticArrowDataPullerJEPA(config, which='train')
-            syn_val   = SyntheticArrowDataPullerJEPA(config, which='val')
-            syn_test  = SyntheticArrowDataPullerJEPA(config, which='test')
-            if pretrain_source == 'monash+synthetic':
-                train_dataset = _tud.ConcatDataset([train_dataset, syn_train])
-                val_dataset   = _tud.ConcatDataset([val_dataset,   syn_val])
-                test_dataset  = _tud.ConcatDataset([test_dataset,  syn_test])
-            else:
-                train_dataset, val_dataset, test_dataset = syn_train, syn_val, syn_test
-    else:
-        train_dataset = DataPullerDJepa(
-            data_paths         = config["path_data"],
-            patch_size         = config["patch_size"],
-            batch_size         = config["batch_size"],
-            ratio_patches      = config["ratio_patches"],
-            mask_ratio         = config["mask_ratio"],
-            masking_type       = config["masking_type"],
-            num_semantic_tokens= config["num_semantic_tokens"],
-            input_variables    = config["input_variables"],
-            timestamp_cols     = config["timestampcols"],
-            type_data          = "train",
-            val_prec           = config["val_prec"],
-            test_prec          = config["test_prec"],
-            stride             = config.get("stride", None),
-            num_blocks         = config.get("num_blocks", 1),
-        )
-        val_dataset  = copy.copy(train_dataset); val_dataset.which  = "val"
-        test_dataset = copy.copy(train_dataset); test_dataset.which = "test"
-
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
-    val_loader   = torch.utils.data.DataLoader(val_dataset,   batch_size=config["batch_size"], shuffle=True)
-    test_loader  = torch.utils.data.DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False)
-    input_dim    = len(train_loader.dataset[0][0][0])
-
-    forecasting_data = ForcastingDataPullerDescrete(config)
-    val_fc   = copy.copy(forecasting_data); val_fc.which  = "val";  val_fc.rebuild()
-    test_fc  = copy.copy(forecasting_data); test_fc.which = "test"; test_fc.rebuild()
-    _fc_bs = config.get("batch_size_forecast", 256)
-    _fc_nw = config.get("num_workers", 4)
-    train_loader_fc = torch.utils.data.DataLoader(forecasting_data, batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
-    val_loader_fc   = torch.utils.data.DataLoader(val_fc,           batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
-    test_loader_fc  = torch.utils.data.DataLoader(test_fc,          batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
-
-    model = DiscreteJEPA(
-        config            = config,
-        input_dim         = input_dim,
-        num_patches       = len(train_loader.dataset[0][0]),
-        steps_per_epoch   = len(train_loader),
-        train_loader      = train_loader,
-        val_loader        = val_loader,
-        test_loader       = test_loader,
-        forcasting_train  = train_loader_fc,
-        forcasting_val    = val_loader_fc,
-        forcasting_test   = test_loader_fc,
-    )
-
-    if not skip_train:
-        print("\n[JEPA2] Starting pretraining …")
-        model.train_and_evaluate()
-    else:
-        print("[JEPA2] Skipping pretraining.")
-
-    modes = config.get("forecasting_modes", ["zeroshot"])
-    _MODE_MAP = {
-        "zeroshot":          "forcasting_zeroshot",
-        "finetuning":        "finetuning_forecasting",
-        "predictor":         "predictor_forecasting",
-        "predictor_s2p_p2p": "predictor_s2p_p2p_forecasting",
-    }
-    ckpts = checkpoints if checkpoints is not None else [40, 60, 90, 120, 160]
-    p_s = config["patch_size_forcasting"]
-    best_ckpt = None
-    best_mse  = float('inf')
-
-    for pred_len in pred_lens:
-        h_t = pred_len // p_s
-        for ds in [forecasting_data, val_fc, test_fc]:
-            ds.h = h_t
-            ds.target_raw_len = h_t * p_s
-        _fc_bs = config.get("batch_size_forecast", 256)
-        _fc_nw = config.get("num_workers", 4)
-        train_loader_fc = torch.utils.data.DataLoader(
-            forecasting_data, batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
-        val_loader_fc   = torch.utils.data.DataLoader(
-            val_fc,           batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
-        test_loader_fc  = torch.utils.data.DataLoader(
-            test_fc,          batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
-        model.forcast_train = train_loader_fc
-        model.forcast_val   = val_loader_fc
-        model.forcast_test  = test_loader_fc
-        model.config["horizon_t"] = h_t
-
-        is_search = (pred_len == pred_lens[0])
-        ckpts_to_run = ckpts if is_search else [best_ckpt if best_ckpt is not None else ckpts[-1]]
-
-        print(f"\n[JEPA2] pred_len={pred_len} (horizon_t={h_t})  modes={modes}"
-              + ("" if is_search else f"  [best ckpt={ckpts_to_run[0]}]"))
-        for epoch in ckpts_to_run:
-            print(f"  → checkpoint epoch {epoch}")
-            for mode in modes:
-                method_name = _MODE_MAP.get(mode)
-                if method_name is None:
-                    print(f"  [JEPA2] Unknown forecasting mode '{mode}', skipping.")
-                    continue
-                mse = getattr(model, method_name)(f"_epoch{epoch}")
-                if is_search and mode == modes[0] and mse is not None and mse < best_mse:
-                    best_mse  = mse
-                    best_ckpt = epoch
-
-        if is_search:
-            print(f"\n[JEPA2] Best checkpoint at pred_len={pred_lens[0]}: "
-                  f"epoch {best_ckpt} (mix MSE={best_mse:.4f})")
-
-    return best_ckpt, best_mse
-
-
 # ── JEPA (P2P only, no VQ / semantic tokens) ─────────────────────────────────
 
 def run_jepa_simple(skip_train: bool = False,
@@ -832,10 +387,10 @@ def run_jepa_simple(skip_train: bool = False,
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
-    jepa_dir  = Path(__file__).parent / "JEPA"
-    djepa_dir = Path(__file__).parent / "Discrete_JEPA"
+    jepa_dir       = Path(__file__).parent / "JEPA"
+    dataloader_dir = Path(__file__).parent / "Utils"
     _add_path(jepa_dir)
-    _add_path(djepa_dir)   # for data_loaders (shared with Discrete JEPA)
+    _add_path(dataloader_dir)   # for data_loaders
 
     import importlib.util, torch
 
@@ -1102,9 +657,9 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
                  pretrain_only: bool = False, pred_len: int = None,
                  checkpoints=None, random_encoder: bool = False, encoder_layers: int = None,
                  predictor_layers: int = None, lr: float = None, pretrain_source: str = None):
-    patchtst_dir = Path(__file__).parent / "PatchTST_self_supervised"
-    djepa_dir    = Path(__file__).parent / "Discrete_JEPA"
-    _add_path(djepa_dir)
+    patchtst_dir   = Path(__file__).parent / "PatchTST_self_supervised"
+    dataloader_dir = Path(__file__).parent / "Utils"
+    _add_path(dataloader_dir)
 
     import importlib.util
     _spec = importlib.util.spec_from_file_location(
@@ -1441,10 +996,10 @@ def run_lejepa(skip_train: bool = False,
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
-    lejepa_dir = Path(__file__).parent / "LE-JEPA"
-    djepa_dir  = Path(__file__).parent / "Discrete_JEPA"
+    lejepa_dir     = Path(__file__).parent / "LE-JEPA"
+    dataloader_dir = Path(__file__).parent / "Utils"
     _add_path(lejepa_dir)
-    _add_path(djepa_dir)   # DataPullerDJepa + MonashDataPullerJEPA + ForcastingDataPullerDescrete
+    _add_path(dataloader_dir)   # DataPullerDJepa + MonashDataPullerJEPA + ForcastingDataPullerDescrete
 
     import importlib.util, torch
 
@@ -1724,8 +1279,6 @@ def run_random(skip_train: bool = False, pretrain_dataset: str = None, forecast_
 
 RUNNERS = {
     "dino":            run_dino,
-    "jepa":            run_jepa,
-    "jepa2":           run_jepa2,
     "jepa_simple":     run_jepa_simple,
     "lejepa":          run_lejepa,
     "patchtst":        run_patchtst,
@@ -1830,7 +1383,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model", type=str, required=True,
         choices=list(RUNNERS),
-        help="Which model to run: dino | jepa | jepa2 | jepa_simple | lejepa | patchtst | npt | random",
+        help="Which model to run: dino | jepa_simple | lejepa | patchtst | npt | random",
     )
     parser.add_argument(
         "--pretrain_dataset", type=str, default=None,

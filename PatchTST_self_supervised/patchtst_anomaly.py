@@ -16,9 +16,9 @@ from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 
 _DIR   = os.path.dirname(os.path.abspath(__file__))
 _ROOT  = os.path.dirname(_DIR)
-_DJEPA = os.path.join(_ROOT, "Discrete_JEPA")
+_DATALOADER_DIR = os.path.join(_ROOT, "Utils")
 
-for _p in [_DIR, _ROOT, _DJEPA]:
+for _p in [_DIR, _ROOT, _DATALOADER_DIR]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

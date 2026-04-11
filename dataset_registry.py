@@ -1,7 +1,7 @@
 """Central dataset registry.
 
 Add a new entry to DATASETS to support a new CSV dataset.
-All paths resolve relative to  Discrete_JEPA/data/  so they work in
+All paths resolve relative to the shared data directory so they work in
 Colab (after drive mount) and locally without editing path strings anywhere else.
 """
 

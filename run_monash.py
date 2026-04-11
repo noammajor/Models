@@ -7,10 +7,9 @@ Usage:
     python run_monash.py --gpu 1            # use GPU 1
     python run_monash.py --models dino npt  # pretrain specific model(s)
 
-Models: dino | jepa | jepa_simple | npt | patchtst
+Models: dino | jepa_simple | npt | patchtst
 Checkpoints are saved by each model to its own output directory:
   dino        →  TSDiNO/checkpoints/checkpoint{epoch}.pth
-  jepa        →  Discrete_JEPA/output_model/DiscreteJEPA/_epoch{epoch}/
   jepa_simple →  JEPA/output_model/JEPA/_epoch{epoch}/
   npt         →  NPT/saved_models/monash/ntp/ntp_pretrained_*_epoch{epoch}.pt
   patchtst    →  PatchTST_self_supervised/saved_models/monash/masked_patchtst/based_model/*_epoch{epoch}.pth
@@ -24,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT   = Path(__file__).parent
-MODELS = ["jepa_simple", "jepa", "npt", "patchtst", "dino"]
+MODELS = ["jepa_simple", "npt", "patchtst", "dino"]
 
 
 def pretrain_one(model: str, gpu: int, log_dir: Path) -> bool:

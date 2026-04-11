@@ -424,7 +424,7 @@ class ForcastingDataPullerDescrete(Dataset):
 
 class MonashDataPullerJEPA(Dataset):
     """
-    Loads all Monash .tsf files for Discrete JEPA pretraining.
+    Loads all Monash .tsf files for JEPA pretraining.
 
     Returns (patches_tensor, context_idx, target_idx) matching DataPullerDJepa.
     Each univariate series is returned as [ratio_patches, patch_size, 1] — no

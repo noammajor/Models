@@ -26,9 +26,9 @@ from torch import nn
 # ── path setup ────────────────────────────────────────────────────────────────
 _NPT_DIR    = os.path.dirname(os.path.abspath(__file__))
 _ROOT_DIR   = os.path.dirname(_NPT_DIR)
-_DJEPA_DIR  = os.path.join(_ROOT_DIR, 'Discrete_JEPA')
+_DATALOADER_DIR  = os.path.join(_ROOT_DIR, 'Utils')
 
-for _p in [_NPT_DIR, _ROOT_DIR, _DJEPA_DIR]:
+for _p in [_NPT_DIR, _ROOT_DIR, _DATALOADER_DIR]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

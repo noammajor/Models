@@ -20,7 +20,7 @@ Usage:
     python run_forecasting.py --models jepa_simple dino
     python run_forecasting.py --datasets etth1 etth2
 
-Models run in order: jepa_simple, jepa, patchtst, npt, dino
+Models run in order: jepa_simple, patchtst, npt, dino
 Datasets in order:   etth1, etth2, ettm1, ettm2, weather, electricity, traffic
 """
 
@@ -36,7 +36,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent.resolve()
 sys.path.insert(0, str(ROOT))
 
-MODELS   = ["jepa_simple", "jepa", "lejepa", "patchtst", "npt", "dino", "patchtst_random"]
+MODELS   = ["jepa_simple", "lejepa", "patchtst", "npt", "dino", "patchtst_random"]
 DATASETS = ["etth1", "etth2", "ettm1", "ettm2", "weather", "electricity", "traffic"]
 PRED_LENS = [96, 192, 336, 720]
 
@@ -87,17 +87,6 @@ def discover_checkpoints(model: str) -> list:
             int(p.stem.replace("checkpoint", ""))
             for p in ckpt_dir.glob("checkpoint*.pth")
             if p.stem.replace("checkpoint", "").isdigit()
-        )
-        return found or []
-
-    elif model == "jepa":
-        import re as _re
-        ckpt_dir = ROOT / "output_model" / "DiscreteJEPA"
-        found = sorted(
-            int(m.group(1))
-            for p in ckpt_dir.glob("_epoch*best_model.pt")
-            for m in [_re.search(r'_epoch(\d+)best_model', p.stem)]
-            if m
         )
         return found or []
 
@@ -191,7 +180,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
         try:
             from Train_and_downstream import run
 
-            if model in ("jepa", "jepa_simple", "lejepa", "dino"):
+            if model in ("jepa_simple", "lejepa", "dino"):
                 result = run(
                     model=model,
                     skip_train=True,

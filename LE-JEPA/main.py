@@ -6,7 +6,7 @@ Run from the LE-JEPA/ directory:
                    [--skip_train] [--pretrain_only]
                    [--pred_lens 96 192 336 720]
 
-Data is loaded via DataPullerDJepa (same infrastructure as Discrete JEPA).
+Data is loaded via DataPullerDJepa (shared data loaders).
 Masks returned by DataPullerDJepa are ignored — LE-JEPA uses augmentation,
 not masking, to produce two views.
 """
@@ -24,7 +24,7 @@ from torch.utils.data import DataLoader
 # ── Paths ─────────────────────────────────────────────────────────────────────
 _HERE      = Path(__file__).parent.resolve()
 _ROOT      = _HERE.parent
-_DJEPA_DIR = _ROOT / "Discrete_JEPA"
+_DATALOADER_DIR = _ROOT / "Utils"
 
 def _add(p):
     s = str(p)
@@ -33,7 +33,7 @@ def _add(p):
 
 _add(_HERE)
 _add(_ROOT)
-_add(_DJEPA_DIR)   # DataPullerDJepa + MonashDataPullerJEPA + ForcastingDataPullerDescrete
+_add(_DATALOADER_DIR)   # DataPullerDJepa + MonashDataPullerJEPA + ForcastingDataPullerDescrete
 
 
 # ── Imports that depend on sys.path ───────────────────────────────────────────
