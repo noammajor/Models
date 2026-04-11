@@ -1243,19 +1243,17 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         print(result.stderr)
         return None
 
-    # Parse MSE from the saved _acc.csv — match on target_points to avoid reading wrong pred_len
-    import glob as _glob
-    acc_files = _glob.glob(os.path.join(
-        patchtst_dir, "saved_models", _forecast_dset,
-        "masked_patchtst", cfg.get("model_type", "based_model"),
-        f"*_tw{_target_points}_*_acc.csv"
-    ))
+    # Parse MSE/MAE from stdout — the subprocess prints "score: [mse, mae]"
+    # This is guaranteed to be from the current run (not a stale csv).
+    import re as _re
     mse_val = None
-    if acc_files:
-        import pandas as _pd
-        acc = _pd.read_csv(sorted(acc_files)[-1])
-        mse_val = float(acc["mse"].iloc[0])
+    mae_val = None
+    _score_match = _re.search(r"score:\s*\[array\(([\d.]+)[^)]*\)[^,]*,\s*array\(([\d.]+)", result.stdout)
+    if _score_match:
+        mse_val = float(_score_match.group(1))
+        mae_val = float(_score_match.group(2))
         print(f"[PatchTST] MSE on {_forecast_dset}: {mse_val:.4f}")
+        print(f"[PatchTST] MAE on {_forecast_dset}: {mae_val:.4f}")
 
     # ── classification downstream ─────────────────────────────────────────────
     cls_acc = None
@@ -1294,7 +1292,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         anom_result = ptst_anomaly(cfg, pretrained_model_path, anom_train, anom_test,
                                    anomaly_ratio=cfg.get("anomaly_ratio", 1.0))
 
-    return mse_val, cls_acc, anom_result
+    return mse_val, mae_val, cls_acc, anom_result
 
 
 # ── NPT (NTP pretraining on PatchTST) ─────────────────────────────────────────
@@ -1694,6 +1692,322 @@ def run_lejepa(skip_train: bool = False,
     return best_ckpt, best_mse, cls_acc, anom_result
 
 
+# ── TimeDart ──────────────────────────────────────────────────────────────────
+
+# Registry key → TimeDart data arg + csv filename + freq
+_TIMEDART_DATASET_MAP = {
+    "etth1":       ("ETTh1",       "ETTh1.csv",       "h"),
+    "etth2":       ("ETTh2",       "ETTh2.csv",       "h"),
+    "ettm1":       ("ETTm1",       "ETTm1.csv",       "t"),
+    "ettm2":       ("ETTm2",       "ETTm2.csv",       "t"),
+    "weather":     ("Weather",     "weather.csv",     "h"),
+    "electricity": ("Electricity", "electricity.csv", "h"),
+    "traffic":     ("Traffic",     "traffic.csv",     "h"),
+}
+
+
+def run_timedart(skip_train: bool = False,
+                 pretrain_dataset: str = None,
+                 forecast_dataset: str = None,
+                 pretrain_only: bool = False,
+                 pred_lens=None,
+                 checkpoints=None,
+                 encoder_layers: int = None,
+                 lr: float = None,
+                 pretrain_source: str = None,
+                 gpu: int = None):
+    """
+    TimeDart: diffusion-based pretraining with Monash/Synthetic data,
+    followed by forecasting fine-tune using our PatchTSTForcastingAdapter
+    (same splits / normalisation as every other model).
+
+    Backbone: PatchTST (bidirectional encoder, configured via config_timedart.py).
+    Diffusion pretraining objective is unchanged.
+    """
+    if pred_lens is None:
+        pred_lens = [96, 192, 336, 720]
+
+    timedart_dir = Path(__file__).parent / "TimeDART-main"
+    djepa_dir    = Path(__file__).parent / "Discrete_JEPA"
+    _add_path(timedart_dir)
+    _add_path(djepa_dir)
+
+    import importlib.util as _ilu, torch
+    from types import SimpleNamespace
+    from collections import OrderedDict
+
+    # ── load config ────────────────────────────────────────────────────────────
+    _spec = _ilu.spec_from_file_location("config_timedart", timedart_dir / "config_timedart.py")
+    _mod  = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+    cfg = dict(_mod.config)
+
+    if pretrain_source is not None:
+        cfg['pretrain_source'] = pretrain_source
+    if encoder_layers is not None:
+        cfg['e_layers'] = encoder_layers
+    if lr is not None:
+        cfg['learning_rate'] = lr
+
+    _src_tag  = f"_{cfg['pretrain_source'].replace('+', '_')}" if cfg.get('pretrain_source', 'monash') != 'monash' else ''
+    ckpt_dir  = Path(__file__).parent / f"outputs/timedart_pretrain{_src_tag}_layers{cfg['e_layers']}"
+    ckpt_file = ckpt_dir / f"monash{_src_tag}" / "ckpt_best.pth"
+
+    forecast_dataset = forecast_dataset or "etth1"
+    pretrain_src     = _resolve_pretrain_source(cfg)
+
+    # GPU: honour explicit override, else cuda:0 (CUDA_VISIBLE_DEVICES already set by caller)
+    _gpu_idx = gpu if gpu is not None else 0
+    _device  = torch.device(f"cuda:{_gpu_idx}" if torch.cuda.is_available() else "cpu")
+
+    print("\n" + "="*60)
+    print(f"  MODEL: TimeDart  (backbone={cfg.get('model','PatchTST')})")
+    print(f"  pretrain: {pretrain_src or pretrain_dataset}   forecast: {forecast_dataset}")
+    print(f"  e_layers={cfg['e_layers']}  d_model={cfg['d_model']}  patch_len={cfg['patch_len']}")
+    print("="*60)
+
+    seq_len   = cfg['seq_len']
+    patch_len = cfg['patch_len']
+    stride    = cfg['stride']
+
+    # Shared args namespace used for both pretrain and finetune
+    base_args = SimpleNamespace(
+        model              = cfg.get('model', 'PatchTST'),
+        downstream_task    = "forecast",
+        use_gpu            = torch.cuda.is_available(),
+        gpu                = _gpu_idx,
+        use_multi_gpu      = False,
+        devices            = str(_gpu_idx),
+        device             = _device,
+        device_ids         = [_gpu_idx],
+        input_len          = seq_len,
+        seq_len            = seq_len,
+        label_len          = cfg.get("label_len", 0),
+        pred_len           = 96,
+        test_pred_len      = 96,
+        patch_len          = patch_len,
+        stride             = stride,
+        d_model            = cfg['d_model'],
+        n_heads            = cfg['n_heads'],
+        e_layers           = cfg['e_layers'],
+        d_layers           = 1,
+        d_ff               = cfg['d_ff'],
+        dropout            = cfg['dropout'],
+        head_dropout       = cfg.get('head_dropout', 0.1),
+        fc_dropout         = 0.0,
+        embed              = "timeF",
+        activation         = "gelu",
+        output_attention   = False,
+        individual         = 0,
+        factor             = 1,
+        distil             = True,
+        moving_avg         = 25,
+        top_k              = 5,
+        num_kernels        = 3,
+        enc_in             = 1,
+        dec_in             = 1,
+        c_out              = 1,
+        use_norm           = 1,
+        time_steps         = cfg['time_steps'],
+        scheduler          = cfg['scheduler'],
+        mask_ratio         = cfg['mask_ratio'],
+        lr_decay           = cfg['lr_decay'],
+        pct_start          = cfg.get('pct_start', 0.3),
+        lradj              = cfg.get('lradj', 'decay'),
+        features           = cfg.get('features', 'M'),
+        target             = "OT",
+        freq               = "h",
+        seasonal_patterns  = "Monthly",
+        num_classes        = 6,
+        num_workers        = cfg.get('num_workers', 4),
+        train_epochs       = cfg.get('train_epochs', 20),
+        batch_size         = cfg.get('batch_size', 128),
+        learning_rate      = cfg['learning_rate'],
+        patience           = cfg.get('patience', 3),
+        accumulation_steps = 4,
+        select_channels    = 1.0,
+        use_amp            = False,
+        lm                 = 3,
+        positive_nums      = 3,
+        rbtp               = 1,
+        temperature        = 0.2,
+        masked_rule        = "geometric",
+        mask_rate          = 0.5,
+        load_checkpoints   = None,
+        pretrain_checkpoints = str(ckpt_dir),
+        checkpoints        = str(Path(__file__).parent / "outputs" / "timedart_finetune"),
+        transfer_checkpoints = "ckpt_best.pth",
+        data               = "ETTh1",
+        root_path          = "/tmp",
+        data_path          = "ETTh1.csv",
+        task_name          = "pretrain",
+        llm_path           = "Qwen/Qwen2.5-0.5B",
+        backbone           = "Qwen2.5-0.5B",
+    )
+
+    # ── pretraining ────────────────────────────────────────────────────────────
+    if not skip_train:
+        from data_loaders.data_puller import (MonashWindowDatasetTimeDart,
+                                              SyntheticWindowDatasetTimeDart)
+
+        monash_dir = cfg.get('monash_data_dir', '/home/shared/datasets/Monash')
+        synth_dir  = cfg.get('synthetic_data_dir', '/home/shared/datasets/synthetic_data_TS')
+        min_len    = cfg.get('monash_min_len', 512)
+
+        def _make_pretrain_loader(which):
+            datasets = []
+            if pretrain_src in ('monash', 'monash+synthetic'):
+                datasets.append(MonashWindowDatasetTimeDart(
+                    monash_dir, seq_len=seq_len, which=which, min_len=min_len))
+            if pretrain_src in ('synthetic', 'monash+synthetic'):
+                datasets.append(SyntheticWindowDatasetTimeDart(
+                    synth_dir, seq_len=seq_len, which=which, min_len=min_len))
+            ds = datasets[0] if len(datasets) == 1 else torch.utils.data.ConcatDataset(datasets)
+            return torch.utils.data.DataLoader(
+                ds, batch_size=cfg['batch_size'], shuffle=(which == 'train'),
+                num_workers=cfg.get('num_workers', 4), drop_last=True)
+
+        train_loader = _make_pretrain_loader('train')
+        val_loader   = _make_pretrain_loader('val')
+
+        base_args.task_name = "pretrain"
+        base_args.data      = "monash" + _src_tag
+
+        from exp.exp_timedart import Exp_TimeDART
+        exp = Exp_TimeDART(base_args)
+
+        ckpt_path = ckpt_dir / base_args.data
+        ckpt_path.mkdir(parents=True, exist_ok=True)
+
+        optimizer       = torch.optim.Adam(exp.model.parameters(), lr=cfg['learning_rate'])
+        model_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=cfg['lr_decay'])
+
+        n_epochs = cfg.get('train_epochs', 20)
+        min_vali = float('inf')
+
+        print(f"\n[TimeDart] Pretraining ({n_epochs} epochs) …")
+        for epoch in range(n_epochs):
+            train_loss = exp.pretrain_one_epoch(train_loader, optimizer, model_scheduler)
+            vali_loss  = exp.valid_one_epoch(val_loader)
+            print(f"  Epoch {epoch+1}/{n_epochs} | train={train_loss:.4f} vali={vali_loss:.4f}")
+            if vali_loss <= min_vali:
+                min_vali = vali_loss
+                enc_sd = OrderedDict(
+                    (k, v) for k, v in exp.model.state_dict().items()
+                    if "encoder" in k or "enc_embedding" in k)
+                torch.save({"epoch": epoch, "model_state_dict": enc_sd},
+                           ckpt_path / "ckpt_best.pth")
+                print(f"    ✓ saved best (vali={vali_loss:.4f})")
+        print(f"[TimeDart] Pretraining done. Checkpoint: {ckpt_path}/ckpt_best.pth")
+    else:
+        print("[TimeDart] Skipping pretraining.")
+
+    if pretrain_only:
+        return
+
+    # ── forecasting downstream — our PatchTSTForcastingAdapter ────────────────
+    # Wraps the exact same splits / normalisation used by all other models.
+    # Returns (batch_x, batch_y, zeros_xmark, zeros_ymark) matching TimeDart's
+    # train loop which only uses batch_x (input) and batch_y (target).
+    from data_loaders.data_puller import PatchTSTForcastingAdapter
+
+    if not ckpt_file.exists():
+        print(f"[TimeDart] WARNING: checkpoint not found at {ckpt_file}")
+
+    ds_info   = get_dataset_info(forecast_dataset)
+    _csv      = ds_info["csv_path"]
+    _c_in     = ds_info["c_in"]
+    _fc_bs    = cfg.get('batch_size_forecast', 128)
+    _fc_nw    = cfg.get('num_workers', 4)
+    _PATCHTST_SEQ_LEN = 336
+
+    best_mse  = float('inf')
+    best_pred = None
+
+    from exp.exp_timedart import Exp_TimeDART
+
+    for pred_len in pred_lens:
+        # Build our standard forecasting loaders
+        def _fc_loader(split):
+            ds = _FlatWindowAdapter(
+                PatchTSTForcastingAdapter(_csv, split, _PATCHTST_SEQ_LEN, pred_len, patch_len))
+            return torch.utils.data.DataLoader(
+                ds, batch_size=_fc_bs, shuffle=(split == 'train'),
+                num_workers=_fc_nw, drop_last=True)
+
+        ft_args = SimpleNamespace(**vars(base_args))
+        ft_args.task_name      = "finetune"
+        ft_args.pred_len       = pred_len
+        ft_args.test_pred_len  = pred_len
+        ft_args.train_epochs   = cfg.get('epochs_forecasting', 10)
+        ft_args.learning_rate  = cfg.get('lr_forecasting', 1e-4)
+        ft_args.batch_size     = _fc_bs
+        ft_args.enc_in         = _c_in
+        ft_args.dec_in         = _c_in
+        ft_args.c_out          = _c_in
+        ft_args.load_checkpoints = str(ckpt_file) if ckpt_file.exists() else None
+        ft_args.checkpoints    = str(Path(__file__).parent / "outputs" / "timedart_finetune")
+
+        setting = f"timedart_{forecast_dataset}_pl{pred_len}_dm{cfg['d_model']}_el{cfg['e_layers']}"
+
+        print(f"\n[TimeDart] Fine-tuning pred_len={pred_len} on {forecast_dataset} …")
+        exp = Exp_TimeDART(ft_args)
+
+        # Inject our loaders directly — bypasses TimeDart's _get_data()
+        exp._td_train_loader = _fc_loader('train')
+        exp._td_val_loader   = _fc_loader('val')
+        exp._td_test_loader  = _fc_loader('test')
+        _patch_timedart_get_data(exp)
+
+        exp.train(setting)
+
+        criterion   = exp._select_criterion()
+        test_loader = exp._td_test_loader
+        mse = exp.valid(test_loader, criterion)
+        print(f"  [TimeDart] pred_len={pred_len} → test MSE={mse:.4f}")
+
+        if pred_len == pred_lens[0] and mse < best_mse:
+            best_mse  = mse
+            best_pred = pred_len
+
+    return best_pred, best_mse
+
+
+class _FlatWindowAdapter(torch.utils.data.Dataset):
+    """
+    Wraps PatchTSTForcastingAdapter (which returns patched tensors) and
+    flattens them back to (seq_x, seq_y, zeros_mark, zeros_mark) so that
+    TimeDart's train/valid loops receive the (B, T, C) shape they expect.
+    """
+    def __init__(self, patched_ds):
+        self._ds = patched_ds
+
+    def __len__(self):
+        return len(self._ds)
+
+    def __getitem__(self, idx):
+        ctx, tgt = self._ds[idx]
+        # ctx: [n_patches, patch_size, C]  →  [seq_len, C]
+        # tgt: [h,         patch_size, C]  →  [pred_len, C]
+        seq_x = ctx.reshape(-1, ctx.shape[-1])
+        seq_y = tgt.reshape(-1, tgt.shape[-1])
+        zeros = torch.zeros_like(seq_x)
+        return seq_x, seq_y, zeros, zeros
+
+
+def _patch_timedart_get_data(exp):
+    """Monkey-patch _get_data on a TimeDart Exp instance to return our loaders."""
+    import types
+
+    def _get_data(self, flag):
+        loader = {'train': self._td_train_loader,
+                  'val':   self._td_val_loader,
+                  'test':  self._td_test_loader}[flag]
+        return loader.dataset, loader
+
+    exp._get_data = types.MethodType(_get_data, exp)
+
+
 # ── Random baseline ───────────────────────────────────────────────────────────
 
 def run_random(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None):
@@ -1732,6 +2046,7 @@ RUNNERS = {
     "patchtst_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, pretrain_only=False, pred_len=None, checkpoints=None, encoder_layers=None: run_patchtst(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, pretrain_only=pretrain_only, pred_len=pred_len, checkpoints=checkpoints, random_encoder=True, encoder_layers=encoder_layers),
     "npt":             run_ntp,
     "random":          run_random,
+    "timedart":        run_timedart,
 }
 
 def run(model: str,
@@ -1750,7 +2065,8 @@ def run(model: str,
         encoder_layers: int = None,
         predictor_layers: int = None,
         lr: float = None,
-        pretrain_source: str = None):
+        pretrain_source: str = None,
+        gpu: int = None):
     """
     Unified entry point. Each run handles ONE task.
 
@@ -1821,6 +2137,7 @@ def run(model: str,
     if 'anomaly_dataset'        in sig.parameters: kwargs['anomaly_dataset']        = anomaly_dataset
     if 'checkpoint'             in sig.parameters: kwargs['checkpoint']             = checkpoint
     if 'pretrain_source'        in sig.parameters: kwargs['pretrain_source']        = pretrain_source
+    if 'gpu'                    in sig.parameters: kwargs['gpu']                    = gpu
     return runner(**kwargs)
 
 

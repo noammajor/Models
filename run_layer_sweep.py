@@ -71,6 +71,7 @@ MODEL_GPU = {
     "lejepa":     2,
     "patchtst":   3,
     "npt":        4,
+    "timedart":   5,
 }
 
 ALL_MODELS = list(MODEL_GPU.keys())
@@ -85,7 +86,7 @@ def launch_model(model: str, encoder_layers: int, gpu: int,
     pred_layers = predictor_layers_for(encoder_layers)
     if model == "dino":
         lr = DINO_LAYER_LR[encoder_layers]
-    elif model in ("npt", "patchtst"):
+    elif model in ("npt", "patchtst", "timedart"):
         lr = NPT_PATCHTST_LAYER_LR[encoder_layers]
     else:
         lr = LAYER_LR[encoder_layers]

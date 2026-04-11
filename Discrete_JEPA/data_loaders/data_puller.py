@@ -657,6 +657,193 @@ class SyntheticArrowDataPullerJEPA(Dataset):
         return patches_tensor, context_idx.squeeze(0), target_idx.squeeze(0)
 
 
+# ── TimeDart pretraining window datasets ──────────────────────────────────────
+#
+# TimeDart's pretrain loop expects (batch_x, batch_y, batch_x_mark, batch_y_mark)
+# where batch_x has shape (B, seq_len, C).  Only batch_x is used in the pretrain
+# loss (diffusion reconstruction), so batch_y / marks are returned as zeros.
+
+class MonashWindowDatasetTimeDart(Dataset):
+    """
+    Loads all Monash .tsf files for TimeDart pretraining.
+
+    Each series is split train/val/test (same proportions used across the
+    codebase: val_prec=0.1, test_prec=0.1), scaled with StandardScaler fitted
+    on the training portion, then cut into non-overlapping windows of seq_len.
+
+    Returns (batch_x, zeros_y, zeros_mark_x, zeros_mark_y) where
+    batch_x is shape (seq_len, 1).  Only batch_x is consumed by TimeDart's
+    pretrain loop; the remaining tensors satisfy the 4-tuple contract.
+
+    Config keys used:
+        monash_data_dir, monash_min_len, val_prec, test_prec
+    """
+
+    def __init__(self, data_dir, seq_len=336, which='train',
+                 min_len=512, val_prec=0.1, test_prec=0.1):
+        self.which   = which
+        self.seq_len = seq_len
+
+        self._series = {'train': [], 'val': [], 'test': []}
+        self._index  = {'train': [], 'val': [], 'test': []}
+
+        self._load_all(data_dir, min_len, val_prec, test_prec)
+        print(f"MonashWindowDatasetTimeDart [{which}]: "
+              f"{len(self._index['train'])} train | "
+              f"{len(self._index['val'])} val | "
+              f"{len(self._index['test'])} test windows (seq_len={seq_len})")
+
+    def _load_all(self, data_dir, min_len, val_prec, test_prec):
+        tsf_files = sorted(f for f in os.listdir(data_dir) if f.endswith('.tsf'))
+        for fname in tsf_files:
+            path = os.path.join(data_dir, fname)
+            try:
+                series_list = _read_tsf_series(path)
+            except Exception as e:
+                print(f"  MonashWindowDatasetTimeDart: skipping {fname} — {e}")
+                continue
+            loaded = 0
+            for series in series_list:
+                if np.isnan(series).any() or len(series) < min_len:
+                    continue
+                series = series.reshape(-1, 1)   # [T, 1]
+                T         = len(series)
+                val_len   = int(T * val_prec)
+                test_len  = int(T * test_prec)
+                train_len = T - val_len - test_len
+
+                scaler = StandardScaler()
+                scaler.fit(series[:train_len])
+                scaled = scaler.transform(series).astype(np.float32)
+
+                splits = {
+                    'train': scaled[:train_len],
+                    'val':   scaled[train_len : train_len + val_len],
+                    'test':  scaled[train_len + val_len :],
+                }
+                for sname, arr in splits.items():
+                    if len(arr) < self.seq_len:
+                        continue
+                    t     = torch.from_numpy(arr)
+                    s_idx = len(self._series[sname])
+                    self._series[sname].append(t)
+                    n_windows = len(t) // self.seq_len
+                    for wi in range(n_windows):
+                        self._index[sname].append((s_idx, wi))
+                loaded += 1
+            if loaded:
+                print(f"  {fname}: {loaded} series")
+
+    def __len__(self):
+        return len(self._index[self.which])
+
+    def __getitem__(self, idx):
+        s_idx, wi = self._index[self.which][idx]
+        tensor    = self._series[self.which][s_idx]
+        start     = wi * self.seq_len
+        window    = tensor[start : start + self.seq_len]   # [seq_len, 1]
+        zeros     = torch.zeros_like(window)
+        return window, zeros, zeros, zeros
+
+
+class SyntheticWindowDatasetTimeDart(Dataset):
+    """
+    Loads synthetic .arrow files for TimeDart pretraining.
+
+    Same interface and return contract as MonashWindowDatasetTimeDart.
+    Handles univariate [T] and multivariate [C, T] targets; each channel is
+    treated as an independent univariate series (C=1 slice per window).
+
+    Config keys used:
+        synthetic_data_dir, monash_min_len (reused), val_prec, test_prec
+    """
+
+    def __init__(self, data_dir, seq_len=336, which='train',
+                 min_len=512, val_prec=0.1, test_prec=0.1):
+        self.which   = which
+        self.seq_len = seq_len
+
+        self._series = {'train': [], 'val': [], 'test': []}
+        self._index  = {'train': [], 'val': [], 'test': []}
+
+        self._load_all(data_dir, min_len, val_prec, test_prec)
+        print(f"SyntheticWindowDatasetTimeDart [{which}]: "
+              f"{len(self._index['train'])} train | "
+              f"{len(self._index['val'])} val | "
+              f"{len(self._index['test'])} test windows (seq_len={seq_len})")
+
+    def _load_all(self, data_dir, min_len, val_prec, test_prec):
+        import pyarrow as pa
+        arrow_files = sorted(f for f in os.listdir(data_dir) if f.endswith('.arrow'))
+        for fname in arrow_files:
+            path = os.path.join(data_dir, fname)
+            try:
+                with pa.memory_map(path, 'r') as src:
+                    table = pa.ipc.open_file(src).read_all()
+            except Exception:
+                try:
+                    with open(path, 'rb') as f:
+                        reader = pa.ipc.open_stream(f)
+                        table  = reader.read_all()
+                except Exception as e:
+                    print(f"  SyntheticWindowDatasetTimeDart: skipping {fname} — {e}")
+                    continue
+
+            loaded = 0
+            for row in table.column('target'):
+                arr = row.as_py()
+                if arr is None:
+                    continue
+                arr = np.array(arr, dtype=np.float32)
+                if arr.ndim == 1:
+                    arr = arr[:, None]          # [T] → [T, 1]
+                elif arr.ndim == 2:
+                    arr = arr.T                 # [C, T] → [T, C]
+                else:
+                    continue
+
+                T = arr.shape[0]
+                if T < min_len or np.isnan(arr).any():
+                    continue
+
+                val_len   = int(T * val_prec)
+                test_len  = int(T * test_prec)
+                train_len = T - val_len - test_len
+
+                scaler = StandardScaler()
+                scaler.fit(arr[:train_len])
+                scaled = scaler.transform(arr).astype(np.float32)   # [T, C]
+
+                splits = {
+                    'train': scaled[:train_len],
+                    'val':   scaled[train_len : train_len + val_len],
+                    'test':  scaled[train_len + val_len :],
+                }
+                for sname, split_arr in splits.items():
+                    if len(split_arr) < self.seq_len:
+                        continue
+                    t     = torch.from_numpy(split_arr)   # [T, C]
+                    s_idx = len(self._series[sname])
+                    self._series[sname].append(t)
+                    n_windows = len(t) // self.seq_len
+                    for wi in range(n_windows):
+                        self._index[sname].append((s_idx, wi))
+                loaded += 1
+            if loaded:
+                print(f"  {fname}: {loaded} series")
+
+    def __len__(self):
+        return len(self._index[self.which])
+
+    def __getitem__(self, idx):
+        s_idx, wi = self._index[self.which][idx]
+        tensor    = self._series[self.which][s_idx]
+        start     = wi * self.seq_len
+        window    = tensor[start : start + self.seq_len]   # [seq_len, C]
+        zeros     = torch.zeros_like(window)
+        return window, zeros, zeros, zeros
+
+
 # ── Classification ────────────────────────────────────────────────────────────
 
 def _cls_load_dataset(root: Path, which: str, val_fraction: float):
