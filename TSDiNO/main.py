@@ -172,6 +172,7 @@ def train_TS_DINO(args):
         step_size = args.step_size,
         min_len   = cfg.get('monash_min_len', 512),
     )
+    _synth_kwargs = dict(_shared_kwargs, window_step=cfg.get('window_step', None))
     if _pretrain_source in ('monash', 'monash+synthetic'):
         print("Using Monash dataset for DINO pretraining")
         combined_dataset = dpuller.MonashDataPuller(
@@ -179,12 +180,12 @@ def train_TS_DINO(args):
         if _pretrain_source == 'monash+synthetic':
             print("Using Monash + Synthetic datasets for DINO pretraining")
             syn_dataset = dpuller.SyntheticArrowDataPuller(
-                data_dir = cfg['synthetic_data_dir'], **_shared_kwargs)
+                data_dir = cfg['synthetic_data_dir'], **_synth_kwargs)
             combined_dataset = ConcatDataset([combined_dataset, syn_dataset])
     elif _pretrain_source == 'synthetic':
         print("Using Synthetic dataset for DINO pretraining")
         combined_dataset = dpuller.SyntheticArrowDataPuller(
-            data_dir = cfg['synthetic_data_dir'], **_shared_kwargs)
+            data_dir = cfg['synthetic_data_dir'], **_synth_kwargs)
     if _pretrain_source is not None:
         print(f"Pretrain dataset: {len(combined_dataset)} windows")
     elif 'UCI HAR' in args.data_path:
@@ -223,10 +224,12 @@ def train_TS_DINO(args):
     if _pretrain_source in ('monash', 'monash+synthetic'):
         val_dataset = dpuller.MonashDataPuller(data_dir=cfg['monash_data_dir'], **_val_kwargs)
         if _pretrain_source == 'monash+synthetic':
-            syn_val = dpuller.SyntheticArrowDataPuller(data_dir=cfg['synthetic_data_dir'], **_val_kwargs)
+            _val_synth_kwargs = dict(_val_kwargs, window_step=cfg.get('window_step', None))
+            syn_val = dpuller.SyntheticArrowDataPuller(data_dir=cfg['synthetic_data_dir'], **_val_synth_kwargs)
             val_dataset = ConcatDataset([val_dataset, syn_val])
     elif _pretrain_source == 'synthetic':
-        val_dataset = dpuller.SyntheticArrowDataPuller(data_dir=cfg['synthetic_data_dir'], **_val_kwargs)
+        _val_synth_kwargs = dict(_val_kwargs, window_step=cfg.get('window_step', None))
+        val_dataset = dpuller.SyntheticArrowDataPuller(data_dir=cfg['synthetic_data_dir'], **_val_synth_kwargs)
     else:
         val_dataset = None  # CSV/UCI — no val split used
 

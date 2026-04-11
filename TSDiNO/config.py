@@ -26,7 +26,8 @@ config = {
     # ── Model architecture ────────────────────────────────────────────────────
     "c_in": 7,          # number of input variables  (9 for UCI HAR)
     "patch_len": 16,
-    "step_size": 256,   # stride between patches; window=(32-1)*256+16=7952; needs series train split ≥7952 (LENGTH≥9940)
+    "step_size": 16,    # stride between patches within window; window=(32-1)*16+16=512
+    "window_step": 512, # stride between windows; =window_size for non-overlapping (matches JEPA chunk=512)
     "num_patches": 32,  # window length in patches
     "n_layers": 5,
     "n_heads": 16,

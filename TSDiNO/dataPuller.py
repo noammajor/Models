@@ -526,13 +526,17 @@ class SyntheticArrowDataPuller(Dataset):
     Mirrors the MonashDataPuller interface — returns [window_size, 1] tensors.
     Handles both univariate [T] and multivariate [C, T] targets (each channel
     is treated as a separate univariate series).
+
+    window_step controls the stride between windows (defaults to step_size).
+    Set window_step=window_size for non-overlapping windows.
     """
 
     def __init__(self, data_dir, split='train', transform=None,
-                 batch_size=32, patch_size=12, step_size=12,
+                 batch_size=32, patch_size=12, step_size=12, window_step=None,
                  min_len=512, val_prec=0.1, test_prec=0.1):
         self.window_size = (batch_size - 1) * step_size + patch_size
         self.step_size   = step_size
+        self.window_step = window_step if window_step is not None else step_size
         self.transform   = transform
         self.which       = split
 
@@ -603,7 +607,7 @@ class SyntheticArrowDataPuller(Dataset):
                         t     = torch.from_numpy(seg)
                         s_idx = len(self._series[sname])
                         self._series[sname].append(t)
-                        n_windows = (len(t) - self.window_size) // self.step_size + 1
+                        n_windows = (len(t) - self.window_size) // self.window_step + 1
                         for j in range(n_windows):
                             self._index[sname].append((s_idx, j))
                     loaded += 1
@@ -616,7 +620,7 @@ class SyntheticArrowDataPuller(Dataset):
     def __getitem__(self, idx):
         s_idx, j = self._index[self.which][idx]
         tensor = self._series[self.which][s_idx]
-        start  = j * self.step_size
+        start  = j * self.window_step
         chunk  = tensor[start : start + self.window_size]  # [window_size, 1]
         if self.transform:
             chunk = self.transform(chunk)
