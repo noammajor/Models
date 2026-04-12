@@ -80,8 +80,9 @@ class LRFinderCB(Callback):
         self.best_loss, self.aver_loss = inf, 0 
         self.train_iter = 0
 
-        # save model to load back after fitting 
-        self.temp_path = self.save('current', 'temp/', with_opt=False)  
+        # save model to load back after fitting (unique path per process to avoid concurrent-run collisions)
+        import os as _os
+        self.temp_path = self.save('current', f'temp_{_os.getpid()}/', with_opt=False)
 
         # set base_lr for the optimizer
         self.set_lr(self.start_lr)

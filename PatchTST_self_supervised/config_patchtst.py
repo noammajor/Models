@@ -30,7 +30,7 @@ config = {
     "n_epochs_pretrain":   20,
     "batch_size":          128,
     "num_workers":         4,
-    "batch_size_forecast": 16,
+    "batch_size_forecast": 32,
     "finetune_lr":         4e-4,
     "pretrained_model_id": 1,
     "model_type":          "based_model",
