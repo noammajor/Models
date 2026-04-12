@@ -43,7 +43,7 @@ config = {
     # data
     "checkpoint_save": 5000,
     "checkpoint_print": 30,
-    "ratio_patches": 21,  # 21×16 = 336 timesteps — aligned with forecasting context
+    "ratio_patches": 32,  # 21×16 = 336 timesteps — aligned with forecasting context
     "batch_size": 64,
     "num_workers": 4,
 
