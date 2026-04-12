@@ -826,6 +826,7 @@ def test_run(args):
             missing, unexpected = model.load_state_dict(new_state_dict, strict=False)
             print(f"✓ Loaded DINO teacher checkpoint from epoch {args.path_num}")
             print(f"  Loaded {len(new_state_dict)} / {len(model_state)} weights")
+            print(f"  Missing: {missing}")
             print(f"  Missing (new head): {len(missing)}  |  Unexpected (DINO head): {len(unexpected)}")
 
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
@@ -973,9 +974,12 @@ def train_classification(args, classification_train=None, classification_val=Non
         val_loader   = classification_val
         test_loader  = classification_test
         # infer shape from first batch
-        _x, _ = next(iter(train_loader))  # [B, n_patches, patch_size, n_vars]
-        n_vars    = _x.shape[-1]
-        num_patch = _x.shape[1]
+        _x, _ = next(iter(train_loader))  # [B, n_patches, patch_size, n_vars] or [B, T, C]
+        n_vars = _x.shape[-1]
+        if _x.dim() == 3:   # raw (B, T, C) from UEADataset
+            num_patch = _x.shape[1] // args.patch_len
+        else:               # pre-patched (B, P, PL, C) from ClassificationDataPuller
+            num_patch = _x.shape[1]
         n_cls     = n_classes
     else:
         # ── legacy UCI HAR path ───────────────────────────────────────────────
@@ -1026,6 +1030,8 @@ def train_classification(args, classification_train=None, classification_val=Non
     # Load pretrained encoder
     if args.path_num == "best":
         checkpoint_path = os.path.join(args.output_dir, 'checkpoint_best.pth')
+    elif isinstance(args.path_num, str) and os.path.isabs(args.path_num):
+        checkpoint_path = args.path_num   # direct absolute file path (TEMP: for local testing, remove after)
     elif args.path_num and int(args.path_num) > 0:
         checkpoint_path = os.path.join(args.output_dir, f'checkpoint{args.path_num}.pth')
     else:
@@ -1099,9 +1105,10 @@ def train_classification(args, classification_train=None, classification_val=Non
                 param_group['lr'] = lr_schedule[step]
 
             inputs, labels = inputs.to(device), labels.to(device)
-            # ClassificationDataPuller: [B, P, PL, n_vars] → model expects [B, P, n_vars, PL]
+            labels = labels.squeeze(-1) if labels.dim() > 1 else labels
             if inputs.dim() == 4:
-                inputs = inputs.permute(0, 1, 3, 2)
+                B, P, PL, C = inputs.shape
+                inputs = inputs.reshape(B, P * PL, C)
 
             # Forward pass
             outputs = model(inputs)  # [batch_size, n_classes]
@@ -1128,7 +1135,8 @@ def train_classification(args, classification_train=None, classification_val=Non
             for inputs, labels in eval_loader:
                 inputs, labels = inputs.to(device), labels.to(device)
                 if inputs.dim() == 4:
-                    inputs = inputs.permute(0, 1, 3, 2)
+                    B, P, PL, C = inputs.shape
+                    inputs = inputs.reshape(B, P * PL, C)
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
                 val_loss += loss.item()
@@ -1152,7 +1160,8 @@ def train_classification(args, classification_train=None, classification_val=Non
                 'args': args,
                 'val_acc': val_acc
             }
-            save_path = os.path.join(args.output_dir, f'classification_best_checkpoint{args.path_num:04d}.pth')
+            _ckpt_tag = args.path_num if isinstance(args.path_num, int) else 'custom'
+            save_path = os.path.join(args.output_dir, f'classification_best_checkpoint{_ckpt_tag}.pth')
             torch.save(save_dict, save_path)
 
     # Final test accuracy with best checkpoint
@@ -1165,7 +1174,8 @@ def train_classification(args, classification_train=None, classification_val=Non
         for inputs, labels in test_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             if inputs.dim() == 4:
-                inputs = inputs.permute(0, 1, 3, 2)
+                B, P, PL, C = inputs.shape
+                inputs = inputs.reshape(B, P * PL, C)
             outputs = model(inputs)
             _, predicted = outputs.max(1)
             total += labels.size(0)

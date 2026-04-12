@@ -176,7 +176,8 @@ def run_dino(skip_train: bool = False,
              encoder_layers: int = None,
              predictor_layers: int = None,
              lr: float = None,
-             pretrain_source: str = None):
+             pretrain_source: str = None,
+             checkpoint: str = None):
     dino_dir  = Path(__file__).parent / "TSDiNO"
     djepa_dir = Path(__file__).parent / "Discrete_JEPA"
     _add_path(dino_dir)
@@ -297,7 +298,8 @@ def run_dino(skip_train: bool = False,
         print("\n[DINO] Pretrain-only mode — skipping forecasting.")
         return
 
-    best_ckpt = "best"
+    # If a direct checkpoint path is given, use it (TEMP: for local testing, remove after)
+    best_ckpt = os.path.abspath(checkpoint) if checkpoint else "best"
     best_mse  = None
 
     if not classification_only:
@@ -329,15 +331,19 @@ def run_dino(skip_train: bool = False,
     # ── classification downstream ─────────────────────────────────────────────
     cls_acc = None
     if classification_dataset is not None:
-        from data_loaders.data_puller import ClassificationDataPuller
+        from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
         cls_dir = dino_cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
         cls_bs  = dino_cfg.get("batch_size_classification", 64)
         p_s     = args.patch_len
-        _mk = lambda split: torch.utils.data.DataLoader(
-            ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
-            batch_size=cls_bs, shuffle=(split == "train"))
-        cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
-        n_classes = cls_train.dataset.n_classes
+        if list(Path(os.path.join(cls_dir, classification_dataset)).glob("*_TRAIN.ts")):
+            cls_train, cls_val, cls_test, n_classes = make_uea_dataloaders(
+                cls_dir, classification_dataset, batch_size=cls_bs)
+        else:
+            _mk = lambda split: torch.utils.data.DataLoader(
+                ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
+                batch_size=cls_bs, shuffle=(split == "train"))
+            cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
+            n_classes = cls_train.dataset.n_classes
         args.path_num = best_ckpt if best_ckpt is not None else 0
         cls_acc = dino_main.train_classification(
             args, cls_train, cls_val, cls_test, n_classes)
@@ -828,7 +834,8 @@ def run_jepa_simple(skip_train: bool = False,
                     encoder_layers: int = None,
                     predictor_layers: int = None,
                     lr: float = None,
-                    pretrain_source: str = None):
+                    pretrain_source: str = None,
+                    checkpoint: str = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -873,7 +880,10 @@ def run_jepa_simple(skip_train: bool = False,
     pretrain_source = _resolve_pretrain_source(config)
     use_global_data = pretrain_source is not None
 
+    _caller_wants_forecast = forecast_dataset is not None  # preserve explicit None before config default
     forecast_dataset = forecast_dataset or config.get("forecast_dataset")
+    if not _caller_wants_forecast:
+        forecast_dataset = None   # caller passed None → don't default to config value
     if use_global_data:
         if not pretrain_only and classification_dataset is None and forecast_dataset is None:
             raise ValueError("forecast_dataset must be set when pretraining on global data")
@@ -894,9 +904,11 @@ def run_jepa_simple(skip_train: bool = False,
         print(f"  MODEL: JEPA (P2P)")
         if pretrain_only:
             print(f"  pretrain: {_src_label}  [pretrain only]")
-        else:
+        elif forecast_dataset:
             ds_fore = get_dataset_info(forecast_dataset)
             print(f"  pretrain: {_src_label}   forecast: {forecast_dataset}")
+        else:
+            print(f"  pretrain: {_src_label}   [classify only]")
         print("="*60)
     else:
         pretrain_dataset = pretrain_dataset or config.get("pretrain_dataset")
@@ -974,7 +986,7 @@ def run_jepa_simple(skip_train: bool = False,
     _PATCHTST_SEQ_LEN = 336
     _ctx_patches = _PATCHTST_SEQ_LEN // config["patch_size_forcasting"]   # = 21
     config["forecasting_context_patches"] = _ctx_patches
-    if pretrain_only:
+    if pretrain_only or forecast_dataset is None:
         train_loader_fc = val_loader_fc = test_loader_fc = None
     else:
         _csv = config["path_data_forcasting"][0]
@@ -1018,58 +1030,85 @@ def run_jepa_simple(skip_train: bool = False,
         return
 
     # ── forecasting downstream ────────────────────────────────────────────────
-    ckpts = checkpoints if checkpoints is not None else [80, 120, 160, 200, 240, 300]
-    p_s = config["patch_size_forcasting"]
-    _csv = config["path_data_forcasting"][0]
     best_ckpt = None
     best_mse  = float('inf')
-    _fc_bs2 = config.get("batch_size_forecast", 256)
-    _fc_nw2 = config.get("num_workers", 4)
+    if forecast_dataset is None:
+        print("\n[JEPA simple] No forecast_dataset — skipping forecasting.")
+    else:
+        ckpts = checkpoints if checkpoints is not None else [80, 120, 160, 200, 240, 300]
+        p_s = config["patch_size_forcasting"]
+        _csv = config["path_data_forcasting"][0]
+        _fc_bs2 = config.get("batch_size_forecast", 256)
+        _fc_nw2 = config.get("num_workers", 4)
 
-    for pred_len in pred_lens:
-        h_t = pred_len // p_s
-        model.forcast_train = torch.utils.data.DataLoader(
-            PatchTSTForcastingAdapter(_csv, 'train', _PATCHTST_SEQ_LEN, pred_len, p_s),
-            batch_size=_fc_bs2, shuffle=True,  num_workers=_fc_nw2)
-        model.forcast_val = torch.utils.data.DataLoader(
-            PatchTSTForcastingAdapter(_csv, 'val',   _PATCHTST_SEQ_LEN, pred_len, p_s),
-            batch_size=_fc_bs2, shuffle=False, num_workers=_fc_nw2)
-        model.forcast_test = torch.utils.data.DataLoader(
-            PatchTSTForcastingAdapter(_csv, 'test',  _PATCHTST_SEQ_LEN, pred_len, p_s),
-            batch_size=_fc_bs2, shuffle=False, num_workers=_fc_nw2)
-        model.config["horizon_t"] = h_t
+        for pred_len in pred_lens:
+            h_t = pred_len // p_s
+            model.forcast_train = torch.utils.data.DataLoader(
+                PatchTSTForcastingAdapter(_csv, 'train', _PATCHTST_SEQ_LEN, pred_len, p_s),
+                batch_size=_fc_bs2, shuffle=True,  num_workers=_fc_nw2)
+            model.forcast_val = torch.utils.data.DataLoader(
+                PatchTSTForcastingAdapter(_csv, 'val',   _PATCHTST_SEQ_LEN, pred_len, p_s),
+                batch_size=_fc_bs2, shuffle=False, num_workers=_fc_nw2)
+            model.forcast_test = torch.utils.data.DataLoader(
+                PatchTSTForcastingAdapter(_csv, 'test',  _PATCHTST_SEQ_LEN, pred_len, p_s),
+                batch_size=_fc_bs2, shuffle=False, num_workers=_fc_nw2)
+            model.config["horizon_t"] = h_t
 
-        is_search = (pred_len == pred_lens[0])
-        ckpts_to_run = ckpts if is_search else [best_ckpt if best_ckpt is not None else ckpts[-1]]
+            is_search = (pred_len == pred_lens[0])
+            ckpts_to_run = ckpts if is_search else [best_ckpt if best_ckpt is not None else ckpts[-1]]
 
-        print(f"\n[JEPA simple] pred_len={pred_len} (horizon_t={h_t})"
-              + ("" if is_search else f"  [best ckpt={ckpts_to_run[0]}]"))
-        for epoch in ckpts_to_run:
-            print(f"  → checkpoint epoch {epoch}")
-            ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
-            mse = model.forcasting_zeroshot(ckpt_tag)
-            if is_search and mse is not None and mse < best_mse:
-                best_mse  = mse
-                best_ckpt = epoch
+            print(f"\n[JEPA simple] pred_len={pred_len} (horizon_t={h_t})"
+                  + ("" if is_search else f"  [best ckpt={ckpts_to_run[0]}]"))
+            for epoch in ckpts_to_run:
+                print(f"  → checkpoint epoch {epoch}")
+                ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
+                mse = model.forcasting_zeroshot(ckpt_tag)
+                if is_search and mse is not None and mse < best_mse:
+                    best_mse  = mse
+                    best_ckpt = epoch
 
-        if is_search:
-            print(f"\n[JEPA simple] Best checkpoint at pred_len={pred_lens[0]}: "
-                  f"epoch {best_ckpt} (mix MSE={best_mse:.4f})")
+            if is_search:
+                print(f"\n[JEPA simple] Best checkpoint at pred_len={pred_lens[0]}: "
+                      f"epoch {best_ckpt} (mix MSE={best_mse:.4f})")
 
     # ── classification downstream ─────────────────────────────────────────────
     cls_acc = None
     if classification_dataset is not None:
-        from data_loaders.data_puller import ClassificationDataPuller
+        from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
         cls_dir  = config.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
         cls_bs   = config.get("batch_size", 64)
         p_s      = config["patch_size_forcasting"]
-        _mk = lambda split: torch.utils.data.DataLoader(
-            ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
-            batch_size=cls_bs, shuffle=(split == "train"))
-        cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
-        n_classes = cls_train.dataset.n_classes
+        if list(Path(os.path.join(cls_dir, classification_dataset)).glob("*_TRAIN.ts")):
+            _uea_tr, _uea_va, _uea_te, n_classes = make_uea_dataloaders(
+                cls_dir, classification_dataset, batch_size=cls_bs)
+            # JEPA expects (B, P, PL, C) with P = config["ratio_patches"] (pretraining num_patches).
+            # UEADataset returns (B, T, C) → subsample to ratio_patches * patch_size, then patch.
+            _n_patches = config["ratio_patches"]          # 32 (matches pretrained W_pos)
+            _target_T  = _n_patches * p_s                 # 32 * 16 = 512
+            def _patch_collate(batch, _ps=p_s, _tT=_target_T, _nP=_n_patches):
+                xs, ys = zip(*batch)
+                xs = torch.stack(xs)                      # (B, T, C)
+                T  = xs.shape[1]
+                if T != _tT:                              # uniform resample to 512
+                    idx = torch.linspace(0, T - 1, _tT).long()
+                    xs  = xs[:, idx, :]
+                xs = xs.reshape(len(xs), _nP, _ps, xs.shape[-1])   # (B, 32, 16, C)
+                return xs, torch.stack(ys)
+            _wrap = lambda ds, shuf: torch.utils.data.DataLoader(
+                ds, batch_size=cls_bs, shuffle=shuf, collate_fn=_patch_collate)
+            cls_train = _wrap(_uea_tr.dataset, True)
+            cls_val   = _wrap(_uea_va.dataset, False)
+            cls_test  = _wrap(_uea_te.dataset, False)
+        else:
+            _mk = lambda split: torch.utils.data.DataLoader(
+                ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
+                batch_size=cls_bs, shuffle=(split == "train"))
+            cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
+            n_classes = cls_train.dataset.n_classes
         ckpt_tag  = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
-        cls_acc   = model.classification_zeroshot(ckpt_tag, cls_train, cls_val, cls_test, n_classes)
+        _ckpt_override = os.path.abspath(checkpoint) if checkpoint else None
+        cls_acc   = model.classification_zeroshot(ckpt_tag, cls_train, cls_val, cls_test, n_classes,
+                                                  checkpoint_path_override=_ckpt_override)
         print(f"\n{'='*60}")
         print(f"  [JEPA simple] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
@@ -1260,15 +1299,19 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     if classification_dataset is not None:
         sys.path.insert(0, patchtst_dir)
         from patchtst_classification import classification_zeroshot as ptst_classify
-        from data_loaders.data_puller import ClassificationDataPuller
+        from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
         cls_dir = cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
         cls_bs  = cfg.get("batch_size", 64)
         p_s     = cfg.get("patch_len", 16)
-        _mk = lambda split: torch.utils.data.DataLoader(
-            ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
-            batch_size=cls_bs, shuffle=(split == "train"))
-        cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
-        n_classes = cls_train.dataset.n_classes
+        if list(Path(os.path.join(cls_dir, classification_dataset)).glob("*_TRAIN.ts")):
+            cls_train, cls_val, cls_test, n_classes = make_uea_dataloaders(
+                cls_dir, classification_dataset, batch_size=cls_bs)
+        else:
+            _mk = lambda split: torch.utils.data.DataLoader(
+                ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
+                batch_size=cls_bs, shuffle=(split == "train"))
+            cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
+            n_classes = cls_train.dataset.n_classes
         cls_acc = ptst_classify(cfg, pretrained_model_path, cls_train, cls_val, cls_test, n_classes)
         print(f"\n{'='*60}")
         print(f"  [PatchTST] Classification on {classification_dataset}")
@@ -1387,15 +1430,19 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     cls_acc = None
     if classification_dataset is not None:
         from ntp_classification import classification_zeroshot as npt_classify
-        from data_loaders.data_puller import ClassificationDataPuller
+        from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
         cls_dir = cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
         cls_bs  = cfg.get("batch_size", 64)
         p_s     = cfg["patch_size"]
-        _mk = lambda split: torch.utils.data.DataLoader(
-            ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
-            batch_size=cls_bs, shuffle=(split == "train"))
-        cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
-        n_classes = cls_train.dataset.n_classes
+        if list(Path(os.path.join(cls_dir, classification_dataset)).glob("*_TRAIN.ts")):
+            cls_train, cls_val, cls_test, n_classes = make_uea_dataloaders(
+                cls_dir, classification_dataset, batch_size=cls_bs)
+        else:
+            _mk = lambda split: torch.utils.data.DataLoader(
+                ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
+                batch_size=cls_bs, shuffle=(split == "train"))
+            cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
+            n_classes = cls_train.dataset.n_classes
         cls_acc = npt_classify(cfg, _ckpt_path, cls_train, cls_val, cls_test, n_classes)
         print(f"\n{'='*60}")
         print(f"  [NPT] Classification on {classification_dataset}")
@@ -1656,15 +1703,19 @@ def run_lejepa(skip_train: bool = False,
     # ── classification downstream ─────────────────────────────────────────────
     cls_acc = None
     if classification_dataset is not None:
-        from data_loaders.data_puller import ClassificationDataPuller
+        from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
         cls_dir = config.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
         cls_bs  = config.get("batch_size", 64)
         p_s     = config["patch_size_forcasting"]
-        _mk = lambda split: torch.utils.data.DataLoader(
-            ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
-            batch_size=cls_bs, shuffle=(split == "train"))
-        cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
-        n_classes = cls_train.dataset.n_classes
+        if list(Path(os.path.join(cls_dir, classification_dataset)).glob("*_TRAIN.ts")):
+            cls_train, cls_val, cls_test, n_classes = make_uea_dataloaders(
+                cls_dir, classification_dataset, batch_size=cls_bs)
+        else:
+            _mk = lambda split: torch.utils.data.DataLoader(
+                ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
+                batch_size=cls_bs, shuffle=(split == "train"))
+            cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
+            n_classes = cls_train.dataset.n_classes
         ckpt_tag  = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
         cls_acc   = model.classification_zeroshot(ckpt_tag, cls_train, cls_val, cls_test, n_classes)
         print(f"\n{'='*60}")

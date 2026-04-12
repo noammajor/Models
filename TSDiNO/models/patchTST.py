@@ -91,7 +91,8 @@ class PatchTST(nn.Module):
             z = z  # Keep all tokens: [bs x num_patch+1 x nvars x d_model]
             z = z.permute(0, 2, 3, 1)  # [bs x nvars x d_model x num_patch+1]
             z = self.head(z)
-        z = self.normalization(z, mode='denorm')   # undo instance norm on forecast output
+        if self.head_type not in ('classification', 'CLS_Prediction'):
+            z = self.normalization(z, mode='denorm')   # undo instance norm on forecast output
         return z
 
     def forward_recon(self, z):

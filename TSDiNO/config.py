@@ -26,9 +26,9 @@ config = {
     # ── Model architecture ────────────────────────────────────────────────────
     "c_in": 7,          # number of input variables  (9 for UCI HAR)
     "patch_len": 16,
-    "step_size": 16,    # stride between patches within window; window=(32-1)*16+16=512
-    "window_step": 512, # stride between windows; =window_size for non-overlapping (matches JEPA chunk=512)
-    "num_patches": 32,  # window length in patches
+    "step_size": 16,    # stride between patches within window; window=(21-1)*16+16=336
+    "window_step": 336, # stride between windows; =window_size for non-overlapping
+    "num_patches": 21,  # window length in patches → 21×16 = 336 timesteps
     "n_layers": 5,
     "n_heads": 16,
     "embed_dim": 128,
@@ -172,6 +172,9 @@ config = {
 
     # checkpoint to load for downstream tasks  (0 = random init)
     "path_num": 0,
+
+    # ── Local overrides (TEMP: remove after local testing) ────────────────────
+    "classification_data_dir": "/Users/noammajor/Downloads/Models/Classification data",
 
     # ── Pretraining data source ───────────────────────────────────────────────
     # pretrain_source: "monash" | "synthetic" | "monash+synthetic"
