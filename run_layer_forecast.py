@@ -282,7 +282,6 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
 def checkpoint_search(model: str, dataset: str, all_checkpoints: list,
                       gpu: int, log_base: Path, encoder_layers: int,
                       pretrain_source: str = None) -> dict:
-    _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
     log_dir = log_base / f"layers{encoder_layers}" / model / dataset
     results = {}
 
