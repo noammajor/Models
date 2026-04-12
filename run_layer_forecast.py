@@ -44,7 +44,7 @@ DATASET_FORECAST_LR_SCALE = {
     "ettm1":       1.0,
     "ettm2":       1.0,
     "weather":     0.5,
-    "electricity": 0.25,
+    "electricity": 0.125,
     "traffic":     0.125,
 }
 
@@ -55,7 +55,7 @@ DATASET_FORECAST_BS = {
     "ettm1":       256,
     "ettm2":       256,
     "weather":     128,
-    "electricity":  64,
+    "electricity":  32,
     "traffic":      32,
 }
 
