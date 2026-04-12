@@ -460,7 +460,7 @@ class MonashDataPuller(Dataset):
         print(f"MonashDataPuller: {len(self._index['train'])} train  "
               f"| {len(self._index['val'])} val  "
               f"| {len(self._index['test'])} test  windows  "
-              f"(window={self.window_size}, step={self.step_size})")
+              f"(window={self.window_size}, step={self.window_size})")
 
     def _load_all(self, data_dir, min_len, val_prec, test_prec):
         tsf_files = sorted(f for f in os.listdir(data_dir) if f.endswith('.tsf'))
@@ -499,9 +499,9 @@ class MonashDataPuller(Dataset):
                     t     = torch.from_numpy(arr)   # [T, 1]
                     s_idx = len(self._series[sname])
                     self._series[sname].append(t)
-                    n_windows = (len(t) - self.window_size) // self.step_size + 1
-                    for j in range(n_windows):
-                        self._index[sname].append((s_idx, j))
+                    n_windows = len(t) // self.window_size
+                    for ci in range(n_windows):
+                        self._index[sname].append((s_idx, ci))
                 loaded += 1
             if loaded:
                 print(f"  {fname}: {loaded} series")
@@ -510,9 +510,9 @@ class MonashDataPuller(Dataset):
         return len(self._index[self.which])
 
     def __getitem__(self, idx):
-        s_idx, j = self._index[self.which][idx]
+        s_idx, ci = self._index[self.which][idx]
         tensor = self._series[self.which][s_idx]
-        start  = j * self.step_size
+        start  = ci * self.window_size
         chunk  = tensor[start : start + self.window_size]  # [window_size, 1]
         if self.transform:
             chunk = self.transform(chunk)
