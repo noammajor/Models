@@ -37,6 +37,28 @@ LAYER_CONFIGS = [2, 4, 8, 12, 24]
 DATASETS      = ["etth1", "etth2", "ettm1", "ettm2", "weather", "electricity", "traffic"]
 PRED_LENS     = [96, 192, 336, 720]
 
+# Per-dataset forecast LR scale (multiplied against each model's base lr_forecasting)
+DATASET_FORECAST_LR_SCALE = {
+    "etth1":       1.0,
+    "etth2":       1.0,
+    "ettm1":       1.0,
+    "ettm2":       1.0,
+    "weather":     0.5,
+    "electricity": 0.25,
+    "traffic":     0.125,
+}
+
+# Per-dataset forecast batch sizes (applied to all models via TS_FORECAST_BS env var)
+DATASET_FORECAST_BS = {
+    "etth1":       256,
+    "etth2":       256,
+    "ettm1":       256,
+    "ettm2":       256,
+    "weather":     128,
+    "electricity":  64,
+    "traffic":      32,
+}
+
 # Model → GPU assignment (match run_layer_sweep.py)
 MODEL_GPU = {
     "dino":            0,
@@ -327,6 +349,14 @@ def eval_best(model: str, dataset: str, pred_len: int,
     """Evaluate all pred_lens using only the best checkpoint (no tournament)."""
     log_path = log_dir / f"pred{pred_len}_ckptbest.log"
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
+    if dataset in DATASET_FORECAST_BS:
+        os.environ["TS_FORECAST_BS"] = str(DATASET_FORECAST_BS[dataset])
+    else:
+        os.environ.pop("TS_FORECAST_BS", None)
+    if dataset in DATASET_FORECAST_LR_SCALE:
+        os.environ["TS_FORECAST_LR_SCALE"] = str(DATASET_FORECAST_LR_SCALE[dataset])
+    else:
+        os.environ.pop("TS_FORECAST_LR_SCALE", None)
     with log_to_file(log_path):
         try:
             from Train_and_downstream import run

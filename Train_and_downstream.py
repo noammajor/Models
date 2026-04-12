@@ -51,6 +51,19 @@ def _add_path(p):
     if p not in sys.path:
         sys.path.insert(0, p)
 
+def _get_forecast_bs(config, default=256):
+    """Return forecast batch size — env var TS_FORECAST_BS (set by run_layer_forecast.py) takes priority."""
+    env = os.environ.get("TS_FORECAST_BS")
+    if env is not None:
+        return int(env)
+    return config.get("batch_size_forecast", default)
+
+def _get_forecast_lr(config, key="lr_forecasting", default=2e-4):
+    """Return forecast LR scaled by TS_FORECAST_LR_SCALE (set by run_layer_forecast.py)."""
+    base = config.get(key, config.get("lr_forcasting", default))
+    scale = float(os.environ.get("TS_FORECAST_LR_SCALE", 1.0))
+    return base * scale
+
 def _resolve_pretrain_source(config):
     """Return 'monash', 'synthetic', or 'monash+synthetic' (or None for CSV pretraining).
 
@@ -86,7 +99,7 @@ def _config_to_dino_args(cfg):
         data_path_classification    = cfg.get("data_path_classification", "UCI HAR Dataset"),
         num_workers                 = cfg.get("num_workers", 4),
         batch_size_per_gpu          = cfg.get("batch_size_per_gpu", 64),
-        batch_size_forecast         = cfg.get("batch_size_forecast", 256),
+        batch_size_forecast         = _get_forecast_bs(cfg, 256),
 
         # ── model architecture ────────────────────────────────────────────
         c_in                        = cfg.get("c_in", 7),
@@ -144,7 +157,7 @@ def _config_to_dino_args(cfg):
         # ── downstream: forecasting ───────────────────────────────────────
         pred_len                            = cfg.get("pred_len", 96),
         epochs_forecasting                  = cfg.get("epochs_forecasting", 10),
-        lr_forecasting                      = cfg.get("lr_forecasting", 0.001),
+        lr_forecasting                      = _get_forecast_lr(cfg, "lr_forecasting", 0.001),
         min_lr_forecasting                  = cfg.get("min_lr_forecasting", 1e-5),
         parms_for_training_forecasting      = cfg.get("parms_for_training_forecasting", []),
         parms_for_testing_forecasting       = cfg.get("parms_for_testing_forecasting", []),
@@ -219,6 +232,7 @@ def run_dino(skip_train: bool = False,
 
     # Resolve forecast dataset (always needed for downstream)
     forecast_dataset = forecast_dataset or dino_cfg.get("forecast_dataset")
+    dino_cfg["lr_forecasting"] = _get_forecast_lr(dino_cfg, "lr_forecasting")
     if pretrain_only and use_global_data:
         dino_cfg['saveckp_freq'] = 1  # save every epoch
 
@@ -531,7 +545,7 @@ def run_jepa(skip_train: bool = False,
         forecasting_data = ForcastingDataPullerDescrete(config)
         val_fc   = copy.copy(forecasting_data); val_fc.which  = "val";  val_fc.rebuild()
         test_fc  = copy.copy(forecasting_data); test_fc.which = "test"; test_fc.rebuild()
-        _fc_bs = config.get("batch_size_forecast", 256)
+        _fc_bs = _get_forecast_bs(config, 256)
         _fc_nw = config.get("num_workers", 4)
         train_loader_fc = torch.utils.data.DataLoader(forecasting_data, batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
         val_loader_fc   = torch.utils.data.DataLoader(val_fc,           batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
@@ -584,7 +598,7 @@ def run_jepa(skip_train: bool = False,
         for ds in [forecasting_data, val_fc, test_fc]:
             ds.h = h_t
             ds.target_raw_len = h_t * p_s
-        _fc_bs = config.get("batch_size_forecast", 256)
+        _fc_bs = _get_forecast_bs(config, 256)
         _fc_nw = config.get("num_workers", 4)
         train_loader_fc = torch.utils.data.DataLoader(
             forecasting_data, batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
@@ -784,7 +798,7 @@ def run_jepa2(skip_train: bool = False,
         for ds in [forecasting_data, val_fc, test_fc]:
             ds.h = h_t
             ds.target_raw_len = h_t * p_s
-        _fc_bs = config.get("batch_size_forecast", 256)
+        _fc_bs = _get_forecast_bs(config, 256)
         _fc_nw = config.get("num_workers", 4)
         train_loader_fc = torch.utils.data.DataLoader(
             forecasting_data, batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
@@ -884,6 +898,7 @@ def run_jepa_simple(skip_train: bool = False,
     forecast_dataset = forecast_dataset or config.get("forecast_dataset")
     if not _caller_wants_forecast:
         forecast_dataset = None   # caller passed None → don't default to config value
+    config["lr_forcasting"] = _get_forecast_lr(config, "lr_forcasting")
     if use_global_data:
         if not pretrain_only and classification_dataset is None and forecast_dataset is None:
             raise ValueError("forecast_dataset must be set when pretraining on global data")
@@ -992,7 +1007,7 @@ def run_jepa_simple(skip_train: bool = False,
         _csv = config["path_data_forcasting"][0]
         _p_s = config["patch_size_forcasting"]
         _pl0 = pred_lens[0] if pred_lens else 96
-        _fc_bs = config.get("batch_size_forecast", 256)
+        _fc_bs = _get_forecast_bs(config, 256)
         _fc_nw = config.get("num_workers", 4)
         train_loader_fc = torch.utils.data.DataLoader(
             PatchTSTForcastingAdapter(_csv, 'train', _PATCHTST_SEQ_LEN, _pl0, _p_s),
@@ -1038,7 +1053,7 @@ def run_jepa_simple(skip_train: bool = False,
         ckpts = checkpoints if checkpoints is not None else [80, 120, 160, 200, 240, 300]
         p_s = config["patch_size_forcasting"]
         _csv = config["path_data_forcasting"][0]
-        _fc_bs2 = config.get("batch_size_forecast", 256)
+        _fc_bs2 = _get_forecast_bs(config, 256)
         _fc_nw2 = config.get("num_workers", 4)
 
         for pred_len in pred_lens:
@@ -1270,7 +1285,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
          "--target_points",   str(_target_points),
          "--pretrained_model", pretrained_model_path,
          "--random_encoder",   str(int(random_encoder)),
-         "--batch_size",       str(cfg.get("batch_size_forecast", 256)),
+         "--batch_size",       str(_get_forecast_bs(cfg, 256)),
          "--num_workers",      str(cfg.get("num_workers", 4)),
          "--lr",               str(cfg.get("finetune_lr", 1e-4)),
          "--seed",             "42"],
@@ -1520,6 +1535,7 @@ def run_lejepa(skip_train: bool = False,
     from LeJepa import LeJEPA
 
     forecast_dataset = forecast_dataset or config.get('forecast_dataset')
+    config["lr_forcasting"] = _get_forecast_lr(config, "lr_forcasting")
 
     # Single-dataset mode: align splits so test never leaks into pretraining
     if pretrain_dataset and pretrain_dataset == forecast_dataset:
@@ -1667,7 +1683,7 @@ def run_lejepa(skip_train: bool = False,
     best_ckpt = None
     ckpts     = checkpoints if checkpoints is not None else list(range(config["num_epochs"]))
 
-    _fc_bs = config.get("batch_size_forecast", 256)
+    _fc_bs = _get_forecast_bs(config, 256)
     _fc_nw = config.get("num_workers", 4)
     for pred_len in pred_lens:
         h_t = pred_len // p_s
@@ -1968,7 +1984,7 @@ def run_timedart(skip_train: bool = False,
     ds_info   = get_dataset_info(forecast_dataset)
     _csv      = ds_info["csv_path"]
     _c_in     = ds_info["c_in"]
-    _fc_bs    = cfg.get('batch_size_forecast', 128)
+    _fc_bs    = _get_forecast_bs(cfg, 128)
     _fc_nw    = cfg.get('num_workers', 4)
     _PATCHTST_SEQ_LEN = 336
 
@@ -1991,7 +2007,7 @@ def run_timedart(skip_train: bool = False,
         ft_args.pred_len       = pred_len
         ft_args.test_pred_len  = pred_len
         ft_args.train_epochs   = cfg.get('epochs_forecasting', 10)
-        ft_args.learning_rate  = cfg.get('lr_forecasting', 1e-4)
+        ft_args.learning_rate  = _get_forecast_lr(cfg, 'lr_forecasting', 1e-4)
         ft_args.batch_size     = _fc_bs
         ft_args.enc_in         = _c_in
         ft_args.dec_in         = _c_in
