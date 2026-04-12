@@ -43,9 +43,9 @@ DATASET_FORECAST_LR_SCALE = {
     "etth2":       1.0,
     "ettm1":       1.0,
     "ettm2":       1.0,
-    "weather":     0.5,
+    "weather":     1.0,
     "electricity": 1.0,
-    "traffic":     0.5,
+    "traffic":     1.0,
 }
 
 # Per-dataset forecast batch sizes (applied to all models via TS_FORECAST_BS env var)
