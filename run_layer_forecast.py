@@ -282,6 +282,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
 def checkpoint_search(model: str, dataset: str, all_checkpoints: list,
                       gpu: int, log_base: Path, encoder_layers: int,
                       pretrain_source: str = None) -> dict:
+    _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
     log_dir = log_base / f"layers{encoder_layers}" / model / dataset
     results = {}
 
@@ -393,7 +394,8 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                      datasets: list, out_csv: Path, best_only: bool = False,
                      pretrain_source: str = None):
     """Run full forecasting for one model at one layer config. Called in subprocess."""
-    log_base = ROOT / "logs" / "layer_forecast"
+    src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
+    log_base = ROOT / "logs" / f"layer_forecast{src_tag}"
     fieldnames = ["model", "encoder_layers", "dataset", "pred_len", "mse", "timestamp"]
 
     existing = set()
