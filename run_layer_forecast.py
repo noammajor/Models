@@ -44,7 +44,7 @@ DATASET_FORECAST_LR_SCALE = {
     "ettm1":       1.0,
     "ettm2":       1.0,
     "weather":     0.5,
-    "electricity": 0.5,
+    "electricity": 1.0,
     "traffic":     0.5,
 }
 
@@ -75,12 +75,14 @@ ALL_MODELS = list(MODEL_GPU.keys())
 
 # ── checkpoint discovery (layer-aware) ───────────────────────────────────────
 
-def discover_checkpoints(model: str, encoder_layers: int) -> list:
+def discover_checkpoints(model: str, encoder_layers: int,
+                         pretrain_source: str = None) -> list:
     """Return sorted list of checkpoint epoch numbers for a given layer config."""
     suffix = f"_layers{encoder_layers}"
+    src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
 
     if model == "dino":
-        ckpt_dir = ROOT / f"checkpoints{suffix}"
+        ckpt_dir = ROOT / f"checkpoints{src_tag}{suffix}"
         found = sorted(
             int(p.stem.replace("checkpoint", ""))
             for p in ckpt_dir.glob("checkpoint*.pth")
@@ -90,7 +92,7 @@ def discover_checkpoints(model: str, encoder_layers: int) -> list:
 
     elif model == "jepa_simple":
         import re as _re
-        ckpt_dir = ROOT / "output_model" / f"JEPA{suffix}"
+        ckpt_dir = ROOT / "output_model" / f"JEPA{src_tag}{suffix}"
         found = sorted(
             int(m.group(1))
             for p in ckpt_dir.glob("_epoch*best_model.pt")
@@ -101,7 +103,7 @@ def discover_checkpoints(model: str, encoder_layers: int) -> list:
 
     elif model == "lejepa":
         import re as _re
-        ckpt_dir = ROOT / "output_model" / f"LE-JEPA{suffix}"
+        ckpt_dir = ROOT / "output_model" / f"LE-JEPA{src_tag}{suffix}"
         found = sorted(
             int(m.group(1))
             for p in ckpt_dir.glob("_epoch*best_model.pt")
@@ -363,7 +365,8 @@ def eval_best(model: str, dataset: str, pred_len: int,
             if model in ("jepa_simple", "lejepa", "dino"):
                 result = run(model=model, skip_train=True, forecast_dataset=dataset,
                              pred_lens=[pred_len], checkpoints=["best"],
-                             encoder_layers=encoder_layers)
+                             encoder_layers=encoder_layers,
+                             pretrain_source=pretrain_source)
                 return result[1] if result else None
             elif model == "npt":
                 result = run(model="npt", skip_train=True, forecast_dataset=dataset,
@@ -402,7 +405,7 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                 existing.add((row["model"], int(row["encoder_layers"]),
                                row["dataset"], int(row["pred_len"])))
 
-    all_checkpoints = discover_checkpoints(model, encoder_layers)
+    all_checkpoints = discover_checkpoints(model, encoder_layers, pretrain_source)
     print(f"\n{'='*60}")
     print(f"  {model.upper()}  layers={encoder_layers}  checkpoints={all_checkpoints}")
     print(f"{'='*60}")
