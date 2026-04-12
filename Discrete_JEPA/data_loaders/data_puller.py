@@ -903,10 +903,35 @@ def _cls_load_dataset(root: Path, which: str, val_fraction: float):
         X_te = np.load(root / "X_test.npy").astype(np.float32)
         y_te = np.load(root / "y_test.npy").astype(np.int64)
 
+    # ── Format 5: UEA/UCR .ts files ──────────────────────────────────────────
+    elif list(root.glob("*_TRAIN.ts")):
+        from sktime.datasets import load_from_tsfile_to_dataframe
+        train_file = sorted(root.glob("*_TRAIN.ts"))[0]
+        test_file  = sorted(root.glob("*_TEST.ts"))[0]
+
+        def _load_ts(path):
+            df, y_raw = load_from_tsfile_to_dataframe(str(path))
+            # df: (N, C) DataFrame where each cell is a pd.Series of length T
+            n_samples = len(df)
+            n_dims    = df.shape[1]
+            T         = len(df.iloc[0, 0])
+            X = np.zeros((n_samples, T, n_dims), dtype=np.float32)
+            for c in range(n_dims):
+                X[:, :, c] = np.stack(df.iloc[:, c].values)
+            return X, np.array(y_raw)
+
+        X_tr, y_tr_raw = _load_ts(train_file)
+        X_te, y_te_raw = _load_ts(test_file)
+        # Map string labels → int
+        classes = sorted(set(y_tr_raw) | set(y_te_raw))
+        label_map = {c: i for i, c in enumerate(classes)}
+        y_tr = np.array([label_map[l] for l in y_tr_raw], dtype=np.int64)
+        y_te = np.array([label_map[l] for l in y_te_raw], dtype=np.int64)
+
     else:
         raise FileNotFoundError(
             f"Cannot detect dataset format in {root}. "
-            "Expected one of: X_train.npy, train_d.npy, train.pt, samples_train.pkl")
+            "Expected one of: X_train.npy, train_d.npy, train.pt, samples_train.pkl, *_TRAIN.ts")
 
     # StandardScaler fit on train X (per variable) — applied to all splits
     N, T, C = X_tr.shape
@@ -920,10 +945,12 @@ def _cls_load_dataset(root: Path, which: str, val_fraction: float):
         Nv, Tv, _ = X_va.shape
         X_va = scaler.transform(X_va.reshape(-1, C)).reshape(Nv, Tv, C)
     else:
-        n_val   = max(1, int(len(X_tr) * val_fraction))
-        n_train = len(X_tr) - n_val
-        X_va, y_va = X_tr[n_train:], y_tr[n_train:]
-        X_tr, y_tr = X_tr[:n_train], y_tr[:n_train]
+        # Stratified val split — ensures all classes represented in val
+        from sklearn.model_selection import train_test_split as _tts
+        idx_tr, idx_va = _tts(np.arange(len(X_tr)), test_size=val_fraction,
+                              stratify=y_tr, random_state=42)
+        X_va, y_va = X_tr[idx_va], y_tr[idx_va]
+        X_tr, y_tr = X_tr[idx_tr], y_tr[idx_tr]
 
     if which == "train":
         return X_tr, y_tr
@@ -1006,6 +1033,140 @@ class ClassificationDataPuller(Dataset):
         x = self.X[idx]
         patches = x.reshape(self.n_patches, self.patch_size, -1)
         return patches, self.y[idx]
+
+
+# ── UEA/UCR Classification (UEAloader style) ──────────────────────────────────
+
+def _uea_interpolate_missing(y):
+    if y.isna().any():
+        y = y.interpolate(method='linear', limit_direction='both')
+    return y
+
+
+def _uea_subsample(y, limit=256, factor=2):
+    if len(y) > limit:
+        return y[::factor].reset_index(drop=True)
+    return y
+
+
+class _UEANormalizer:
+    def __init__(self):
+        self.mean = None
+        self.std  = None
+
+    def fit_transform(self, df):
+        self.mean = df.mean()
+        self.std  = df.std()
+        return (df - self.mean) / (self.std + np.finfo(float).eps)
+
+    def transform(self, df):
+        return (df - self.mean) / (self.std + np.finfo(float).eps)
+
+
+class UEADataset(Dataset):
+    """UEA/UCR .ts classification dataset.
+
+    Returns raw (T, C) float32 tensors — no pre-patching.
+    The model patches internally via unfold.
+
+    Usage:
+        ds_train = UEADataset(root, dataset_name, split='train')
+        ds_val   = UEADataset(root, dataset_name, split='val',  _shared=ds_train)
+        ds_test  = UEADataset(root, dataset_name, split='test', _shared=ds_train)
+        n_classes = ds_train.n_classes
+    """
+
+    def __init__(self, root: str, dataset_name: str, split: str = 'train',
+                 val_fraction: float = 0.1, _shared=None):
+        from sktime.datasets import load_from_tsfile_to_dataframe
+        root = Path(root)
+        self.split = split.lower()
+
+        if _shared is not None:
+            self._normalizer = _shared._normalizer
+            self._label_map  = _shared._label_map
+            self.n_classes   = _shared.n_classes
+            self.class_names = _shared.class_names
+        else:
+            self._normalizer = None
+            self._label_map  = None
+
+        ts_path = root / (f'{dataset_name}_TRAIN.ts' if self.split in ('train', 'val')
+                          else f'{dataset_name}_TEST.ts')
+
+        all_df, labels_raw = self._load_ts(ts_path, load_from_tsfile_to_dataframe)
+
+        if _shared is None:
+            cats = pd.Categorical(labels_raw)
+            self.class_names = list(cats.categories)
+            self.n_classes   = len(self.class_names)
+            self._label_map  = {c: i for i, c in enumerate(self.class_names)}
+            norm = _UEANormalizer()
+            all_df = norm.fit_transform(all_df)
+            self._normalizer = norm
+        else:
+            all_df = self._normalizer.transform(all_df)
+
+        int_labels = np.array([self._label_map[str(l)] for l in labels_raw], dtype=np.int64)
+
+        all_IDs = all_df.index.unique()
+        self._samples = [all_df.loc[i].values.astype(np.float32) for i in all_IDs]
+        self._labels  = int_labels
+
+        if self.split in ('train', 'val'):
+            from sklearn.model_selection import train_test_split
+            idx = np.arange(len(self._samples))
+            idx_tr, idx_va = train_test_split(idx, test_size=val_fraction,
+                                              stratify=self._labels, random_state=42)
+            keep = idx_tr if self.split == 'train' else idx_va
+            self._samples = [self._samples[i] for i in keep]
+            self._labels  = self._labels[keep]
+
+        print(f"UEADataset [{self.split}] ({dataset_name}): "
+              f"{len(self._samples)} samples, {self._samples[0].shape[0]} timesteps, "
+              f"{self._samples[0].shape[1]} vars, {self.n_classes} classes")
+
+    def _load_ts(self, path, loader_fn):
+        df, labels = loader_fn(str(path), return_separate_X_and_y=True,
+                               replace_missing_vals_with='NaN')
+        # Handle variable-length dimensions
+        lengths = df.map(lambda x: len(x)).values
+        if np.abs(lengths - lengths[:, :1]).sum() > 0:
+            df = df.applymap(_uea_subsample)
+        lengths = df.map(lambda x: len(x)).values
+        # Build long DataFrame (N*T, C) indexed by sample int
+        rows = []
+        for row in range(df.shape[0]):
+            T = lengths[row, 0]
+            sample_df = pd.DataFrame(
+                {col: df.iloc[row][col].values for col in df.columns}
+            ).set_index(pd.Index([row] * T))
+            rows.append(sample_df)
+        all_df = pd.concat(rows, axis=0)
+        all_df = all_df.groupby(level=0).transform(_uea_interpolate_missing)
+        return all_df, labels
+
+    def __len__(self):
+        return len(self._samples)
+
+    def __getitem__(self, idx):
+        x = torch.from_numpy(self._samples[idx])        # (T, C)
+        y = torch.tensor(self._labels[idx], dtype=torch.long)
+        return x, y
+
+
+def make_uea_dataloaders(cls_dir: str, dataset_name: str, batch_size: int = 16):
+    """Build train/val/test DataLoaders from a UEA .ts dataset.
+    Returns (train_loader, val_loader, test_loader, n_classes).
+    """
+    # .ts files live in cls_dir/dataset_name/dataset_name_{TRAIN,TEST}.ts
+    dataset_root = os.path.join(cls_dir, dataset_name)
+    ds_train = UEADataset(dataset_root, dataset_name, split='train')
+    ds_val   = UEADataset(dataset_root, dataset_name, split='val',  _shared=ds_train)
+    ds_test  = UEADataset(dataset_root, dataset_name, split='test', _shared=ds_train)
+    mk = lambda ds, shuffle: torch.utils.data.DataLoader(
+        ds, batch_size=batch_size, shuffle=shuffle)
+    return mk(ds_train, True), mk(ds_val, False), mk(ds_test, False), ds_train.n_classes
 
 
 # ── Anomaly Detection ─────────────────────────────────────────────────────────

@@ -14,7 +14,8 @@ from JEPA.Training import _instance_norm
 
 
 def classification_zeroshot(self, path, classification_train, classification_val,
-                             classification_test, n_classes):
+                             classification_test, n_classes,
+                             checkpoint_path_override=None):
     """
     Linear-probe classification with frozen JEPA encoder.
 
@@ -27,7 +28,8 @@ def classification_zeroshot(self, path, classification_train, classification_val
         test accuracy (float)
     """
     config          = self.config
-    checkpoint_path = f"{self.path_save}{path}best_model.pt"
+    checkpoint_path = checkpoint_path_override if checkpoint_path_override is not None \
+                      else f"{self.path_save}{path}best_model.pt"
 
     print(f"\n=== JEPA Classification (linear probe) ===")
     print(f"Loading checkpoint: {checkpoint_path}")

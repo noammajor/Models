@@ -141,6 +141,7 @@ def get_args_parser():
     args.lr_forecasting        = cfg.get('lr_forecasting',        args.lr_forecasting)
     args.min_lr_forecasting    = cfg.get('min_lr_forecasting',    args.min_lr_forecasting)
     args.pred_len              = cfg.get('pred_len',              args.pred_len)
+    args.num_patches           = cfg.get('num_patches',           args.num_patches)
     print('args:', args)
     num_patch = args.num_patches
     print('number of patches:', num_patch)

@@ -26,7 +26,7 @@ config = {
     "drop_rate": 0.0,
     "attn_drop_rate": 0.0,
     "patch_size": 16,
-    "ratio_patches": 32,   # number of non-overlapping patches per window
+    "ratio_patches": 21,   # 21×16 = 336 timesteps — aligned with forecasting context
     # Required by MonashDataPullerJEPA — mask indices are returned but ignored by LE-JEPA
     "mask_ratio": 0.25,
     "masking_type": "multi_block",
