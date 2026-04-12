@@ -44,7 +44,7 @@ config = {
     "checkpoint_save": 5000,
     "checkpoint_print": 30,
     "ratio_patches": 32,  # 21×16 = 336 timesteps — aligned with forecasting context
-    "batch_size": 64,
+    "batch_size": 128,
     "num_workers": 4,
 
     # loader
