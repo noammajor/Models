@@ -6,6 +6,7 @@ config = {
     "monash_data_dir":    "/home/shared/datasets/Monash",
     "monash_min_len":     512,
     "synthetic_data_dir": "/home/shared/datasets/synthetic_data_TS",
+    "synthetic_mix_data_dir": "/home/shared/datasets/synthetic_TS_Mix",  # smaller curated set for monash+synthetic
 
     # ── Model architecture ────────────────────────────────────────────────────
     # e_layers is the encoder depth — swept over [2, 4, 8, 12, 24]

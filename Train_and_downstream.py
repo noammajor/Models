@@ -250,9 +250,11 @@ def run_dino(skip_train: bool = False,
             if not os.path.isabs(monash_dir):
                 dino_cfg['monash_data_dir'] = str((dino_dir / monash_dir).resolve())
         if pretrain_source in ('synthetic', 'monash+synthetic'):
-            synth_dir = dino_cfg.get('synthetic_data_dir', '../Monash')
+            _synth_key = 'synthetic_mix_data_dir' if pretrain_source == 'monash+synthetic' else 'synthetic_data_dir'
+            synth_dir = dino_cfg.get(_synth_key, dino_cfg.get('synthetic_data_dir', '../Monash'))
             if not os.path.isabs(synth_dir):
-                dino_cfg['synthetic_data_dir'] = str((dino_dir / synth_dir).resolve())
+                synth_dir = str((dino_dir / synth_dir).resolve())
+            dino_cfg['synthetic_data_dir'] = synth_dir
         _src_label = {
             'monash':           f"Monash ({dino_cfg.get('monash_data_dir', '')})",
             'synthetic':        f"Synthetic ({dino_cfg.get('synthetic_data_dir', '')})",
@@ -450,13 +452,15 @@ def run_jepa(skip_train: bool = False,
             if not os.path.isabs(monash_dir):
                 config['monash_data_dir'] = str((jepa_dir / monash_dir).resolve())
         if pretrain_source in ('synthetic', 'monash+synthetic'):
-            synth_dir = config.get('synthetic_data_dir', '../Monash')
+            _synth_key = 'synthetic_mix_data_dir' if pretrain_source == 'monash+synthetic' else 'synthetic_data_dir'
+            synth_dir = config.get(_synth_key, config.get('synthetic_data_dir', '../Monash'))
             if not os.path.isabs(synth_dir):
-                config['synthetic_data_dir'] = str((jepa_dir / synth_dir).resolve())
+                synth_dir = str((jepa_dir / synth_dir).resolve())
+            config['synthetic_data_dir'] = synth_dir
         _src_label = {
             'monash':           f"Monash ({config.get('monash_data_dir', '')})",
             'synthetic':        f"Synthetic ({config.get('synthetic_data_dir', '')})",
-            'monash+synthetic': "Monash + Synthetic",
+            'monash+synthetic': "Monash + Synthetic (mix)",
         }.get(pretrain_source, pretrain_source)
         print("\n" + "="*60)
         print(f"  MODEL: Discrete JEPA")
@@ -679,13 +683,15 @@ def run_jepa2(skip_train: bool = False,
             if not os.path.isabs(monash_dir):
                 config['monash_data_dir'] = str((jepa2_dir / monash_dir).resolve())
         if pretrain_source in ('synthetic', 'monash+synthetic'):
-            synth_dir = config.get('synthetic_data_dir', '../Monash')
+            _synth_key = 'synthetic_mix_data_dir' if pretrain_source == 'monash+synthetic' else 'synthetic_data_dir'
+            synth_dir = config.get(_synth_key, config.get('synthetic_data_dir', '../Monash'))
             if not os.path.isabs(synth_dir):
-                config['synthetic_data_dir'] = str((jepa2_dir / synth_dir).resolve())
+                synth_dir = str((jepa2_dir / synth_dir).resolve())
+            config['synthetic_data_dir'] = synth_dir
         _src_label = {
             'monash':           f"Monash ({config.get('monash_data_dir', '')})",
             'synthetic':        f"Synthetic ({config.get('synthetic_data_dir', '')})",
-            'monash+synthetic': "Monash + Synthetic",
+            'monash+synthetic': "Monash + Synthetic (mix)",
         }.get(pretrain_source, pretrain_source)
         print("\n" + "="*60)
         print(f"  MODEL: Discrete JEPA 2  (RevIN)")
@@ -907,13 +913,15 @@ def run_jepa_simple(skip_train: bool = False,
             if not os.path.isabs(monash_dir):
                 config['monash_data_dir'] = str((jepa_dir / monash_dir).resolve())
         if pretrain_source in ('synthetic', 'monash+synthetic'):
-            synth_dir = config.get('synthetic_data_dir', '../Monash')
+            _synth_key = 'synthetic_mix_data_dir' if pretrain_source == 'monash+synthetic' else 'synthetic_data_dir'
+            synth_dir = config.get(_synth_key, config.get('synthetic_data_dir', '../Monash'))
             if not os.path.isabs(synth_dir):
-                config['synthetic_data_dir'] = str((jepa_dir / synth_dir).resolve())
+                synth_dir = str((jepa_dir / synth_dir).resolve())
+            config['synthetic_data_dir'] = synth_dir
         _src_label = {
             'monash':           f"Monash ({config.get('monash_data_dir', '')})",
             'synthetic':        f"Synthetic ({config.get('synthetic_data_dir', '')})",
-            'monash+synthetic': "Monash + Synthetic",
+            'monash+synthetic': "Monash + Synthetic (mix)",
         }.get(pretrain_source, pretrain_source)
         print("\n" + "="*60)
         print(f"  MODEL: JEPA (P2P)")
@@ -1186,7 +1194,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         if not os.path.isabs(monash_dir):
             monash_dir = str((patchtst_dir / monash_dir).resolve())
     if _pretrain_dset in ('synthetic', 'monash+synthetic'):
-        synth_dir = cfg.get("synthetic_data_dir", "../synthetic")
+        _synth_key = 'synthetic_mix_data_dir' if _pretrain_dset == 'monash+synthetic' else 'synthetic_data_dir'
+        synth_dir = cfg.get(_synth_key, cfg.get("synthetic_data_dir", "../synthetic"))
         if not os.path.isabs(synth_dir):
             synth_dir = str((patchtst_dir / synth_dir).resolve())
 
@@ -1389,9 +1398,11 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         if not os.path.isabs(monash_dir):
             cfg["monash_data_dir"] = str((npt_dir / monash_dir).resolve())
     if _pretrain_dset in ('synthetic', 'monash+synthetic'):
-        synth_dir = cfg.get("synthetic_data_dir", "../synthetic")
+        _synth_key = 'synthetic_mix_data_dir' if _pretrain_dset == 'monash+synthetic' else 'synthetic_data_dir'
+        synth_dir = cfg.get(_synth_key, cfg.get("synthetic_data_dir", "../synthetic"))
         if not os.path.isabs(synth_dir):
-            cfg["synthetic_data_dir"] = str((npt_dir / synth_dir).resolve())
+            synth_dir = str((npt_dir / synth_dir).resolve())
+        cfg["synthetic_data_dir"] = synth_dir
 
     _src_label = {
         'monash':           f"Monash ({cfg.get('monash_data_dir', '')})",

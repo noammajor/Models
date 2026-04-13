@@ -179,9 +179,10 @@ def train_TS_DINO(args):
         combined_dataset = dpuller.MonashDataPuller(
             data_dir = cfg['monash_data_dir'], **_shared_kwargs)
         if _pretrain_source == 'monash+synthetic':
-            print("Using Monash + Synthetic datasets for DINO pretraining")
+            print("Using Monash + Synthetic (mix) datasets for DINO pretraining")
+            _mix_dir = cfg.get('synthetic_mix_data_dir', cfg['synthetic_data_dir'])
             syn_dataset = dpuller.SyntheticArrowDataPuller(
-                data_dir = cfg['synthetic_data_dir'], **_synth_kwargs)
+                data_dir = _mix_dir, **_synth_kwargs)
             combined_dataset = ConcatDataset([combined_dataset, syn_dataset])
     elif _pretrain_source == 'synthetic':
         print("Using Synthetic dataset for DINO pretraining")
