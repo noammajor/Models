@@ -125,7 +125,8 @@ def discover_checkpoints(model: str, encoder_layers: int,
                    f"_patches{_cfg['ratio_patches']}"
                    f"_epochs{_cfg['num_epochs']}"
                    f"_model{_cfg['pretrained_model_id']}_epoch")
-        save_dir = ROOT / "NPT" / "saved_models" / "monash" / "ntp" / f"layers{encoder_layers}"
+        _npt_src = pretrain_source if pretrain_source else "monash"
+        save_dir = ROOT / "NPT" / "saved_models" / _npt_src / "ntp" / f"layers{encoder_layers}"
         found = sorted(set(
             int(m.group(1))
             for p in save_dir.glob("*.pt")
@@ -149,7 +150,8 @@ def discover_checkpoints(model: str, encoder_layers: int,
                    f"_epochs-pretrain{_cfg['n_epochs_pretrain']}"
                    f"_mask{_cfg['mask_ratio']}"
                    f"_model{_cfg['pretrained_model_id']}_")
-        save_dir = ROOT / "PatchTST_self_supervised" / "saved_models" / "monash" / "masked_patchtst" / "based_model" / f"layers{encoder_layers}"
+        _ptst_src = pretrain_source if pretrain_source else "monash"
+        save_dir = ROOT / "PatchTST_self_supervised" / "saved_models" / _ptst_src / "masked_patchtst" / "based_model" / f"layers{encoder_layers}"
         found = set()
         for p in save_dir.glob("*.pth"):
             if p.stem.startswith(_prefix):
@@ -235,6 +237,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     pred_len=pred_len,
                     checkpoints=[ckpt] if ckpt is not None else None,
                     encoder_layers=encoder_layers,
+                    pretrain_source=pretrain_source,
                 )
                 return result[0] if isinstance(result, tuple) else result
 
@@ -246,6 +249,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     pred_len=pred_len,
                     checkpoints=[ckpt] if ckpt is not None else None,
                     encoder_layers=encoder_layers,
+                    pretrain_source=pretrain_source,
                 )
                 return result[0] if isinstance(result, tuple) else result
 
@@ -371,12 +375,14 @@ def eval_best(model: str, dataset: str, pred_len: int,
             elif model == "npt":
                 result = run(model="npt", skip_train=True, forecast_dataset=dataset,
                              pred_len=pred_len, checkpoints=None,
-                             encoder_layers=encoder_layers)
+                             encoder_layers=encoder_layers,
+                             pretrain_source=pretrain_source)
                 return result[0] if isinstance(result, tuple) else result
             elif model == "patchtst":
                 result = run(model="patchtst", skip_train=True, forecast_dataset=dataset,
                              pred_len=pred_len, checkpoints=None,
-                             encoder_layers=encoder_layers)
+                             encoder_layers=encoder_layers,
+                             pretrain_source=pretrain_source)
                 return result[0] if isinstance(result, tuple) else result
             elif model == "timedart":
                 result = run(model="timedart", skip_train=True, forecast_dataset=dataset,
