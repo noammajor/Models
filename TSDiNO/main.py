@@ -961,30 +961,39 @@ def test_run(args):
         
 def train_classification(args, classification_train=None, classification_val=None,
                          classification_test=None, n_classes=None):
-    """Train classification head on top of pretrained DINO encoder.
+    """Train classification head on top of pretrained DINO encoder (TSLib style).
 
-    If classification_train/val/test DataLoaders are provided they are used directly
-    (elastic ClassificationDataPuller path). Otherwise falls back to the legacy
-    DataPullerClassification path for backwards compatibility.
+    TSLib improvements:
+      - RAdam optimizer + gradient clipping (max_norm=4.0)
+      - Early stopping on -val_accuracy (patience-based)
+      - Masked mean pooling over patch tokens (handles variable-length inputs)
+
+    Batches may be 3-tuples (x, labels, mask) from make_uea_dataloaders or
+    2-tuples (patches, labels) from ClassificationDataPuller.
     """
+    import sys as _sys
+    _root = str(Path(__file__).parent.parent)
+    if _root not in _sys.path:
+        _sys.path.insert(0, _root)
+    from classification_utils import train_cls_tslib
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Training classification on {device}")
 
     if classification_train is not None:
-        # ── elastic path: callers supply pre-built DataLoaders ────────────────
         train_loader = classification_train
         val_loader   = classification_val
         test_loader  = classification_test
-        # infer shape from first batch
-        _x, _ = next(iter(train_loader))  # [B, n_patches, patch_size, n_vars] or [B, T, C]
+        # Infer shape from first batch
+        _x = next(iter(train_loader))[0]
         n_vars = _x.shape[-1]
-        if _x.dim() == 3:   # raw (B, T, C) from UEADataset
+        if _x.dim() == 3:             # raw [B, T, C] from make_uea_dataloaders
             num_patch = _x.shape[1] // args.patch_len
-        else:               # pre-patched (B, P, PL, C) from ClassificationDataPuller
+        else:                          # pre-patched [B, P, PL, C]
             num_patch = _x.shape[1]
-        n_cls     = n_classes
+        n_cls = n_classes
     else:
-        # ── legacy UCI HAR path ───────────────────────────────────────────────
+        # Legacy UCI HAR path
         train_dataset = dpuller.DataPullerClassification(
             data_dir=args.data_path_classification,
             split='train',
@@ -1010,182 +1019,79 @@ def train_classification(args, classification_train=None, classification_val=Non
         num_patch = args.seq_len_classification // args.patch_len
         n_cls     = args.n_classes
 
-    # Create model with classification head
+    # Build model (pretrain head — we use backbone features directly)
     model = PatchTST(
-        c_in=n_vars,
-        target_dim=n_cls,
-        patch_len=args.patch_len,
-        num_patch=num_patch,
-        n_layers=args.n_layers,
-        n_heads=args.n_heads,
-        d_model=args.embed_dim,
-        shared_embedding=True,
-        d_ff=args.d_ff,
-        dropout=args.dropout,
-        head_dropout=args.head_dropout,
-        act='gelu',
-        head_type='classification',
-        res_attention=False,
-        step_size=args.patch_len
+        c_in         = n_vars,
+        target_dim   = args.patch_len,   # pretrain head dim (unused — backbone only)
+        patch_len    = args.patch_len,
+        num_patch    = num_patch,
+        n_layers     = args.n_layers,
+        n_heads      = args.n_heads,
+        d_model      = args.embed_dim,
+        shared_embedding = True,
+        d_ff         = args.d_ff,
+        dropout      = args.dropout,
+        head_dropout = args.head_dropout,
+        act          = 'gelu',
+        head_type    = 'pretrain',
+        res_attention= False,
+        step_size    = args.patch_len,
     ).to(device)
 
-    # Load pretrained encoder
+    # Load pretrained encoder weights
     if args.path_num == "best":
         checkpoint_path = os.path.join(args.output_dir, 'checkpoint_best.pth')
     elif isinstance(args.path_num, str) and os.path.isabs(args.path_num):
-        checkpoint_path = args.path_num   # direct absolute file path (TEMP: for local testing, remove after)
+        checkpoint_path = args.path_num
     elif args.path_num and int(args.path_num) > 0:
         checkpoint_path = os.path.join(args.output_dir, f'checkpoint{args.path_num}.pth')
     else:
         checkpoint_path = None
 
-    if checkpoint_path is not None:
-        if os.path.exists(checkpoint_path):
-            checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
-            state_dict = checkpoint['student']
-            model_dict = model.state_dict()
-            new_state_dict = {}
-            for key, value in state_dict.items():
-                # Remove 'module.' prefix (from DistributedDataParallel)
-                new_key = key.replace('module.', '')
-                # Remove first 'backbone.' (from TSMultiCropWrapper)
-                if new_key.startswith('backbone.'):
-                    new_key = new_key.replace('backbone.', '', 1)
-                # Skip DINO head params, only load encoder
-                if 'head' in key.split('.')[-2:]:
-                    continue
-                if new_key in model_dict and model_dict[new_key].shape == value.shape:
-                    new_state_dict[new_key] = value
-            model.load_state_dict(new_state_dict, strict=False)
-            print(f"Loaded encoder from checkpoint {args.path_num}")
-            print(f"Loaded {len(new_state_dict)}/{len(model_dict)} parameters")
-        else:
-            print(f"Checkpoint {checkpoint_path} not found, using random initialization")
+    if checkpoint_path is not None and os.path.exists(checkpoint_path):
+        checkpoint  = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+        state_dict  = checkpoint['student']
+        model_dict  = model.state_dict()
+        new_sd = {}
+        for key, value in state_dict.items():
+            new_key = key.replace('module.', '')
+            if new_key.startswith('backbone.'):
+                new_key = new_key.replace('backbone.', '', 1)
+            if 'head' in key.split('.')[-2:]:
+                continue
+            if new_key in model_dict and model_dict[new_key].shape == value.shape:
+                new_sd[new_key] = value
+        model.load_state_dict(new_sd, strict=False)
+        print(f"Loaded encoder from checkpoint {args.path_num} "
+              f"({len(new_sd)}/{len(model_dict)} params)")
+    else:
+        print(f"No checkpoint loaded — random encoder weights")
 
-    # Freeze encoder, train only head
-    for name, param in model.named_parameters():
-        if 'head' not in name:
-            param.requires_grad = False
-        else:
-            param.requires_grad = True
-
-    # Count trainable parameters
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    total_params = sum(p.numel() for p in model.parameters())
-    print(f"Trainable parameters: {trainable_params:,} / {total_params:,}")
-
-    # Loss and optimizer
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(
-        [p for p in model.parameters() if p.requires_grad],
-        lr=args.lr_classification
-    )
-
-    # Cosine learning rate scheduler
-    lr_schedule = utils.cosine_scheduler(
-        base_value=args.lr_classification,
-        final_value=args.min_lr_classification,
-        epochs=args.epochs_classification,
-        niter_per_ep=len(train_loader),
-        warmup_epochs=10,
-    )
-
-    print(f"Starting classification training for {args.epochs_classification} epochs...")
-
-    best_acc   = 0.0
-    best_state = None
-    for epoch in range(args.epochs_classification):
-        model.train()
-        train_loss = 0.0
-        correct = 0
-        total = 0
-
-        for it, (inputs, labels) in enumerate(train_loader):
-            # Update learning rate
-            step = epoch * len(train_loader) + it
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = lr_schedule[step]
-
-            inputs, labels = inputs.to(device), labels.to(device)
-            labels = labels.squeeze(-1) if labels.dim() > 1 else labels
-            if inputs.dim() == 4:
-                B, P, PL, C = inputs.shape
-                inputs = inputs.reshape(B, P * PL, C)
-
-            # Forward pass
-            outputs = model(inputs)  # [batch_size, n_classes]
-            loss = criterion(outputs, labels)
-
-            # Backward pass
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            train_loss += loss.item()
-            _, predicted = outputs.max(1)
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
-        train_loss /= len(train_loader)
-        train_acc = correct / total
-
-        # Use val_loader for best-model selection if available, else test_loader
-        eval_loader = val_loader if val_loader is not None else test_loader
-        model.eval()
-        val_loss = 0.0
-        correct = 0
-        total = 0
-        with torch.no_grad():
-            for inputs, labels in eval_loader:
-                inputs, labels = inputs.to(device), labels.to(device)
-                if inputs.dim() == 4:
-                    B, P, PL, C = inputs.shape
-                    inputs = inputs.reshape(B, P * PL, C)
-                outputs = model(inputs)
-                loss = criterion(outputs, labels)
-                val_loss += loss.item()
-                _, predicted = outputs.max(1)
-                total += labels.size(0)
-                correct += predicted.eq(labels).sum().item()
-        val_loss /= len(eval_loader)
-        val_acc = correct / total
-
-        print(f"Epoch [{epoch+1}/{args.epochs_classification}] "
-              f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | "
-              f"Val Acc: {val_acc:.4f}")
-
-        if val_acc > best_acc:
-            best_acc = val_acc
-            best_state = {k: v.clone() for k, v in model.state_dict().items()}
-            save_dict = {
-                'model': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'epoch': epoch,
-                'args': args,
-                'val_acc': val_acc
-            }
-            _ckpt_tag = args.path_num if isinstance(args.path_num, int) else 'custom'
-            save_path = os.path.join(args.output_dir, f'classification_best_checkpoint{_ckpt_tag}.pth')
-            torch.save(save_dict, save_path)
-
-    # Final test accuracy with best checkpoint
-    if best_state is not None:
-        model.load_state_dict(best_state)
     model.eval()
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for inputs, labels in test_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            if inputs.dim() == 4:
-                B, P, PL, C = inputs.shape
-                inputs = inputs.reshape(B, P * PL, C)
-            outputs = model(inputs)
-            _, predicted = outputs.max(1)
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
-    test_acc = correct / total
+    for p in model.parameters():
+        p.requires_grad_(False)
 
-    print(f"\n[DINO] Classification complete! Test Accuracy: {test_acc:.4f}  (best val: {best_acc:.4f})")
-    return test_acc
+    def encode_fn(x, key_padding_mask=None):
+        # x: [B, T, C] (raw) or [B, P, PL, C] (pre-patched)
+        if x.dim() == 4:
+            B, P, PL, C = x.shape
+            x = x.reshape(B, P * PL, C)
+        # forward_recon: [B, seq_len, n_vars] → [B, num_patch, n_vars, d_model]
+        z = model.forward_recon(x, key_padding_mask=key_padding_mask, method_classification=True)
+        return z.permute(0, 2, 3, 1)   # [B, n_vars, d_model, num_patch]
+
+    return train_cls_tslib(
+        encode_fn    = encode_fn,
+        n_classes    = n_cls,
+        train_loader = train_loader,
+        val_loader   = val_loader if val_loader is not None else test_loader,
+        test_loader  = test_loader,
+        n_epochs     = args.epochs_classification,
+        lr           = args.lr_classification,
+        patience     = getattr(args, 'patience_classification', 10),
+        head_dropout = args.head_dropout,
+        device       = device,
+    )
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('DINO', parents=[get_args_parser()])

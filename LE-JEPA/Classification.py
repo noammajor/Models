@@ -1,23 +1,25 @@
 """
-LE-JEPA linear-probe classification.
+LE-JEPA linear-probe classification — TSLib style.
 
-Frozen pretrained encoder + ClassificationHead trained on the classification split.
-Head: last patch → flatten(n_vars * embed_dim) → dropout → linear → n_classes.
-Identical pattern to PatchTST's ClassificationHead.
+Frozen encoder → [B, n_vars, embed_dim, n_patches] → masked mean pool → linear head.
+Training: RAdam + gradient clipping (max_norm=4.0) + early stopping on -val_accuracy.
 """
 
-import os
 import sys
 import torch
-import torch.nn.functional as F
 from pathlib import Path
 
-# Import ClassificationHead from JEPA (shared)
+_ROOT = str(Path(__file__).parent.parent)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from classification_utils import train_cls_tslib
+
 _JEPA_DIR = str(Path(__file__).parent.parent / "JEPA" / "JEPA")
 if _JEPA_DIR not in sys.path:
     sys.path.insert(0, _JEPA_DIR)
 
-from Decoder import ClassificationHead
+from Decoder import ClassificationHead  # kept for compat; not used directly
 
 
 def _instance_norm(x, eps=1e-6):
@@ -30,20 +32,14 @@ def _instance_norm(x, eps=1e-6):
 def classification_zeroshot(self, path, classification_train, classification_val,
                              classification_test, n_classes):
     """
-    Linear-probe classification with frozen LE-JEPA encoder.
+    Linear-probe classification with frozen LE-JEPA encoder (TSLib style).
 
-    Args:
-        path                  : checkpoint tag, e.g. "" → loads {path_save}{path}best_model.pt
-        classification_train/val/test : DataLoaders from ClassificationDataPuller
-                                        each batch: (patches [B, P, PL, n_vars], labels [B])
-        n_classes             : total number of target classes
-    Returns:
-        test accuracy (float)
+    Batches from loader: (patches [B,P,PL,n_vars], labels [B]) or 3-tuple with mask.
     """
     config          = self.config
     checkpoint_path = f"{self.path_save}{path}best_model.pt"
 
-    print(f"\n=== LE-JEPA Classification (linear probe) ===")
+    print(f"\n=== LE-JEPA Classification (TSLib linear probe) ===")
     print(f"Loading checkpoint: {checkpoint_path}")
 
     ckpt = torch.load(checkpoint_path, map_location="cpu")
@@ -51,105 +47,38 @@ def classification_zeroshot(self, path, classification_train, classification_val
     self.encoder.to(self.device)
     self.encoder.eval()
     for p in self.encoder.parameters():
-        p.requires_grad = False
+        p.requires_grad_(False)
 
     embed_dim = config["encoder_embed_dim"]
+    encoder   = self.encoder
+    device    = self.device
 
     # Infer n_vars and num_patches from first batch
-    sample_patches, _ = next(iter(classification_train))
-    if sample_patches.dim() == 3:
-        sample_patches = sample_patches.unsqueeze(-1)
-    num_patches = sample_patches.shape[1]
-    n_v         = sample_patches.shape[-1]
+    sample = next(iter(classification_train))[0]
+    if sample.dim() == 3:
+        sample = sample.unsqueeze(-1)
+    num_patches = sample.shape[1]
 
-    cls_head = ClassificationHead(
-        n_vars       = n_v,
-        d_model      = embed_dim,
-        n_classes    = n_classes,
-        head_dropout = config.get("head_dropout", 0.1),
-    ).to(self.device)
+    def encode_fn(patches, key_padding_mask=None):
+        # patches: [B, P, PL, n_vars]
+        if patches.dim() == 3:
+            patches = patches.unsqueeze(-1)
+        B, P, PL, n_v = patches.shape
+        ctx_norm, _, _ = _instance_norm(patches)
+        enc_out = encoder(ctx_norm, key_padding_mask=key_padding_mask, method_classification=True)
+        enc     = enc_out["data_patches"]           # [B*n_v, P, embed_dim]
+        # reshape to [B, n_vars, embed_dim, n_patches]
+        return enc.reshape(B, n_v, P, embed_dim).permute(0, 1, 3, 2)
 
-    n_epochs  = config.get("epoch_classification", 20)
-    optimizer = torch.optim.Adam(cls_head.parameters(),
-                                 lr=config.get("lr_classification", 1e-3),
-                                 weight_decay=1e-4)
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, max_lr=config.get("lr_classification", 1e-3),
-        total_steps=n_epochs * len(classification_train),
-        pct_start=0.3, anneal_strategy='cos',
+    return train_cls_tslib(
+        encode_fn          = encode_fn,
+        n_classes          = n_classes,
+        train_loader       = classification_train,
+        val_loader         = classification_val,
+        test_loader        = classification_test,
+        n_epochs           = config.get("epoch_classification",   50),
+        lr                 = config.get("lr_classification",      1e-4),
+        patience           = config.get("patience_classification", 10),
+        head_dropout       = config.get("head_dropout",           0.1),
+        device             = device,
     )
-
-    best_val_acc = 0.0
-    best_state   = None
-
-    for epoch in range(n_epochs):
-        cls_head.train()
-        correct, total = 0, 0
-        for patches, labels in classification_train:
-            if patches.dim() == 3:
-                patches = patches.unsqueeze(-1)
-            patches = patches.to(self.device)
-            labels  = labels.to(self.device)
-            B, P, PL, n_v_ = patches.shape
-
-            optimizer.zero_grad()
-            ctx_norm, _, _ = _instance_norm(patches)
-            with torch.no_grad():
-                enc_out = self.encoder(ctx_norm)
-                enc     = enc_out["data_patches"]          # [B*n_v, P, embed_dim]
-            enc_p  = enc.reshape(B, n_v_, num_patches, embed_dim).permute(0, 1, 3, 2)
-            logits = cls_head(enc_p)                       # [B, n_classes]
-            loss   = F.cross_entropy(logits, labels)
-            loss.backward()
-            optimizer.step()
-            scheduler.step()
-            correct += (logits.argmax(1) == labels).sum().item()
-            total   += len(labels)
-        train_acc = correct / total
-
-        # Validation
-        cls_head.eval()
-        vc, vt = 0, 0
-        with torch.no_grad():
-            for patches, labels in classification_val:
-                if patches.dim() == 3:
-                    patches = patches.unsqueeze(-1)
-                patches = patches.to(self.device)
-                labels  = labels.to(self.device)
-                B, P, PL, n_v_ = patches.shape
-                ctx_norm, _, _ = _instance_norm(patches)
-                enc_out = self.encoder(ctx_norm)
-                enc     = enc_out["data_patches"]
-                enc_p   = enc.reshape(B, n_v_, num_patches, embed_dim).permute(0, 1, 3, 2)
-                logits  = cls_head(enc_p)
-                vc += (logits.argmax(1) == labels).sum().item()
-                vt += len(labels)
-        val_acc = vc / vt
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            best_state   = {k: v.clone() for k, v in cls_head.state_dict().items()}
-        if epoch % 5 == 0:
-            print(f"  Epoch {epoch:3d} | train acc {train_acc:.4f} | val acc {val_acc:.4f}")
-
-    # Test with best checkpoint
-    if best_state is not None:
-        cls_head.load_state_dict(best_state)
-    cls_head.eval()
-    tc, tt = 0, 0
-    with torch.no_grad():
-        for patches, labels in classification_test:
-            if patches.dim() == 3:
-                patches = patches.unsqueeze(-1)
-            patches = patches.to(self.device)
-            labels  = labels.to(self.device)
-            B, P, PL, n_v_ = patches.shape
-            ctx_norm, _, _ = _instance_norm(patches)
-            enc_out = self.encoder(ctx_norm)
-            enc     = enc_out["data_patches"]
-            enc_p   = enc.reshape(B, n_v_, num_patches, embed_dim).permute(0, 1, 3, 2)
-            logits  = cls_head(enc_p)
-            tc += (logits.argmax(1) == labels).sum().item()
-            tt += len(labels)
-    test_acc = tc / tt
-    print(f"[LE-JEPA] Test Accuracy: {test_acc:.4f}  (best val: {best_val_acc:.4f})")
-    return test_acc

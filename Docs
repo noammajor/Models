@@ -1,0 +1,25 @@
+Dino:
+    pretraining - monash and synthetic
+    forecasting:
+        layers 2: finished
+        layers 4: started
+JEPA:
+    pretraining - monash and synthetic
+    forecasting:
+        monash - done
+        synthetic - hasnt been started
+LE-JEPA:
+    pretraining - monash and synthetic
+    forecasting:
+        monash - traffic left
+        synthetic - hasnt been started
+PatchTST:
+    pretraining - monash and synthetic
+    forecasting:
+        monash - missing traffic
+        synthetic - hasnt been started
+NTP:
+    pretraining - monash and synthetic
+    forecasting:
+        monash - done
+        synthetic - hasnt been started

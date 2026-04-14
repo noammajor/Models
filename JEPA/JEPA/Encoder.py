@@ -51,7 +51,8 @@ class ScaledDotProductAttention(nn.Module):
         self.scale = nn.Parameter(torch.tensor(head_dim ** -0.5), requires_grad=lsa)
 
     def forward(self, q, k, v, prev: Optional[torch.Tensor] = None,
-                attn_mask: Optional[torch.Tensor] = None):
+                attn_mask: Optional[torch.Tensor] = None,
+                key_padding_mask: Optional[torch.Tensor] = None):
         attn_scores = torch.matmul(q, k) * self.scale
         if prev is not None:
             attn_scores = attn_scores + prev
@@ -60,6 +61,8 @@ class ScaledDotProductAttention(nn.Module):
                 attn_scores.masked_fill_(attn_mask, float('-inf'))
             else:
                 attn_scores = attn_scores + attn_mask
+        if key_padding_mask is not None:                                  # [bs x seq_len] True=pad
+            attn_scores.masked_fill_(key_padding_mask.unsqueeze(1).unsqueeze(2), float('-inf'))
         attn_weights = F.softmax(attn_scores, dim=-1)
         attn_weights = self.attn_dropout(attn_weights)
         output = torch.matmul(attn_weights, v)
@@ -86,7 +89,8 @@ class MultiheadAttention(nn.Module):
         self.to_out = nn.Sequential(nn.Linear(n_heads * d_v, d_model), nn.Dropout(proj_dropout))
 
     def forward(self, Q, K=None, V=None, prev: Optional[torch.Tensor] = None,
-                attn_mask: Optional[torch.Tensor] = None):
+                attn_mask: Optional[torch.Tensor] = None,
+                key_padding_mask: Optional[torch.Tensor] = None):
         bs = Q.size(0)
         if K is None: K = Q
         if V is None: V = Q
@@ -94,9 +98,9 @@ class MultiheadAttention(nn.Module):
         k_s = self.W_K(K).view(bs, -1, self.n_heads, self.d_k).permute(0, 2, 3, 1)
         v_s = self.W_V(V).view(bs, -1, self.n_heads, self.d_v).transpose(1, 2)
         if self.res_attention:
-            output, _, scores = self.sdp_attn(q_s, k_s, v_s, prev=prev, attn_mask=attn_mask)
+            output, _, scores = self.sdp_attn(q_s, k_s, v_s, prev=prev, attn_mask=attn_mask, key_padding_mask=key_padding_mask)
         else:
-            output, _ = self.sdp_attn(q_s, k_s, v_s, attn_mask=attn_mask)
+            output, _ = self.sdp_attn(q_s, k_s, v_s, attn_mask=attn_mask, key_padding_mask=key_padding_mask)
             scores = None
         output = output.transpose(1, 2).contiguous().view(bs, -1, self.n_heads * self.d_v)
         output = self.to_out(output)
@@ -127,10 +131,10 @@ class TSTEncoderLayer(nn.Module):
         self.norm_ffn = nn.LayerNorm(d_model)
         self.dropout_ffn = nn.Dropout(dropout)
 
-    def forward(self, src, prev=None, attn_mask=None):
+    def forward(self, src, prev=None, attn_mask=None, key_padding_mask=None):
         if self.pre_norm:
             src = self.norm_attn(src)
-        src2, scores = self.self_attn(src, src, src, prev=prev, attn_mask=attn_mask)
+        src2, scores = self.self_attn(src, src, src, prev=prev, attn_mask=attn_mask, key_padding_mask=key_padding_mask)
         src = src + self.dropout_attn(src2)
         if not self.pre_norm:
             src = self.norm_attn(src)
@@ -154,10 +158,10 @@ class TSTEncoder(nn.Module):
             for _ in range(n_layers)
         ])
 
-    def forward(self, src, attn_mask=None):
+    def forward(self, src, attn_mask=None, key_padding_mask=None):
         output, scores = src, None
         for mod in self.layers:
-            output, scores = mod(output, prev=scores, attn_mask=attn_mask)
+            output, scores = mod(output, prev=scores, attn_mask=attn_mask, key_padding_mask=key_padding_mask)
         return output
 
 
@@ -208,11 +212,13 @@ class Encoder(nn.Module):
         )
         self.encoder_norm = nn.LayerNorm(embed_dim)
 
-    def forward(self, x, mask=None, **kwargs):
+    def forward(self, x, mask=None, key_padding_mask=None, method_classification=False, **kwargs):
         """
-        x:    [B, P, P_L, F]
-        mask: [B, n_ctx] LongTensor — context patch indices (student encoder).
-              Pass None to encode all patches (target/EMA encoder).
+        x:                   [B, P, P_L, F]
+        mask:                [B, n_ctx] LongTensor — context patch indices (student encoder).
+                             Pass None to encode all patches (target/EMA encoder).
+        key_padding_mask:    [B, P] bool, True = real patch (our convention).
+                             Only used when method_classification=True.
         """
         B, P, P_L, F = x.shape
 
@@ -230,7 +236,12 @@ class Encoder(nn.Module):
             m = mask.unsqueeze(1).expand(-1, F, -1).reshape(B * F, n_ctx)
             x = torch.gather(x, 1, m.unsqueeze(-1).expand(-1, -1, self.embed_dim))
 
-        x = self.transformer(x)
+        # Padding mask: expand [B, P] → [B*F, P], invert to attn convention (True=ignore)
+        kpm = None
+        if method_classification and key_padding_mask is not None:
+            kpm = (~key_padding_mask).unsqueeze(1).expand(-1, F, -1).reshape(B * F, P)
+
+        x = self.transformer(x, key_padding_mask=kpm)
         x = self.encoder_norm(x)
 
         return {

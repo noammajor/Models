@@ -1104,19 +1104,28 @@ def run_jepa_simple(skip_train: bool = False,
         if list(Path(os.path.join(cls_dir, classification_dataset)).glob("*_TRAIN.ts")):
             _uea_tr, _uea_va, _uea_te, n_classes = make_uea_dataloaders(
                 cls_dir, classification_dataset, batch_size=cls_bs)
-            # JEPA expects (B, P, PL, C) with P = config["ratio_patches"] (pretraining num_patches).
-            # UEADataset returns (B, T, C) → subsample to ratio_patches * patch_size, then patch.
+            # JEPA expects (B, P, PL, C) with P ≤ config["ratio_patches"] (W_pos size).
+            # Pad short sequences, truncate long ones (> 512), compute patch mask.
+            import math as _math
+            import torch.nn.functional as _F
             _n_patches = config["ratio_patches"]          # 32 (matches pretrained W_pos)
             _target_T  = _n_patches * p_s                 # 32 * 16 = 512
             def _patch_collate(batch, _ps=p_s, _tT=_target_T, _nP=_n_patches):
                 xs, ys = zip(*batch)
-                xs = torch.stack(xs)                      # (B, T, C)
-                T  = xs.shape[1]
-                if T != _tT:                              # uniform resample to 512
-                    idx = torch.linspace(0, T - 1, _tT).long()
-                    xs  = xs[:, idx, :]
-                xs = xs.reshape(len(xs), _nP, _ps, xs.shape[-1])   # (B, 32, 16, C)
-                return xs, torch.stack(ys)
+                x_pad, masks = [], []
+                for x in xs:
+                    T = x.shape[0]
+                    if T > _tT:                           # truncate — W_pos only has _nP positions
+                        x = x[:_tT]; T = _tT
+                    pad = _tT - T
+                    if pad > 0:
+                        x = _F.pad(x, (0, 0, 0, pad))    # zero-pad to 512
+                    x_pad.append(x.reshape(_nP, _ps, -1)) # (32, 16, C)
+                    n_real = min(_math.ceil(T / _ps), _nP)
+                    m = torch.zeros(_nP, dtype=torch.bool)
+                    m[:n_real] = True
+                    masks.append(m)
+                return torch.stack(x_pad), torch.stack(ys), torch.stack(masks)
             _wrap = lambda ds, shuf: torch.utils.data.DataLoader(
                 ds, batch_size=cls_bs, shuffle=shuf, collate_fn=_patch_collate)
             cls_train = _wrap(_uea_tr.dataset, True)

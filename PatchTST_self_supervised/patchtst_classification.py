@@ -1,15 +1,13 @@
 """
-PatchTST linear-probe classification.
+PatchTST linear-probe classification — TSLib style.
 
-Frozen pretrained PatchTST backbone + ClassificationHead trained on the
-classification split. Head: last patch → flatten(n_vars * d_model) → dropout
-→ linear → n_classes. Identical pattern to DINO/NPT ClassificationHead.
+Frozen PatchTST backbone → [B, n_vars, d_model, n_patches] → masked mean pool → linear head.
+Training: RAdam + gradient clipping (max_norm=4.0) + early stopping on -val_accuracy.
 """
 
 import os
 import sys
 import torch
-import torch.nn.functional as F
 
 _DIR     = os.path.dirname(os.path.abspath(__file__))
 _ROOT    = os.path.dirname(_DIR)
@@ -20,123 +18,80 @@ for _p in [_DIR, _ROOT, _DJEPA]:
         sys.path.insert(0, _p)
 
 from src.models.patchTST import PatchTST
+from classification_utils import train_cls_tslib
 
 
 def classification_zeroshot(config, checkpoint_path, classification_train,
                              classification_val, classification_test, n_classes):
     """
-    Linear-probe classification with frozen PatchTST backbone.
+    Linear-probe classification with frozen PatchTST backbone (TSLib style).
 
-    Args:
-        config                : dict from config_patchtst.py
-        checkpoint_path       : path to pretrained .pth file
-        classification_train/val/test : DataLoaders from ClassificationDataPuller
-                                        each batch: (patches [B, P, PL, n_vars], labels [B])
-        n_classes             : total number of target classes
-    Returns:
-        test accuracy (float)
+    Batches: (patches [B,P,PL,n_vars], labels [B]) or 3-tuple  (x, labels, mask).
+    - Pre-patched 4D input  [B, P, PL, n_vars] comes from ClassificationDataPuller.
+    - Raw 3D input          [B, T, C]           comes from make_uea_dataloaders.
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device    = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    patch_len = config.get("patch_len", 16)
 
-    print(f"\n=== PatchTST Classification (linear probe) ===")
+    print(f"\n=== PatchTST Classification (TSLib linear probe) ===")
     print(f"Loading checkpoint: {checkpoint_path}")
 
-    # Infer shape from first batch
-    sample_patches, _ = next(iter(classification_train))
-    num_patch = sample_patches.shape[1]   # [B, P, PL, n_vars]
-    n_v       = sample_patches.shape[-1]
-    patch_len = sample_patches.shape[2]
+    # Infer input shape from first batch
+    sample = next(iter(classification_train))[0]
+    if sample.dim() == 4:                       # pre-patched [B, P, PL, n_vars]
+        num_patch = sample.shape[1]
+        n_v       = sample.shape[-1]
+    else:                                        # raw [B, T, C]
+        T         = sample.shape[1]
+        n_v       = sample.shape[-1]
+        num_patch = T // patch_len
 
-    # Build model with classification head
     model = PatchTST(
         c_in         = n_v,
         target_dim   = n_classes,
         patch_len    = patch_len,
         stride       = patch_len,
         num_patch    = num_patch,
-        n_layers     = config.get("n_layers",  3),
-        n_heads      = config.get("n_heads",   16),
-        d_model      = config.get("d_model",   128),
+        n_layers     = config.get("n_layers",     3),
+        n_heads      = config.get("n_heads",      16),
+        d_model      = config.get("d_model",      128),
         shared_embedding = True,
-        d_ff         = config.get("d_ff",      512),
-        dropout      = config.get("dropout",   0.2),
+        d_ff         = config.get("d_ff",         512),
+        dropout      = config.get("dropout",      0.2),
         head_dropout = config.get("head_dropout", 0.2),
         act          = "gelu",
-        head_type    = "classification",
-        res_attention = False,
+        head_type    = "pretrain",
+        res_attention= False,
     ).to(device)
 
-    # Load pretrained backbone weights (ignore head)
-    ckpt = torch.load(checkpoint_path, map_location="cpu")
+    ckpt  = torch.load(checkpoint_path, map_location="cpu")
     state = ckpt.get("model", ckpt)
     missing, unexpected = model.load_state_dict(state, strict=False)
     print(f"  Loaded backbone — missing: {len(missing)}, unexpected: {len(unexpected)}")
 
-    # Freeze backbone, train only head
-    for name, p in model.named_parameters():
-        p.requires_grad = ("head" in name)
-
-    n_epochs  = config.get("epoch_classification", 20)
-    optimizer = torch.optim.Adam(
-        [p for p in model.parameters() if p.requires_grad],
-        lr=config.get("lr_classification", 1e-3),
-        weight_decay=1e-4,
-    )
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, max_lr=config.get("lr_classification", 1e-3),
-        total_steps=n_epochs * len(classification_train),
-        pct_start=0.3, anneal_strategy='cos',
-    )
-
-    best_val_acc = 0.0
-    best_state   = None
-
-    for epoch in range(n_epochs):
-        model.train()
-        correct, total = 0, 0
-        for patches, labels in classification_train:
-            # PatchTST expects [B, P, n_vars, PL]
-            x = patches.permute(0, 1, 3, 2).to(device)
-            labels = labels.to(device)
-            optimizer.zero_grad()
-            logits = model(x)
-            loss   = F.cross_entropy(logits, labels)
-            loss.backward()
-            optimizer.step()
-            scheduler.step()
-            correct += (logits.argmax(1) == labels).sum().item()
-            total   += len(labels)
-        train_acc = correct / total
-
-        # Validation
-        model.eval()
-        vc, vt = 0, 0
-        with torch.no_grad():
-            for patches, labels in classification_val:
-                x = patches.permute(0, 1, 3, 2).to(device)
-                labels = labels.to(device)
-                logits = model(x)
-                vc += (logits.argmax(1) == labels).sum().item()
-                vt += len(labels)
-        val_acc = vc / vt
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            best_state   = {k: v.clone() for k, v in model.state_dict().items()}
-        if epoch % 5 == 0:
-            print(f"  Epoch {epoch:3d} | train acc {train_acc:.4f} | val acc {val_acc:.4f}")
-
-    # Test with best checkpoint
-    if best_state is not None:
-        model.load_state_dict(best_state)
     model.eval()
-    tc, tt = 0, 0
-    with torch.no_grad():
-        for patches, labels in classification_test:
-            x = patches.permute(0, 1, 3, 2).to(device)
-            labels = labels.to(device)
-            logits = model(x)
-            tc += (logits.argmax(1) == labels).sum().item()
-            tt += len(labels)
-    test_acc = tc / tt
-    print(f"[PatchTST] Test Accuracy: {test_acc:.4f}  (best val: {best_val_acc:.4f})")
-    return test_acc
+    for p in model.parameters():
+        p.requires_grad_(False)
+
+    def encode_fn(x, key_padding_mask=None):
+        if x.dim() == 4:                        # [B, P, PL, n_vars]
+            x = x.permute(0, 1, 3, 2)          # [B, P, n_vars, PL]
+        else:                                    # [B, T, C]
+            B, T, C = x.shape
+            n_p = T // patch_len
+            x = x.reshape(B, n_p, patch_len, C).permute(0, 1, 3, 2)  # [B, n_p, C, PL]
+        return model.model(x, key_padding_mask=key_padding_mask,
+                           method_classification=True)                  # [B, n_vars, d_model, n_patches]
+
+    return train_cls_tslib(
+        encode_fn    = encode_fn,
+        n_classes    = n_classes,
+        train_loader = classification_train,
+        val_loader   = classification_val,
+        test_loader  = classification_test,
+        n_epochs     = config.get("epoch_classification",   50),
+        lr           = config.get("lr_classification",      1e-4),
+        patience     = config.get("patience_classification", 10),
+        head_dropout = config.get("head_dropout",           0.2),
+        device       = device,
+    )

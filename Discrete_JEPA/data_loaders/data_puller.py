@@ -1155,17 +1155,69 @@ class UEADataset(Dataset):
         return x, y
 
 
-def make_uea_dataloaders(cls_dir: str, dataset_name: str, batch_size: int = 16):
-    """Build train/val/test DataLoaders from a UEA .ts dataset.
-    Returns (train_loader, val_loader, test_loader, n_classes).
+def _uea_collate_fn(pad_T: int, patch_len: int = 16):
+    """Return a collate_fn that pads all UEA sequences to a fixed pad_T.
+
+    Each item is (x [T, C], label).
+    pad_T is the global max sequence length for the dataset (pre-computed),
+    rounded up to a patch_len multiple so n_patches is constant across all batches.
+
+    Batch output:
+        x_pad      [B, pad_T, C]      float32, zero-padded on the right
+        labels     [B]                long
+        patch_mask [B, n_patches]     bool, True = patch contains real data
     """
-    # .ts files live in cls_dir/dataset_name/dataset_name_{TRAIN,TEST}.ts
+    import math
+    import torch.nn.functional as _F
+    n_patches = pad_T // patch_len
+
+    def collate(batch):
+        xs, ys = zip(*batch)
+        x_pad, masks = [], []
+        for x in xs:
+            T   = x.shape[0]
+            pad = pad_T - T
+            x_pad.append(_F.pad(x, (0, 0, 0, pad)) if pad > 0 else x[:pad_T])
+            # A patch is real if it starts before T (even if partially padded)
+            n_real = min(math.ceil(T / patch_len), n_patches)
+            m = torch.zeros(n_patches, dtype=torch.bool)
+            m[:n_real] = True
+            masks.append(m)
+        return (torch.stack(x_pad),
+                torch.stack([y if isinstance(y, torch.Tensor)
+                              else torch.tensor(y) for y in ys]),
+                torch.stack(masks))
+
+    return collate
+
+
+def make_uea_dataloaders(cls_dir: str, dataset_name: str,
+                         batch_size: int = 16, patch_len: int = 16):
+    """Build train/val/test DataLoaders from a UEA .ts dataset.
+
+    Computes global max T across all splits, pads every sample to that length
+    (rounded up to the next patch_len multiple) so n_patches is fixed per dataset.
+    This lets each dataset get its own classification head sized n_vars*d_model*n_patches.
+
+    Returns (train_loader, val_loader, test_loader, n_classes).
+    Each batch is a 3-tuple (x [B, pad_T, C], labels [B], patch_mask [B, n_patches])
+    where patch_mask is True for patches containing real data.
+    """
+    import math
     dataset_root = os.path.join(cls_dir, dataset_name)
     ds_train = UEADataset(dataset_root, dataset_name, split='train')
     ds_val   = UEADataset(dataset_root, dataset_name, split='val',  _shared=ds_train)
     ds_test  = UEADataset(dataset_root, dataset_name, split='test', _shared=ds_train)
+
+    # Fixed pad_T: global max across all splits → same n_patches every batch
+    all_T = ([s.shape[0] for s in ds_train._samples]
+           + [s.shape[0] for s in ds_val._samples]
+           + [s.shape[0] for s in ds_test._samples])
+    pad_T = math.ceil(max(all_T) / patch_len) * patch_len
+
+    collate = _uea_collate_fn(pad_T, patch_len)
     mk = lambda ds, shuffle: torch.utils.data.DataLoader(
-        ds, batch_size=batch_size, shuffle=shuffle)
+        ds, batch_size=batch_size, shuffle=shuffle, collate_fn=collate)
     return mk(ds_train, True), mk(ds_val, False), mk(ds_test, False), ds_train.n_classes
 
 

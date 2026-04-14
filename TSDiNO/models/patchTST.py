@@ -95,7 +95,7 @@ class PatchTST(nn.Module):
             z = self.normalization(z, mode='denorm')   # undo instance norm on forecast output
         return z
 
-    def forward_recon(self, z):
+    def forward_recon(self, z, key_padding_mask=None, method_classification=False):
         """Encode z and return all patch token embeddings (no CLS) for reconstruction.
 
         z:       [bs, seq_len, n_vars]
@@ -103,7 +103,8 @@ class PatchTST(nn.Module):
         Uses non-overlapping patches (step = patch_len). No RevIN applied.
         """
         patches_tensor = z.unfold(dimension=1, size=self.patch_len, step=self.patch_len)
-        tokens = self.backbone(patches_tensor)   # [bs, num_patch+1, n_vars, d_model]
+        tokens = self.backbone(patches_tensor, key_padding_mask=key_padding_mask,
+                               method_classification=method_classification)  # [bs, num_patch+1, n_vars, d_model]
         return tokens[:, 1:, :, :]              # drop CLS  [bs, num_patch, n_vars, d_model]
 
 
@@ -322,35 +323,42 @@ class PatchTSTEncoder(nn.Module):
                                    pre_norm=pre_norm, activation=act, res_attention=res_attention, n_layers=n_layers, 
                                     store_attn=store_attn)
 
-    def forward(self, x) -> Tensor:          
+    def forward(self, x, key_padding_mask=None, method_classification=False) -> Tensor:
         """
         x: tensor [bs x num_patch x nvars x patch_len]
+        key_padding_mask: [bs x num_patch] bool, True = real patch (our convention).
+                          Only used when method_classification=True.
         """
         bs, num_patch, n_vars, patch_len = x.shape
         # Input encoding
         if not self.shared_embedding:
             x_out = []
-            for i in range(n_vars): 
+            for i in range(n_vars):
                 z = self.W_P[i](x[:,:,i,:])
                 x_out.append(z)
             x = torch.stack(x_out, dim=2)
         else:
             x = self.W_P(x)                                                      # x: [bs x num_patch x nvars x d_model]
-        x = x.transpose(1,2)                                                     # x: [bs x nvars x num_patch x d_model]        
+        x = x.transpose(1,2)                                                     # x: [bs x nvars x num_patch x d_model]
 
-        u = torch.reshape(x, (bs*n_vars, num_patch, self.d_model) )  
+        u = torch.reshape(x, (bs*n_vars, num_patch, self.d_model) )
         cls_tokens = self.cls_token.expand(u.shape[0], -1, -1)
         u = torch.cat((cls_tokens, u), dim=1)
-        u = self.dropout(u + self.W_pos[:u.shape[1], :])     
-        #u = self.dropout(u +  self.W_pos )                    
+        u = self.dropout(u + self.W_pos[:u.shape[1], :])
+
+        # Padding mask: expand + prepend False for CLS (always real), invert to attn convention (True=ignore)
+        kpm = None
+        if method_classification and key_padding_mask is not None:
+            pad = (~key_padding_mask)                                                      # [bs, n_patches] True=pad
+            cls_col = torch.zeros(bs, 1, dtype=torch.bool, device=pad.device)            # CLS never padding
+            pad = torch.cat([cls_col, pad], dim=1)                                        # [bs, n_patches+1]
+            kpm = pad.unsqueeze(1).expand(-1, n_vars, -1).reshape(bs * n_vars, num_patch + 1)
 
         # Encoder
-        z = self.encoder(u)                                                      # z: [bs * nvars x num_patch x d_model]
-        #z = z[:, 0, :]                                                           # [bs*nvars x d_model]
-        #z = torch.reshape(z, (bs, n_vars, self.d_model))
+        z = self.encoder(u, key_padding_mask=kpm)                                # z: [bs * nvars x num_patch+1 x d_model]
         z = torch.reshape(z, (bs, n_vars, -1, self.d_model))
 
-        z = z.permute(0, 2, 1, 3)  # [bs x num_patch x nvars x d_model]
+        z = z.permute(0, 2, 1, 3)  # [bs x num_patch+1 x nvars x d_model]
         return z
     
     
@@ -367,17 +375,17 @@ class TSTEncoder(nn.Module):
                                                       pre_norm=pre_norm, store_attn=store_attn) for i in range(n_layers)])
         self.res_attention = res_attention
 
-    def forward(self, src:Tensor):
+    def forward(self, src:Tensor, key_padding_mask:Optional[Tensor]=None):
         """
         src: tensor [bs x q_len x d_model]
         """
         output = src
         scores = None
         if self.res_attention:
-            for mod in self.layers: output, scores = mod(output, prev=scores)
+            for mod in self.layers: output, scores = mod(output, prev=scores, key_padding_mask=key_padding_mask)
             return output
         else:
-            for mod in self.layers: output = mod(output)
+            for mod in self.layers: output = mod(output, key_padding_mask=key_padding_mask)
             return output
 
 
@@ -422,7 +430,7 @@ class TSTEncoderLayer(nn.Module):
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
 
-    def forward(self, src:Tensor, prev:Optional[Tensor]=None):
+    def forward(self, src:Tensor, prev:Optional[Tensor]=None, key_padding_mask:Optional[Tensor]=None):
         """
         src: tensor [bs x q_len x d_model]
         """
@@ -431,9 +439,9 @@ class TSTEncoderLayer(nn.Module):
             src = self.norm_attn(src)
         ## Multi-Head attention
         if self.res_attention:
-            src2, attn, scores = self.self_attn(src, src, src, prev)
+            src2, attn, scores = self.self_attn(src, src, src, prev, key_padding_mask=key_padding_mask)
         else:
-            src2, attn = self.self_attn(src, src, src)
+            src2, attn = self.self_attn(src, src, src, key_padding_mask=key_padding_mask)
         if self.store_attn:
             self.attn = attn
         ## Add & Norm

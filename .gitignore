@@ -1,7 +1,25 @@
 # Data directories
 Discrete_JEPA/data - forecasting timeseries/
 TSDiNO/UCI HAR Dataset/
-Monash/*.tsf
+Monash/
+Monash_data_utils/
+Classification data/
+anomoly detection data/
+synthetic_data/
+synthetic_data_generation/
+logs/
+results/
+checkpoints_layers2/
+Dino LAYER MONASH/
+JEPA Layers monash/
+JEPA synthetic best/
+LE-JEPA SYNTHETIC BEST/
+LEJEPA LAYERS moansh/
+NTP layers monash/
+NTP_SYNTHETIC_MODELS/
+PatchTST - layers model/
+PatchTST best models synthetic/
+Docs/
 
 # Python cache
 __pycache__/
@@ -29,6 +47,11 @@ env/
 *.npy
 *.npz
 
-# CSV / data files
+# Data files
 *.csv
 *.parquet
+*.arrow
+*.tsf
+*.ts
+*.xlsx
+*.xls
