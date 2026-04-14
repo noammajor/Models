@@ -1565,13 +1565,15 @@ def run_lejepa(skip_train: bool = False,
             if not os.path.isabs(monash_dir):
                 config['monash_data_dir'] = str((lejepa_dir / monash_dir).resolve())
         if pretrain_source in ('synthetic', 'monash+synthetic'):
-            synth_dir = config.get('synthetic_data_dir', '../Monash')
+            _synth_key = 'synthetic_mix_data_dir' if pretrain_source == 'monash+synthetic' else 'synthetic_data_dir'
+            synth_dir = config.get(_synth_key, config.get('synthetic_data_dir', '../Monash'))
             if not os.path.isabs(synth_dir):
-                config['synthetic_data_dir'] = str((lejepa_dir / synth_dir).resolve())
+                synth_dir = str((lejepa_dir / synth_dir).resolve())
+            config['synthetic_data_dir'] = synth_dir
         _src_label = {
             'monash':           f"Monash ({config.get('monash_data_dir', '')})",
             'synthetic':        f"Synthetic ({config.get('synthetic_data_dir', '')})",
-            'monash+synthetic': "Monash + Synthetic",
+            'monash+synthetic': "Monash + Synthetic (mix)",
         }.get(pretrain_source, pretrain_source)
         print("\n" + "="*60)
         print(f"  MODEL: LE-JEPA")
