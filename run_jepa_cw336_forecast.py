@@ -77,7 +77,7 @@ def main():
             task            = "pretrain",
             encoder_layers  = ENCODER_LAYERS,
             predictor_layers= PREDICTOR_LAYERS,
-            num_patches     = NUM_PATCHES,
+            #num_patches     = NUM_PATCHES,
             pretrain_source = "monash",
             lr              = LR,
         )
