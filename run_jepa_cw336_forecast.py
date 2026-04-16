@@ -97,7 +97,7 @@ def main():
                 task             = "forecast",
                 forecast_dataset = dataset,
                 encoder_layers   = ENCODER_LAYERS,
-                num_patches      = NUM_PATCHES,
+                #num_patches      = NUM_PATCHES,
                 pretrain_source  = "monash",
             )
             # result = (best_ckpt, best_mse, cls_acc=None, anom=None)
