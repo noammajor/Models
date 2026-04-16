@@ -29,7 +29,7 @@ CONTEXT_WINDOW   = NUM_PATCHES * PATCH_SIZE   # 336
 LR               = 5e-4
 
 FORECAST_DATASETS = ["etth1", "etth2", "ettm1", "ettm2", "weather"]
-CHECKPOINTS       = list(range(20))   # epochs 0–19 (num_epochs=20 in config_jepa.py)
+CHECKPOINTS       = ["best"]   # use best_model.pt
 
 CKPT_DIR = f"output_model/JEPA_layers{ENCODER_LAYERS}"
 
