@@ -1,6 +1,10 @@
 import os
 import torch
-from models import TimeDART, SimMTM, PatchTST, TimeDART_v2
+from models import TimeDART, PatchTST, TimeDART_v2
+try:
+    from models import SimMTM
+except ImportError:
+    SimMTM = None
 
 
 class Exp_Basic(object):
@@ -8,10 +12,11 @@ class Exp_Basic(object):
         self.args = args
         self.model_dict = {
             'TimeDART': TimeDART,
-            'SimMTM': SimMTM,
             'PatchTST': PatchTST,
             'TimeDART_v2': TimeDART_v2
         }
+        if SimMTM is not None:
+            self.model_dict['SimMTM'] = SimMTM
         self.device = self._acquire_device()
         self.model = self._build_model().to(self.device)
 

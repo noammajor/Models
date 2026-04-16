@@ -116,7 +116,7 @@ def save_model(model, optimizer, epoch, path_save):
 
 # ── training ─────────────────────────────────────────────────────────────────
 
-def pretrain_ntp(config):
+def pretrain_ntp(config, save_dir_override: str = None):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'device: {device}')
 
@@ -186,7 +186,8 @@ def pretrain_ntp(config):
         optimizer, T_max=config['num_epochs'], eta_min=config['lr'] * 0.1)
     loss_fn = nn.MSELoss()
 
-    save_dir  = os.path.join(_NPT_DIR, 'saved_models', pretrain_dset, 'ntp', f"layers{config['n_layers']}")
+    save_dir  = save_dir_override if save_dir_override is not None else \
+                os.path.join(_NPT_DIR, 'saved_models', pretrain_dset, 'ntp', f"layers{config['n_layers']}")
     os.makedirs(save_dir, exist_ok=True)
     save_name = _model_fname(config, pretrain_dset)
 

@@ -1,7 +1,10 @@
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-import seaborn as sns
+try:
+    import seaborn as sns
+except ImportError:
+    sns = None
 import torch.nn as nn
 import torch.nn.functional as F
 

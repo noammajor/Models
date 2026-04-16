@@ -52,7 +52,8 @@ parser.add_argument('--model_type', type=str, default='based_model', help='for m
 parser.add_argument('--monash_data_dir',   type=str, default=None, help='path to Monash .tsf directory (required when dset_pretrain=monash or monash+synthetic)')
 parser.add_argument('--monash_min_len',    type=int, default=512,  help='min series length for Monash/synthetic filtering')
 parser.add_argument('--synthetic_data_dir',type=str, default=None, help='path to .arrow files directory (required when dset_pretrain=synthetic or monash+synthetic)')
-parser.add_argument('--seed', type=int, default=42, help='random seed')
+parser.add_argument('--seed',     type=int, default=42,   help='random seed')
+parser.add_argument('--save_dir', type=str, default=None, help='override save directory (default: saved_models/...)')
 
 
 args = parser.parse_args()
@@ -63,7 +64,10 @@ torch.cuda.manual_seed_all(args.seed)
 args.dset = args.dset_pretrain
 print('args:', args)
 args.save_pretrained_model = 'patchtst_pretrained_cw'+str(args.context_points)+'_patch'+str(args.patch_len) + '_stride'+str(args.stride) + '_epochs-pretrain' + str(args.n_epochs_pretrain) + '_mask' + str(args.mask_ratio)  + '_model' + str(args.pretrained_model_id)
-args.save_path = 'saved_models/' + args.dset_pretrain + '/masked_patchtst/' + args.model_type + '/layers' + str(args.n_layers) + '/'
+if args.save_dir is not None:
+    args.save_path = args.save_dir
+else:
+    args.save_path = 'saved_models/' + args.dset_pretrain + '/masked_patchtst/' + args.model_type + '/layers' + str(args.n_layers) + '/'
 if not os.path.exists(args.save_path): os.makedirs(args.save_path)
 
 
