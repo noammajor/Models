@@ -29,8 +29,9 @@ CONTEXT_WINDOW   = NUM_PATCHES * PATCH_SIZE   # 336
 LR               = 5e-4
 
 FORECAST_DATASETS = ["etth1", "etth2", "ettm1", "ettm2", "weather"]
+CHECKPOINTS       = list(range(20))   # epochs 0–19 (num_epochs=20 in config_jepa.py)
 
-CKPT_DIR = f"output_model/classification/JEPA_layers{ENCODER_LAYERS}_cw{CONTEXT_WINDOW}"
+CKPT_DIR = f"output_model/JEPA_layers{ENCODER_LAYERS}"
 
 
 def main():
@@ -96,8 +97,8 @@ def main():
                 skip_train       = True,
                 forecast_dataset = dataset,
                 encoder_layers   = ENCODER_LAYERS,
-                num_patches      = NUM_PATCHES,
                 pretrain_source  = "monash",
+                checkpoints      = CHECKPOINTS,
             )
             # result = (best_ckpt, best_mse, cls_acc=None, anom=None)
             best_ckpt, best_mse = result[0], result[1]
