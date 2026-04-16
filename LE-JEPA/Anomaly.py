@@ -104,12 +104,24 @@ def anomaly_zeroshot(self, path, anomaly_train, anomaly_test,
         enc = self.encoder(norm)                              # [B*C, P, embed_dim]
         return enc.reshape(B, C, P, embed_dim).mean(dim=1)   # [B, P, embed_dim]
 
-    # ── (1) train decoder ────────────────────────────────────────────────────
-    print(f"  Training decoder ({n_epochs} epochs) …")
-    decoder.train()
+    # ── (1) train decoder (with validation + early stopping) ─────────────────
+    all_batches   = list(anomaly_train)
+    n_val_b       = max(1, len(all_batches) // 5)
+    train_batches = all_batches[:-n_val_b]
+    val_batches   = all_batches[-n_val_b:]
+
+    patience   = config.get("anomaly_patience", 3)
+    best_val   = float('inf')
+    best_state = None
+    no_improve = 0
+    base_lr    = config.get("lr_anomaly", 1e-3)
+
+    print(f"  Training decoder ({n_epochs} epochs, patience={patience}) …")
     for epoch in range(n_epochs):
+        # train
+        decoder.train()
         total_loss = 0.0
-        for batch in anomaly_train:
+        for batch in train_batches:
             patches = batch[0] if isinstance(batch, (list, tuple)) else batch
             if patches.dim() == 3: patches = patches.unsqueeze(-1)
             raw = patches.to(self.device)
@@ -121,8 +133,37 @@ def anomaly_zeroshot(self, path, anomaly_train, anomaly_test,
             loss   = F.mse_loss(recon, target)
             optimizer.zero_grad(); loss.backward(); optimizer.step()
             total_loss += loss.item()
+        # validate
+        decoder.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for batch in val_batches:
+                patches = batch[0] if isinstance(batch, (list, tuple)) else batch
+                if patches.dim() == 3: patches = patches.unsqueeze(-1)
+                raw = patches.to(self.device)
+                B, P, PL, C = raw.shape
+                z      = _encode(raw)
+                recon  = decoder(z)
+                target = raw.reshape(B, P * PL, C)
+                val_loss += F.mse_loss(recon, target).item()
+        val_loss /= len(val_batches)
+        # early stopping
+        if val_loss < best_val:
+            best_val   = val_loss
+            best_state = {k: v.clone() for k, v in decoder.state_dict().items()}
+            no_improve = 0
+        else:
+            no_improve += 1
+            if no_improve >= patience:
+                print(f"    Early stopping at epoch {epoch+1}")
+                break
+        # cosine LR decay
+        for pg in optimizer.param_groups:
+            pg['lr'] = base_lr * (1 - epoch / n_epochs)
         if epoch % max(1, n_epochs // 5) == 0:
-            print(f"    epoch {epoch:3d} | loss {total_loss/len(anomaly_train):.6f}")
+            print(f"    epoch {epoch+1:3d} | train {total_loss/len(train_batches):.6f} | val {val_loss:.6f}")
+    if best_state is not None:
+        decoder.load_state_dict(best_state)
 
     # ── (2) train energy ─────────────────────────────────────────────────────
     decoder.eval()

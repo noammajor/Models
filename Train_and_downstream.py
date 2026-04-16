@@ -35,6 +35,7 @@ if _PROJECT_ROOT not in sys.path:
 from dataset_registry import get_dataset_info
 
 GLOBAL_SEED = 42
+_SEED_TAG   = ''   # set by run() when seed is provided; used by runners to suffix checkpoint paths
 
 def _set_seed(seed: int = GLOBAL_SEED):
     random.seed(seed)
@@ -190,7 +191,8 @@ def run_dino(skip_train: bool = False,
              predictor_layers: int = None,
              lr: float = None,
              pretrain_source: str = None,
-             checkpoint: str = None):
+             checkpoint: str = None,
+             num_patches: int = None):
     dino_dir  = Path(__file__).parent / "TSDiNO"
     djepa_dir = Path(__file__).parent / "Discrete_JEPA"
     _add_path(dino_dir)
@@ -224,7 +226,12 @@ def run_dino(skip_train: bool = False,
     if encoder_layers is not None:
         dino_cfg['n_layers'] = encoder_layers
         _src_tag = '' if dino_cfg.get('pretrain_source', 'monash') == 'monash' else f"_{dino_cfg['pretrain_source'].replace('+', '_')}"
-        dino_cfg['output_dir'] = dino_cfg.get('output_dir', './checkpoints').rstrip('/') + f'{_src_tag}_layers{encoder_layers}'
+        dino_cfg['output_dir'] = dino_cfg.get('output_dir', './checkpoints').rstrip('/') + f'{_src_tag}_layers{encoder_layers}' + _SEED_TAG
+    if num_patches is not None:
+        dino_cfg['num_patches'] = num_patches
+        _cw = num_patches * dino_cfg.get('patch_len', 16)
+        _base = dino_cfg.get('output_dir', './checkpoints').rstrip('/')
+        dino_cfg['output_dir'] = str(Path(_base).parent / 'classification' / (Path(_base).name + f'_cw{_cw}'))
     if lr is not None:
         dino_cfg['lr'] = lr
     pretrain_source = _resolve_pretrain_source(dino_cfg)
@@ -855,7 +862,8 @@ def run_jepa_simple(skip_train: bool = False,
                     predictor_layers: int = None,
                     lr: float = None,
                     pretrain_source: str = None,
-                    checkpoint: str = None):
+                    checkpoint: str = None,
+                    num_patches: int = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -880,7 +888,12 @@ def run_jepa_simple(skip_train: bool = False,
     if encoder_layers is not None:
         config['num_encoder_layers'] = encoder_layers
         _src_tag = f"_{config['pretrain_source'].replace('+', '_')}" if config.get('pretrain_source', 'monash') != 'monash' else ''
-        config['path_save'] = f'./output_model/JEPA{_src_tag}_layers{encoder_layers}/'
+        config['path_save'] = f'./output_model/JEPA{_src_tag}_layers{encoder_layers}{_SEED_TAG}/'
+    if num_patches is not None:
+        config['ratio_patches'] = num_patches
+        _cw = num_patches * config.get('patch_size', 16)
+        _p = Path(config['path_save'].rstrip('/'))
+        config['path_save'] = str(_p.parent / 'classification' / (_p.name + f'_cw{_cw}')) + '/'
     if predictor_layers is not None:
         config['predictor_num_layers'] = predictor_layers
     if lr is not None:
@@ -1163,7 +1176,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
                  classification_dataset=None, anomaly_dataset: str = None,
                  pretrain_only: bool = False, pred_len: int = None,
                  checkpoints=None, random_encoder: bool = False, encoder_layers: int = None,
-                 predictor_layers: int = None, lr: float = None, pretrain_source: str = None):
+                 predictor_layers: int = None, lr: float = None, pretrain_source: str = None,
+                 num_patches: int = None):
     patchtst_dir = Path(__file__).parent / "PatchTST_self_supervised"
     djepa_dir    = Path(__file__).parent / "Discrete_JEPA"
     _add_path(djepa_dir)
@@ -1179,6 +1193,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     if encoder_layers is not None:
         cfg['n_layers'] = encoder_layers
         cfg['pretrained_model_id'] = encoder_layers  # unique checkpoint per layer config
+    if num_patches is not None:
+        cfg['context_points'] = num_patches * cfg.get('patch_len', 16)
 
     pretrain_source = _resolve_pretrain_source(cfg)
     _pretrain_dset  = pretrain_dataset or cfg.get("pretrain_dataset", "ettm1")
@@ -1241,6 +1257,22 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         pretrain_cmd += ["--synthetic_data_dir", synth_dir]
     if lr is not None:
         pretrain_cmd += ["--lr", str(lr)]
+    _ptst_save_dir = None
+    if num_patches is not None:
+        _cw = num_patches * cfg.get('patch_len', 16)
+        _ptst_save_dir = str(
+            patchtst_dir / "saved_models" / "classification" /
+            _pretrain_dset / "masked_patchtst" / cfg.get("model_type", "based_model") /
+            f"layers{cfg.get('n_layers', 3)}_cw{_cw}{_SEED_TAG}"
+        )
+    elif _SEED_TAG:
+        _ptst_save_dir = str(
+            patchtst_dir / "saved_models" / _pretrain_dset /
+            "masked_patchtst" / cfg.get("model_type", "based_model") /
+            f"layers{cfg.get('n_layers', 3)}{_SEED_TAG}"
+        )
+    if _ptst_save_dir is not None:
+        pretrain_cmd += ["--save_dir", _ptst_save_dir]
 
     # ── pretraining ───────────────────────────────────────────────────────────
     if not skip_train:
@@ -1265,11 +1297,21 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
                         f"_epochs-pretrain{n_ep}_mask{m_ratio}_model{m_id}")
     _ckpt_epoch = checkpoints[0] if (checkpoints and checkpoints[0] is not None) else None
     model_fname = f"{model_fname_base}_{_ckpt_epoch}.pth" if _ckpt_epoch is not None else f"{model_fname_base}.pth"
-    pretrained_model_path = os.path.join(
-        patchtst_dir, "saved_models", _pretrain_dset,
-        "masked_patchtst", cfg.get("model_type", "based_model"),
-        f"layers{cfg['n_layers']}", model_fname
-    )
+    if _ptst_save_dir is not None:
+        pretrained_model_path = os.path.join(_ptst_save_dir, model_fname)
+    elif num_patches is not None:
+        _cw = num_patches * cfg.get('patch_len', 16)
+        pretrained_model_path = os.path.join(
+            patchtst_dir, "saved_models", "classification", _pretrain_dset,
+            "masked_patchtst", cfg.get("model_type", "based_model"),
+            f"layers{cfg['n_layers']}_cw{_cw}", model_fname
+        )
+    else:
+        pretrained_model_path = os.path.join(
+            patchtst_dir, "saved_models", _pretrain_dset,
+            "masked_patchtst", cfg.get("model_type", "based_model"),
+            f"layers{cfg['n_layers']}", model_fname
+        )
 
     if pretrain_only:
         print("\n[PatchTST] Pretrain-only mode — skipping forecasting.")
@@ -1368,7 +1410,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
             classification_dataset=None, anomaly_dataset: str = None,
             pretrain_only: bool = False, pred_len: int = None,
             checkpoints=None, encoder_layers: int = None, predictor_layers: int = None,
-            lr: float = None, pretrain_source: str = None):
+            lr: float = None, pretrain_source: str = None, num_patches: int = None):
     npt_dir = Path(__file__).parent / "NPT"
     _add_path(npt_dir)
 
@@ -1382,6 +1424,9 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     if encoder_layers is not None:
         cfg['n_layers'] = encoder_layers
         cfg['pretrained_model_id'] = encoder_layers  # unique checkpoint per layer config
+    if num_patches is not None:
+        cfg['context_patches'] = num_patches
+        cfg['ratio_patches']   = num_patches   # no forecasting horizon for classification pre-training
     if lr is not None:
         cfg['lr'] = lr
 
@@ -1421,7 +1466,18 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     from ntp_forecasting import zeroshot_forecasting
 
     # Resolve checkpoint path (used whether we train or skip)
-    _save_dir = npt_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}"
+    _npt_save_dir_override = None
+    if num_patches is not None:
+        _cw = num_patches * cfg.get('patch_size', 16)
+        _npt_save_dir_override = str(
+            npt_dir / "saved_models" / "classification" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}_cw{_cw}{_SEED_TAG}"
+        )
+    elif _SEED_TAG:
+        _npt_save_dir_override = str(
+            npt_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}{_SEED_TAG}"
+        )
+    _save_dir = Path(_npt_save_dir_override) if _npt_save_dir_override else \
+                npt_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}"
     _base_name = _model_fname(cfg, _pretrain_dset)
     _ckpt_epoch = checkpoints[0] if (checkpoints and checkpoints[0] is not None) else None
     if _ckpt_epoch is not None:
@@ -1431,7 +1487,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
 
     if not skip_train:
         print(f"\n[NPT] Starting NTP pretraining on {_pretrain_dset} …")
-        _ckpt_path = pretrain_ntp(cfg)   # returns best-model path
+        _ckpt_path = pretrain_ntp(cfg, save_dir_override=_npt_save_dir_override)   # returns best-model path
     else:
         print("[NPT] Skipping pretraining.")
 
@@ -1508,7 +1564,8 @@ def run_lejepa(skip_train: bool = False,
                encoder_layers: int = None,
                predictor_layers: int = None,
                lr: float = None,
-               pretrain_source: str = None):
+               pretrain_source: str = None,
+               num_patches: int = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -1531,7 +1588,12 @@ def run_lejepa(skip_train: bool = False,
     if encoder_layers is not None:
         config['num_encoder_layers'] = encoder_layers
         _src_tag = f"_{config['pretrain_source'].replace('+', '_')}" if config.get('pretrain_source', 'monash') != 'monash' else ''
-        config['path_save'] = f'./output_model/LE-JEPA{_src_tag}_layers{encoder_layers}/'
+        config['path_save'] = f'./output_model/LE-JEPA{_src_tag}_layers{encoder_layers}{_SEED_TAG}/'
+    if num_patches is not None:
+        config['ratio_patches'] = num_patches
+        _cw = num_patches * config.get('patch_size', 16)
+        _p = Path(config['path_save'].rstrip('/'))
+        config['path_save'] = str(_p.parent / 'classification' / (_p.name + f'_cw{_cw}')) + '/'
     if lr is not None:
         config['lr_sgd'] = lr
 
@@ -2146,7 +2208,9 @@ def run(model: str,
         predictor_layers: int = None,
         lr: float = None,
         pretrain_source: str = None,
-        gpu: int = None):
+        gpu: int = None,
+        num_patches: int = None,
+        seed: int = None):
     """
     Unified entry point. Each run handles ONE task.
 
@@ -2191,7 +2255,13 @@ def run(model: str,
         else:
             raise ValueError(f"Unknown task '{task}'. Choose: pretrain | forecast | classify | anomaly")
 
-    _set_seed()
+    global _SEED_TAG
+    if seed is not None:
+        _set_seed(seed)
+        _SEED_TAG = f'_seed{seed}'
+    else:
+        _set_seed()
+        _SEED_TAG = ''
     model = model.lower()
     if model not in RUNNERS:
         raise ValueError(f"Unknown model '{model}'. Choose from: {list(RUNNERS)}")
@@ -2218,6 +2288,8 @@ def run(model: str,
     if 'checkpoint'             in sig.parameters: kwargs['checkpoint']             = checkpoint
     if 'pretrain_source'        in sig.parameters: kwargs['pretrain_source']        = pretrain_source
     if 'gpu'                    in sig.parameters: kwargs['gpu']                    = gpu
+    if 'num_patches'            in sig.parameters: kwargs['num_patches']            = num_patches
+    if 'seed'                   in sig.parameters: kwargs['seed']                   = seed
     return runner(**kwargs)
 
 
@@ -2268,6 +2340,10 @@ if __name__ == "__main__":
     parser.add_argument("--pretrain_source",  type=str,   default=None,
                         choices=["monash", "synthetic", "monash+synthetic"],
                         help="Override pretrain data source (dino only)")
+    parser.add_argument("--num_patches",      type=int,   default=None,
+                        help="Override number of patches (context window = num_patches × patch_size)")
+    parser.add_argument("--seed",             type=int,   default=None,
+                        help="Random seed (also suffixes checkpoint paths with _seedN)")
     args = parser.parse_args()
     run(model=args.model,
         task=args.task,
@@ -2281,4 +2357,6 @@ if __name__ == "__main__":
         encoder_layers=args.encoder_layers,
         predictor_layers=args.predictor_layers,
         lr=args.lr,
-        pretrain_source=args.pretrain_source)
+        pretrain_source=args.pretrain_source,
+        num_patches=args.num_patches,
+        seed=args.seed)

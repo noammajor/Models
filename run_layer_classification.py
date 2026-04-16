@@ -8,15 +8,19 @@ checkpoint for each encoder layer config on all classification datasets.
 Each model runs as a subprocess on its assigned GPU (matching run_layer_forecast.py).
 
 Results saved to:
-  results/layer_classification.csv
+  results/layer_classification.csv           (standard checkpoints)
+  results/layer_classification_cw1152.csv    (--num_patches 72, classification encoder)
 
 Usage:
     python run_layer_classification.py
     python run_layer_classification.py --layers 2 4 8
     python run_layer_classification.py --models dino jepa_simple
-    python run_layer_classification.py --datasets HAR
+    python run_layer_classification.py --datasets EthanolConcentration SelfRegulationSCP2
     python run_layer_classification.py --gpu_override 5
     python run_layer_classification.py --dry_run
+
+    # Use classification-encoder checkpoints (pretrained with pretrain_cls_encoder.py):
+    python run_layer_classification.py --num_patches 72 --layers 8
 """
 
 import argparse
@@ -32,7 +36,15 @@ ROOT = Path(__file__).parent.resolve()
 sys.path.insert(0, str(ROOT))
 
 LAYER_CONFIGS           = [2, 4, 8, 12, 24]
-CLASSIFICATION_DATASETS = ["HAR", "Epilepsy-2", "eeg_no_big"]
+CLASSIFICATION_DATASETS = [
+    # Legacy non-UEA datasets
+    "HAR", "Epilepsy-2", "eeg_no_big",
+    # UEA datasets (sorted by T ascending)
+    "JapaneseVowels", "SpokenArabicDigits", "FaceDetection",
+    "Handwriting", "PEMS-SF", "UWaveGestureLibrary",
+    "Heartbeat", "SelfRegulationSCP1", "SelfRegulationSCP2",
+    "EthanolConcentration",
+]
 
 MODEL_GPU = {
     "dino":        0,
@@ -81,9 +93,10 @@ def log_to_file(log_path: Path):
 # ── single model+layer worker ─────────────────────────────────────────────────
 
 def run_model_worker(model: str, encoder_layers: int, gpu: int,
-                     datasets: list, out_csv: Path):
-    log_base = ROOT / "logs" / "layer_classification"
-    fieldnames = ["model", "encoder_layers", "dataset", "accuracy", "timestamp"]
+                     datasets: list, out_csv: Path, num_patches: int = None):
+    _cw_tag  = f"_cw{num_patches * 16}" if num_patches is not None else ""
+    log_base = ROOT / "logs" / f"layer_classification{_cw_tag}"
+    fieldnames = ["model", "encoder_layers", "num_patches", "dataset", "accuracy", "timestamp"]
 
     existing = set()
     rows = []
@@ -91,16 +104,18 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
         with open(out_csv) as f:
             for row in csv.DictReader(f):
                 rows.append(row)
-                existing.add((row["model"], int(row["encoder_layers"]), row["dataset"]))
+                existing.add((row["model"], int(row["encoder_layers"]),
+                              row.get("num_patches", ""), row["dataset"]))
 
     print(f"\n{'='*60}")
-    print(f"  {model.upper()}  layers={encoder_layers}")
+    print(f"  {model.upper()}  layers={encoder_layers}"
+          + (f"  num_patches={num_patches}" if num_patches else ""))
     print(f"{'='*60}")
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
     for dataset in datasets:
-        key = (model, encoder_layers, dataset)
+        key = (model, encoder_layers, str(num_patches) if num_patches else "", dataset)
         if key in existing:
             print(f"\n  {model}/layers{encoder_layers}/{dataset} — already complete, skipping.")
             continue
@@ -117,6 +132,7 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                     task="classify",
                     classification_dataset=dataset,
                     encoder_layers=encoder_layers,
+                    num_patches=num_patches,
                 )
 
                 # Return value varies by model:
@@ -139,6 +155,7 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
         rows.append({
             "model":          model,
             "encoder_layers": encoder_layers,
+            "num_patches":    str(num_patches) if num_patches is not None else "",
             "dataset":        dataset,
             "accuracy":       f"{cls_acc:.6f}" if cls_acc is not None else "N/A",
             "timestamp":      ts,
@@ -158,7 +175,8 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
 # ── parallel launcher ─────────────────────────────────────────────────────────
 
 def launch_worker(model: str, encoder_layers: int, gpu: int,
-                  datasets: list, log_dir: Path, out_csv: Path, dry_run: bool):
+                  datasets: list, log_dir: Path, out_csv: Path, dry_run: bool,
+                  num_patches: int = None):
     log_path = log_dir / f"{model}_layers{encoder_layers}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -171,11 +189,14 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
         "--datasets",       *datasets,
         "--out_csv",        str(out_csv),
     ]
+    if num_patches is not None:
+        cmd += ["--num_patches", str(num_patches)]
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
-    print(f"  [{model:14s}] GPU={gpu}  layers={encoder_layers}"
+    _np_str = f"  num_patches={num_patches}" if num_patches else ""
+    print(f"  [{model:14s}] GPU={gpu}  layers={encoder_layers}{_np_str}"
           f"  log={log_path.relative_to(ROOT)}")
 
     if dry_run:
@@ -191,14 +212,17 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
 
 
 def run_classification_sweep(models: list, layer_configs: list, datasets: list,
-                              gpu_override: int, dry_run: bool):
-    log_dir = ROOT / "logs" / "layer_classification"
-    out_csv = ROOT / "results" / "layer_classification.csv"
+                              gpu_override: int, dry_run: bool, num_patches: int = None):
+    _cw_tag = f"_cw{num_patches * 16}" if num_patches is not None else ""
+    log_dir = ROOT / "logs" / f"layer_classification{_cw_tag}"
+    out_csv = ROOT / "results" / f"layer_classification{_cw_tag}.csv"
 
     print(f"Layer classification sweep")
-    print(f"  Models:   {models}")
-    print(f"  Layers:   {layer_configs}")
-    print(f"  Datasets: {datasets}")
+    print(f"  Models:      {models}")
+    print(f"  Layers:      {layer_configs}")
+    print(f"  Datasets:    {datasets}")
+    if num_patches is not None:
+        print(f"  num_patches: {num_patches}  (context = {num_patches * 16} ts, classification encoder)")
     if dry_run:
         print("  DRY RUN\n")
 
@@ -210,7 +234,8 @@ def run_classification_sweep(models: list, layer_configs: list, datasets: list,
         procs = []
         for model in models:
             gpu = gpu_override if gpu_override is not None else MODEL_GPU[model]
-            proc = launch_worker(model, n_layers, gpu, datasets, log_dir, out_csv, dry_run)
+            proc = launch_worker(model, n_layers, gpu, datasets, log_dir, out_csv, dry_run,
+                                 num_patches=num_patches)
             if proc is not None:
                 procs.append(proc)
 
@@ -245,6 +270,9 @@ def main():
     parser.add_argument("--datasets",    nargs="+", default=CLASSIFICATION_DATASETS)
     parser.add_argument("--gpu_override", type=int, default=None,
                         help="Override GPU for all models")
+    parser.add_argument("--num_patches", type=int, default=None,
+                        help="Use classification-encoder checkpoints (e.g. 72 for cw1152). "
+                             "Must match what was used in pretrain_cls_encoder.py.")
     parser.add_argument("--dry_run",     action="store_true")
 
     # internal worker mode
@@ -263,12 +291,14 @@ def main():
             gpu=args.gpu,
             datasets=args.datasets,
             out_csv=Path(args.out_csv),
+            num_patches=args.num_patches,
         )
         return
 
     run_classification_sweep(
         args.models, args.layers, args.datasets,
         args.gpu_override, args.dry_run,
+        num_patches=args.num_patches,
     )
 
 

@@ -76,7 +76,7 @@ def main():
             skip_train       = False,
             encoder_layers   = ENCODER_LAYERS,
             predictor_layers = PREDICTOR_LAYERS,
- #           num_patches      = NUM_PATCHES,
+            num_patches      = NUM_PATCHES,
             pretrain_source  = "monash",
             pretrain_only    = True,
             lr               = LR,
@@ -96,7 +96,7 @@ def main():
                 skip_train       = True,
                 forecast_dataset = dataset,
                 encoder_layers   = ENCODER_LAYERS,
-   #             num_patches      = NUM_PATCHES,
+                num_patches      = NUM_PATCHES,
                 pretrain_source  = "monash",
             )
             # result = (best_ckpt, best_mse, cls_acc=None, anom=None)
