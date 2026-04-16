@@ -65,21 +65,21 @@ def main():
     if args.dry_run:
         return
 
-    from Train_and_downstream import run
+    from Train_and_downstream import run_jepa_simple
 
     # ── 1. Pretrain ───────────────────────────────────────────────────────────
     if not args.skip_pretrain:
         print("\n\n" + "=" * 60)
         print("  PHASE 1 — Pretraining")
         print("=" * 60)
-        run(
-            model           = "jepa_simple",
-            task            = "pretrain",
-            encoder_layers  = ENCODER_LAYERS,
-            predictor_layers= PREDICTOR_LAYERS,
-            #num_patches     = NUM_PATCHES,
-            pretrain_source = "monash",
-            lr              = LR,
+        run_jepa_simple(
+            skip_train       = False,
+            encoder_layers   = ENCODER_LAYERS,
+            predictor_layers = PREDICTOR_LAYERS,
+ #           num_patches      = NUM_PATCHES,
+            pretrain_source  = "monash",
+            pretrain_only    = True,
+            lr               = LR,
         )
         print(f"\nPretraining done. Checkpoint in: {CKPT_DIR}/")
 
@@ -92,12 +92,11 @@ def main():
     for dataset in FORECAST_DATASETS:
         print(f"\n--- Forecasting: {dataset} ---")
         try:
-            result = run(
-                model            = "jepa_simple",
-                task             = "forecast",
+            result = run_jepa_simple(
+                skip_train       = True,
                 forecast_dataset = dataset,
                 encoder_layers   = ENCODER_LAYERS,
-                #num_patches      = NUM_PATCHES,
+   #             num_patches      = NUM_PATCHES,
                 pretrain_source  = "monash",
             )
             # result = (best_ckpt, best_mse, cls_acc=None, anom=None)
