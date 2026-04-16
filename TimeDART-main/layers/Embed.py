@@ -241,26 +241,21 @@ class Patch(nn.Module):
 
 
 class PatchEmbedding(nn.Module):
-    def __init__(self, d_model: int, patch_len: int, stride: int, padding: int, dropout: float):
+    def __init__(
+        self,
+        patch_len: int,
+        d_model: int,
+    ):
         super(PatchEmbedding, self).__init__()
-        self.patch_len = patch_len
-        self.stride = stride
-        self.padding_layer = nn.ReplicationPad1d((0, padding))
-        self.value_embedding = nn.Linear(patch_len, d_model, bias=True)
-        self.position_encoding = PositionalEncoding(d_model=d_model, dropout=dropout)
+        self.patch_embedding = nn.Linear(patch_len, d_model, bias=True)
 
     def forward(self, x):
         """
-        x: [B, n_vars, seq_len]
-        returns: ([B*n_vars, n_patches, d_model], n_vars)
+        :param x: [batch_size * num_features, seq_len, patch_len]
+        :return: [batch_size * num_features, seq_len, d_model]
         """
-        n_vars = x.shape[1]
-        x = self.padding_layer(x)                                    # [B, n_vars, seq_len+padding]
-        x = x.unfold(dimension=-1, size=self.patch_len, step=self.stride)  # [B, n_vars, n_patches, patch_len]
-        x = x.reshape(x.shape[0] * x.shape[1], x.shape[2], x.shape[3])    # [B*n_vars, n_patches, patch_len]
-        x = self.value_embedding(x)                                  # [B*n_vars, n_patches, d_model]
-        x = self.position_encoding(x)                                # [B*n_vars, n_patches, d_model]
-        return x, n_vars
+        x = self.patch_embedding(x)
+        return x
 
 
 class TokenEmbedding_TimeDART(nn.Module):

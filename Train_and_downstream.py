@@ -1857,7 +1857,8 @@ def run_timedart(skip_train: bool = False,
                  encoder_layers: int = None,
                  lr: float = None,
                  pretrain_source: str = None,
-                 gpu: int = None):
+                 gpu: int = None,
+                 linear_probe: bool = False):
     """
     TimeDart: diffusion-based pretraining with Monash/Synthetic data,
     followed by forecasting fine-tune using our PatchTSTForcastingAdapter
@@ -2092,8 +2093,14 @@ def run_timedart(skip_train: bool = False,
 
         setting = f"timedart_{forecast_dataset}_pl{pred_len}_dm{cfg['d_model']}_el{cfg['e_layers']}"
 
-        print(f"\n[TimeDart] Fine-tuning pred_len={pred_len} on {forecast_dataset} …")
+        print(f"\n[TimeDart] {'Linear probing' if linear_probe else 'Fine-tuning'} pred_len={pred_len} on {forecast_dataset} …")
         exp = Exp_TimeDART(ft_args)
+
+        if linear_probe:
+            for name, param in exp.model.named_parameters():
+                if 'head' not in name:
+                    param.requires_grad = False
+            print("  [TimeDart] Encoder frozen — training head only.")
 
         # Inject our loaders directly — bypasses TimeDart's _get_data()
         exp._td_train_loader = _fc_loader('train')

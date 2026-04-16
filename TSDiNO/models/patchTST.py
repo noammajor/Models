@@ -322,7 +322,23 @@ class PatchTSTEncoder(nn.Module):
                                    pre_norm=pre_norm, activation=act, res_attention=res_attention, n_layers=n_layers, 
                                     store_attn=store_attn)
 
-    def forward(self, x) -> Tensor:          
+    def _get_pos_enc(self, seq_len: int) -> Tensor:
+        """Return positional encoding for seq_len tokens.
+
+        If seq_len <= W_pos size: slice.
+        If seq_len >  W_pos size: interpolate (bilinear) so any input length works.
+        """
+        W = self.W_pos          # [max_len, d_model]
+        if seq_len == W.shape[0]:
+            return W
+        if seq_len < W.shape[0]:
+            return W[:seq_len, :]
+        # Interpolate up to seq_len
+        W = W.unsqueeze(0).unsqueeze(0)          # [1, 1, max_len, d_model]
+        W = F.interpolate(W, size=(seq_len, W.shape[-1]), mode='bilinear', align_corners=False)
+        return W.squeeze(0).squeeze(0)           # [seq_len, d_model]
+
+    def forward(self, x) -> Tensor:
         """
         x: tensor [bs x num_patch x nvars x patch_len]
         """
@@ -330,19 +346,18 @@ class PatchTSTEncoder(nn.Module):
         # Input encoding
         if not self.shared_embedding:
             x_out = []
-            for i in range(n_vars): 
+            for i in range(n_vars):
                 z = self.W_P[i](x[:,:,i,:])
                 x_out.append(z)
             x = torch.stack(x_out, dim=2)
         else:
             x = self.W_P(x)                                                      # x: [bs x num_patch x nvars x d_model]
-        x = x.transpose(1,2)                                                     # x: [bs x nvars x num_patch x d_model]        
+        x = x.transpose(1,2)                                                     # x: [bs x nvars x num_patch x d_model]
 
-        u = torch.reshape(x, (bs*n_vars, num_patch, self.d_model) )  
+        u = torch.reshape(x, (bs*n_vars, num_patch, self.d_model) )
         cls_tokens = self.cls_token.expand(u.shape[0], -1, -1)
         u = torch.cat((cls_tokens, u), dim=1)
-        u = self.dropout(u + self.W_pos[:u.shape[1], :])     
-        #u = self.dropout(u +  self.W_pos )                    
+        u = self.dropout(u + self._get_pos_enc(u.shape[1]))
 
         # Encoder
         z = self.encoder(u)                                                      # z: [bs * nvars x num_patch x d_model]

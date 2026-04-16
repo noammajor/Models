@@ -11,7 +11,7 @@ config = {
     # ── Model architecture ────────────────────────────────────────────────────
     # e_layers is the encoder depth — swept over [2, 4, 8, 12, 24]
     # model: "PatchTST" uses a bidirectional encoder; "TimeDART" uses CausalTransformer
-    "model":       "PatchTST",
+    "model":       "TimeDART",
     "e_layers":    3,
     "d_model":     256,    # matches embed_dim used across JEPA / LE-JEPA / DINO
     "n_heads":     8,
