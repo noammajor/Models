@@ -132,8 +132,12 @@ def count_arrow_dir(data_dir: str, min_len: int, label: str):
         path = os.path.join(data_dir, fname)
         try:
             with pa.memory_map(path, 'r') as source:
-                reader = ipc.open_stream(source)
-                table  = reader.read_all()
+                try:
+                    reader = ipc.open_file(source)
+                except Exception:
+                    source.seek(0)
+                    reader = ipc.open_stream(source)
+                table = reader.read_all()
 
             n_all = len(table)
             lengths = []

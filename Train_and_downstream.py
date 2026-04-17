@@ -2092,6 +2092,9 @@ def run_timedart(skip_train: bool = False,
         ft_args.c_out          = _c_in
         ft_args.load_checkpoints = str(ckpt_file) if ckpt_file.exists() else None
         ft_args.checkpoints    = str(Path(__file__).parent / "outputs" / "timedart_finetune")
+        # Use constant LR for forecasting — exponential decay kills LR by epoch 10
+        ft_args.lradj          = "constant"
+        ft_args.patience       = cfg.get('patience', 5)
 
         setting = f"timedart_{forecast_dataset}_pl{pred_len}_dm{cfg['d_model']}_el{cfg['e_layers']}"
 
