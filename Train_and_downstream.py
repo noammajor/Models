@@ -1899,9 +1899,10 @@ def run_timedart(skip_train: bool = False,
     forecast_dataset = forecast_dataset or "etth1"
     pretrain_src     = _resolve_pretrain_source(cfg)
 
-    # GPU: honour explicit override, else cuda:0 (CUDA_VISIBLE_DEVICES already set by caller)
-    _gpu_idx = gpu if gpu is not None else 0
-    _device  = torch.device(f"cuda:{_gpu_idx}" if torch.cuda.is_available() else "cpu")
+    # Always use cuda:0 — CUDA_VISIBLE_DEVICES is already set by the caller
+    # to select the physical GPU, so the logical index is always 0.
+    _gpu_idx = 0
+    _device  = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     print("\n" + "="*60)
     print(f"  MODEL: TimeDart  (backbone={cfg.get('model','PatchTST')})")
