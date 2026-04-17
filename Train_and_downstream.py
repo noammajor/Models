@@ -1858,7 +1858,7 @@ def run_timedart(skip_train: bool = False,
                  lr: float = None,
                  pretrain_source: str = None,
                  gpu: int = None,
-                 linear_probe: bool = False):
+                 linear_probe: bool = True):
     """
     TimeDart: diffusion-based pretraining with Monash/Synthetic data,
     followed by forecasting fine-tune using our PatchTSTForcastingAdapter
@@ -2066,6 +2066,7 @@ def run_timedart(skip_train: bool = False,
     _PATCHTST_SEQ_LEN = 336
 
     best_mse  = float('inf')
+    best_mae  = float('inf')
     best_pred = None
 
     from exp.exp_timedart import Exp_TimeDART
@@ -2083,7 +2084,7 @@ def run_timedart(skip_train: bool = False,
         ft_args.task_name      = "finetune"
         ft_args.pred_len       = pred_len
         ft_args.test_pred_len  = pred_len
-        ft_args.train_epochs   = cfg.get('epochs_forecasting', 10)
+        ft_args.train_epochs   = cfg.get('epochs_forecasting', 20)
         ft_args.learning_rate  = _get_forecast_lr(cfg, 'lr_forecasting', 1e-4)
         ft_args.batch_size     = _fc_bs
         ft_args.enc_in         = _c_in
@@ -2111,16 +2112,33 @@ def run_timedart(skip_train: bool = False,
 
         exp.train(setting)
 
-        criterion   = exp._select_criterion()
-        test_loader = exp._td_test_loader
-        mse = exp.valid(test_loader, criterion)
-        print(f"  [TimeDart] pred_len={pred_len} → test MSE={mse:.4f}")
+        # ── compute test MSE + MAE using full predictions ─────────────────────
+        exp.model.eval()
+        preds_list, trues_list = [], []
+        with torch.no_grad():
+            for batch_x, batch_y, _, _ in exp._td_test_loader:
+                batch_x = batch_x.float().to(_device)
+                batch_y = batch_y.float().to(_device)
+                pred = exp.model(batch_x)
+                f_dim = -1 if ft_args.features == "MS" else 0
+                pred = pred[:, -pred_len:, f_dim:]
+                batch_y = batch_y[:, -pred_len:, f_dim:]
+                preds_list.append(pred.detach().cpu().numpy())
+                trues_list.append(batch_y.detach().cpu().numpy())
+        exp.model.train()
+        import numpy as _np
+        preds_arr = _np.concatenate(preds_list, axis=0)
+        trues_arr = _np.concatenate(trues_list, axis=0)
+        mse = float(_np.mean((preds_arr - trues_arr) ** 2))
+        mae = float(_np.mean(_np.abs(preds_arr - trues_arr)))
+        print(f"  [TimeDart] pred_len={pred_len} → test MSE={mse:.4f}  MAE={mae:.4f}")
 
         if pred_len == pred_lens[0] and mse < best_mse:
             best_mse  = mse
+            best_mae  = mae
             best_pred = pred_len
 
-    return best_pred, best_mse
+    return best_pred, best_mse, best_mae
 
 
 class _FlatWindowAdapter(torch.utils.data.Dataset):

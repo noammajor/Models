@@ -388,6 +388,8 @@ def eval_best(model: str, dataset: str, pred_len: int,
                 result = run(model="timedart", skip_train=True, forecast_dataset=dataset,
                              pred_lens=[pred_len], encoder_layers=encoder_layers, gpu=gpu,
                              pretrain_source=pretrain_source)
+                if isinstance(result, tuple) and len(result) >= 3:
+                    return (result[1], result[2])  # (mse, mae)
                 return result[1] if isinstance(result, tuple) else result
         except Exception as e:
             print(f"[ERROR] {model}/{dataset}/pred{pred_len}/best: {e}")
@@ -401,13 +403,15 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
     """Run full forecasting for one model at one layer config. Called in subprocess."""
     src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
     log_base = ROOT / "logs" / f"layer_forecast{src_tag}"
-    fieldnames = ["model", "encoder_layers", "dataset", "pred_len", "mse", "timestamp"]
+    fieldnames = ["model", "encoder_layers", "dataset", "pred_len", "mse", "mae", "timestamp"]
 
     existing = set()
     rows = []
     if out_csv.exists():
         with open(out_csv) as f:
             for row in csv.DictReader(f):
+                if "mae" not in row:
+                    row["mae"] = "N/A"
                 rows.append(row)
                 existing.add((row["model"], int(row["encoder_layers"]),
                                row["dataset"], int(row["pred_len"])))
@@ -444,15 +448,20 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
             continue
 
         ts = datetime.now().isoformat(timespec="seconds")
-        for pred_len, mse in mses.items():
+        for pred_len, val in mses.items():
             key = (model, encoder_layers, dataset, pred_len)
             if key not in existing:
+                if isinstance(val, tuple):
+                    mse_val, mae_val = val
+                else:
+                    mse_val, mae_val = val, None
                 rows.append({
                     "model":          model,
                     "encoder_layers": encoder_layers,
                     "dataset":        dataset,
                     "pred_len":       pred_len,
-                    "mse":            f"{mse:.6f}" if mse is not None else "N/A",
+                    "mse":            f"{mse_val:.6f}" if mse_val is not None else "N/A",
+                    "mae":            f"{mae_val:.6f}" if mae_val is not None else "N/A",
                     "timestamp":      ts,
                 })
                 existing.add(key)
