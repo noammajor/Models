@@ -56,7 +56,7 @@ DATASET_FORECAST_BS = {
     "ettm2":       256,
     "weather":     128,
     "electricity":  32,
-    "traffic":      32,
+    "traffic":      16,
 }
 
 # Model → GPU assignment (match run_layer_sweep.py)

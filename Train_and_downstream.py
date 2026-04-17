@@ -1228,7 +1228,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         print(f"  pretrain: {_src_label}   forecast: {_forecast_dset}")
     print("="*60)
 
-    patchtst_dir = str(patchtst_dir.resolve())
+    patchtst_dir = patchtst_dir.resolve()
 
     # Build common pretrain args from config
     pretrain_cmd = [
