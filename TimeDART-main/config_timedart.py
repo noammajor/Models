@@ -36,7 +36,7 @@ config = {
     "num_workers":     4,
 
     # ── Forecasting fine-tune ─────────────────────────────────────────────────
-    "epochs_forecasting":  10,
+    "epochs_forecasting":  20,
     "lr_forecasting":      1e-4,
     "batch_size_forecast": 128,
     "patience":            3,
