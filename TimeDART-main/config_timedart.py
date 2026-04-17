@@ -39,7 +39,7 @@ config = {
     "epochs_forecasting":  20,
     "lr_forecasting":      1e-4,
     "batch_size_forecast": 128,
-    "patience":            3,
+    "patience":            7,
     "lradj":               "decay",
     "pct_start":           0.3,
     "features":            "M",    # multivariate → multivariate
