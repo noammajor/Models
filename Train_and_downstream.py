@@ -1612,6 +1612,9 @@ def run_lejepa(skip_train: bool = False,
     from LeJepa import LeJEPA
 
     forecast_dataset = None if (pretrain_only or classification_only) else (forecast_dataset or config.get('forecast_dataset'))
+    if forecast_dataset is None:
+        config.pop('path_data_forcasting', None)
+        config.pop('forecast_dataset', None)
     config["lr_forcasting"] = _get_forecast_lr(config, "lr_forcasting")
 
     # Single-dataset mode: align splits so test never leaks into pretraining
