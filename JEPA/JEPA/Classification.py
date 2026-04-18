@@ -43,18 +43,26 @@ def classification_zeroshot(self, path, classification_train, classification_val
 
     embed_dim = config["encoder_embed_dim"]
 
-    # Infer n_vars and num_patches — use dataset max_T for consistent target across all batches
     patch_len = config.get("patch_size", 16)
-    ds = classification_train.dataset
-    if hasattr(ds, '_samples'):
-        max_T = max(s.shape[0] for s in ds._samples)
+
+    # Infer from first batch — may already be pre-patched (B, P, PL, C) or raw (B, T, C)
+    sample_patches, _ = next(iter(classification_train))
+    if sample_patches.dim() == 4:
+        # Pre-patched by _patch_collate
+        num_patches = sample_patches.shape[1]
+        target_T    = num_patches * patch_len
+        n_v         = sample_patches.shape[-1]
     else:
-        max_T = patch_len
-    target_T    = ((max_T + patch_len - 1) // patch_len) * patch_len
-    num_patches = target_T // patch_len
+        # Raw (B, T, C) — fix target_T from dataset max to be consistent across batches
+        ds = classification_train.dataset
+        max_T = max(s.shape[0] for s in ds._samples) if hasattr(ds, '_samples') else patch_len
+        target_T    = ((max_T + patch_len - 1) // patch_len) * patch_len
+        num_patches = target_T // patch_len
+        n_v         = sample_patches.shape[-1]
 
     def _to_patches(x):
-        """Resample (B, T, C) to fixed target_T then reshape to (B, num_patches, patch_len, C)."""
+        """Resample (B, T, C) to fixed target_T then reshape to (B, num_patches, patch_len, C).
+        No-op if already (B, P, PL, C)."""
         if x.dim() == 3:
             B_, T_, C_ = x.shape
             if T_ != target_T:
@@ -62,9 +70,6 @@ def classification_zeroshot(self, path, classification_train, classification_val
                 x = x[:, idx, :]
             x = x.reshape(B_, num_patches, patch_len, C_)
         return x
-
-    sample_patches, _ = next(iter(classification_train))
-    n_v = sample_patches.shape[-1]
 
     cls_head = ClassificationHead(
         n_vars       = n_v,

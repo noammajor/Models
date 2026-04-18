@@ -55,18 +55,20 @@ def classification_zeroshot(self, path, classification_train, classification_val
 
     embed_dim = config["encoder_embed_dim"]
 
-    # Infer n_vars and num_patches — use dataset max_T for a consistent target across all batches
     patch_len = config.get("patch_size_forcasting", 16)
-    ds = classification_train.dataset
-    if hasattr(ds, '_samples'):
-        max_T = max(s.shape[0] for s in ds._samples)
-    else:
-        max_T = patch_len  # fallback
-    target_T  = ((max_T + patch_len - 1) // patch_len) * patch_len
-    num_patches = target_T // patch_len
 
+    # Infer from first batch — may already be pre-patched (B, P, PL, C) or raw (B, T, C)
     sample_patches, _ = next(iter(classification_train))
-    n_v = sample_patches.shape[-1] if sample_patches.dim() == 3 else sample_patches.shape[-1]
+    if sample_patches.dim() == 4:
+        num_patches = sample_patches.shape[1]
+        target_T    = num_patches * patch_len
+        n_v         = sample_patches.shape[-1]
+    else:
+        ds = classification_train.dataset
+        max_T = max(s.shape[0] for s in ds._samples) if hasattr(ds, '_samples') else patch_len
+        target_T    = ((max_T + patch_len - 1) // patch_len) * patch_len
+        num_patches = target_T // patch_len
+        n_v         = sample_patches.shape[-1]
 
     cls_head = ClassificationHead(
         n_vars       = n_v,
