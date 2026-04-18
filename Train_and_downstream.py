@@ -1561,7 +1561,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         cls_dir    = cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
         cls_bs     = cfg.get("batch_size", 64)
         p_s        = cfg["patch_size"]
-        _n_patches = cfg.get("ratio_patches", 78)   # matches pretrained PE
+        _n_patches = num_patches if num_patches is not None else cfg.get("ratio_patches", 78) - cfg.get("horizon_t", 6)   # encoder context patches (not ratio)
         _target_T  = _n_patches * p_s
         import torch.nn.functional as _F
         def _npt_patch_collate(batch, _ps=p_s, _tT=_target_T, _nP=_n_patches):
