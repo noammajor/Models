@@ -44,9 +44,19 @@ def classification_zeroshot(self, path, classification_train, classification_val
     embed_dim = config["encoder_embed_dim"]
 
     # Infer n_vars and num_patches from first batch
+    patch_len = config.get("patch_size", 16)
+
+    def _to_patches(x):
+        """Convert raw (B, T, C) → (B, P, patch_len, C) if needed."""
+        if x.dim() == 3:
+            B_, T_, C_ = x.shape
+            T_pad_ = ((T_ + patch_len - 1) // patch_len) * patch_len
+            x = F.pad(x, (0, 0, 0, T_pad_ - T_))
+            x = x.reshape(B_, T_pad_ // patch_len, patch_len, C_)
+        return x
+
     sample_patches, _ = next(iter(classification_train))
-    if sample_patches.dim() == 3:
-        sample_patches = sample_patches.unsqueeze(-1)
+    sample_patches = _to_patches(sample_patches)
     num_patches = sample_patches.shape[1]
     n_v         = sample_patches.shape[-1]
 
@@ -74,8 +84,7 @@ def classification_zeroshot(self, path, classification_train, classification_val
         cls_head.train()
         correct, total = 0, 0
         for patches, labels in classification_train:
-            if patches.dim() == 3:
-                patches = patches.unsqueeze(-1)
+            patches = _to_patches(patches)
             patches = patches.to(self.device)
             labels  = labels.to(self.device)
             B, P, PL, n_v_ = patches.shape
@@ -126,8 +135,7 @@ def classification_zeroshot(self, path, classification_train, classification_val
     tc, tt = 0, 0
     with torch.no_grad():
         for patches, labels in classification_test:
-            if patches.dim() == 3:
-                patches = patches.unsqueeze(-1)
+            patches = _to_patches(patches)
             patches = patches.to(self.device)
             labels  = labels.to(self.device)
             B, P, PL, n_v_ = patches.shape
