@@ -95,9 +95,6 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
         pct_start=0.3, anneal_strategy='cos',
     )
 
-    best_val_acc = 0.0
-    best_state   = None
-
     for epoch in range(n_epochs):
         cls_head.train()
         correct, total = 0, 0
@@ -108,7 +105,6 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
             x = patches.permute(0, 1, 3, 2)
             optimizer.zero_grad()
             with torch.no_grad():
-                # backbone returns [B, n_vars, d_model, P] with pretrain head replaced
                 enc = backbone.backbone(x)    # [B, n_vars, d_model, P]
             logits = cls_head(enc)            # [B, n_classes]
             loss   = F.cross_entropy(logits, labels)
@@ -117,30 +113,9 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
             scheduler.step()
             correct += (logits.argmax(1) == labels).sum().item()
             total   += len(labels)
-        train_acc = correct / total
-
-        # Validation
-        cls_head.eval()
-        vc, vt = 0, 0
-        with torch.no_grad():
-            for patches, labels in classification_val:
-                patches = patches.to(device)
-                labels  = labels.to(device)
-                x   = patches.permute(0, 1, 3, 2)
-                enc = backbone.backbone(x)
-                logits = cls_head(enc)
-                vc += (logits.argmax(1) == labels).sum().item()
-                vt += len(labels)
-        val_acc = vc / vt
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            best_state   = {k: v.clone() for k, v in cls_head.state_dict().items()}
         if epoch % 5 == 0:
-            print(f"  Epoch {epoch:3d} | train acc {train_acc:.4f} | val acc {val_acc:.4f}")
+            print(f"  Epoch {epoch:3d} | train acc {correct/total:.4f}")
 
-    # Test with best checkpoint
-    if best_state is not None:
-        cls_head.load_state_dict(best_state)
     cls_head.eval()
     tc, tt = 0, 0
     with torch.no_grad():
@@ -153,5 +128,5 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
             tc += (logits.argmax(1) == labels).sum().item()
             tt += len(labels)
     test_acc = tc / tt
-    print(f"[NPT] Test Accuracy: {test_acc:.4f}  (best val: {best_val_acc:.4f})")
+    print(f"[NPT] Test Accuracy: {test_acc:.4f}")
     return test_acc

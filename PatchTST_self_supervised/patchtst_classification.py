@@ -88,9 +88,6 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
         pct_start=0.3, anneal_strategy='cos',
     )
 
-    best_val_acc = 0.0
-    best_state   = None
-
     for epoch in range(n_epochs):
         model.train()
         correct, total = 0, 0
@@ -106,28 +103,9 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
             scheduler.step()
             correct += (logits.argmax(1) == labels).sum().item()
             total   += len(labels)
-        train_acc = correct / total
-
-        # Validation
-        model.eval()
-        vc, vt = 0, 0
-        with torch.no_grad():
-            for patches, labels in classification_val:
-                x = patches.permute(0, 1, 3, 2).to(device)
-                labels = labels.to(device)
-                logits = model(x)
-                vc += (logits.argmax(1) == labels).sum().item()
-                vt += len(labels)
-        val_acc = vc / vt
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            best_state   = {k: v.clone() for k, v in model.state_dict().items()}
         if epoch % 5 == 0:
-            print(f"  Epoch {epoch:3d} | train acc {train_acc:.4f} | val acc {val_acc:.4f}")
+            print(f"  Epoch {epoch:3d} | train acc {correct/total:.4f}")
 
-    # Test with best checkpoint
-    if best_state is not None:
-        model.load_state_dict(best_state)
     model.eval()
     tc, tt = 0, 0
     with torch.no_grad():
@@ -138,5 +116,5 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
             tc += (logits.argmax(1) == labels).sum().item()
             tt += len(labels)
     test_acc = tc / tt
-    print(f"[PatchTST] Test Accuracy: {test_acc:.4f}  (best val: {best_val_acc:.4f})")
+    print(f"[PatchTST] Test Accuracy: {test_acc:.4f}")
     return test_acc
