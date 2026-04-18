@@ -104,8 +104,9 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
         with open(out_csv) as f:
             for row in csv.DictReader(f):
                 rows.append(row)
-                existing.add((row["model"], int(row["encoder_layers"]),
-                              row.get("num_patches", ""), row["dataset"]))
+                if row.get("accuracy", "N/A") not in ("N/A", "", None):
+                    existing.add((row["model"], int(row["encoder_layers"]),
+                                  row.get("num_patches", ""), row["dataset"]))
 
     print(f"\n{'='*60}")
     print(f"  {model.upper()}  layers={encoder_layers}"
