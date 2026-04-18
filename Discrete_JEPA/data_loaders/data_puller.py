@@ -1006,8 +1006,11 @@ class ClassificationDataPuller(Dataset):
         max_T    = max(x.shape[1] for x in all_X)
         padded_T = int(np.ceil(max_T / patch_size)) * patch_size
         padded   = []
+        orig_T_list = []
         for x in all_X:
-            pad = padded_T - x.shape[1]
+            orig_T = x.shape[1]
+            orig_T_list.append(np.full(x.shape[0], orig_T, dtype=np.int64))
+            pad = padded_T - orig_T
             if pad > 0:
                 x = np.pad(x, ((0, 0), (0, pad), (0, 0)))
             padded.append(x)
@@ -1018,6 +1021,7 @@ class ClassificationDataPuller(Dataset):
         self.X         = torch.tensor(X_cat)
         self.y         = torch.tensor(y_cat)
         self.n_patches = padded_T // patch_size
+        self._orig_T   = torch.tensor(np.concatenate(orig_T_list))  # (total_samples,)
 
         names_str = ", ".join(dataset_names)
         print(f"ClassificationDataPuller [{which}] ({names_str}): "
@@ -1032,7 +1036,9 @@ class ClassificationDataPuller(Dataset):
         # [seq_len, n_vars] → [n_patches, patch_size, n_vars]
         x = self.X[idx]
         patches = x.reshape(self.n_patches, self.patch_size, -1)
-        return patches, self.y[idx]
+        patch_starts = torch.arange(self.n_patches, dtype=torch.long) * self.patch_size
+        padding_mask = patch_starts < self._orig_T[idx]  # (P,) bool: True = real data
+        return patches, self.y[idx], padding_mask
 
 
 # ── UEA/UCR Classification (UEAloader style) ──────────────────────────────────
@@ -1144,17 +1150,21 @@ class UEADataset(Dataset):
     def __getitem__(self, idx):
         x = torch.from_numpy(self._samples[idx])        # (T, C)
         y = torch.tensor(self._labels[idx], dtype=torch.long)
-        return x, y
+        orig_len = torch.tensor(x.shape[0], dtype=torch.long)
+        return x, y, orig_len
 
 
 def _pad_collate(batch):
-    """Collate variable-length (T, C) tensors by padding to max T in the batch."""
-    xs, ys = zip(*batch)
+    """Collate variable-length (T, C) tensors by padding to max T in the batch.
+    Returns (xs_padded, ys, padding_mask) where padding_mask (B, T) is True for real positions."""
+    xs, ys, orig_lens = zip(*batch)
+    orig_lens = torch.stack(orig_lens)          # (B,)
     max_t = max(x.shape[0] for x in xs)
     xs_padded = torch.stack([
         torch.nn.functional.pad(x, (0, 0, 0, max_t - x.shape[0])) for x in xs
     ])
-    return xs_padded, torch.stack(ys)
+    padding_mask = torch.arange(max_t).unsqueeze(0) < orig_lens.unsqueeze(1)  # (B, T)
+    return xs_padded, torch.stack(ys), padding_mask
 
 
 def make_uea_dataloaders(cls_dir: str, dataset_name: str, batch_size: int = 16):

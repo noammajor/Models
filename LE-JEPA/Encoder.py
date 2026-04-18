@@ -208,11 +208,13 @@ class Encoder(nn.Module):
         )
         self.encoder_norm = nn.LayerNorm(embed_dim)
 
-    def forward(self, x, mask=None, **kwargs):
+    def forward(self, x, mask=None, padding_mask=None, **kwargs):
         """
-        x:    [B, P, P_L, F]
-        mask: [B, n_ctx] LongTensor — context patch indices (student encoder).
-              Pass None to encode all patches (target/EMA encoder).
+        x:            [B, P, P_L, F]
+        mask:         [B, n_ctx] LongTensor — context patch indices (student encoder).
+                      Pass None to encode all patches (target/EMA encoder).
+        padding_mask: [B, P] bool — True = real data, False = zero-padding.
+                      Only used during classification; ignored during pretraining (default None).
         """
         B, P, P_L, F = x.shape
 
@@ -223,14 +225,27 @@ class Encoder(nn.Module):
         x = self.W_P(x)
         x = self.dropout(x + self.pe_dropout(self.W_pos[:P, :]))
 
+        # Build patch-level attention mask before any context subsampling
+        pm_expanded = None
+        if padding_mask is not None:
+            pm = padding_mask.to(x.device)                                   # (B, P)
+            pm_expanded = pm.unsqueeze(1).expand(-1, F, -1).reshape(B * F, P)  # (B*F, P)
+
         # Context masking (student encoder only)
         if mask is not None:
             mask = mask.to(x.device)
             n_ctx = mask.shape[1]
             m = mask.unsqueeze(1).expand(-1, F, -1).reshape(B * F, n_ctx)
             x = torch.gather(x, 1, m.unsqueeze(-1).expand(-1, -1, self.embed_dim))
+            if pm_expanded is not None:
+                pm_expanded = torch.gather(pm_expanded, 1, m)               # (B*F, n_ctx)
 
-        x = self.transformer(x)
+        # Convert to additive attention mask: True = ignore (padding key)
+        attn_mask = None
+        if pm_expanded is not None:
+            attn_mask = ~pm_expanded[:, None, None, :]                       # (B*F, 1, 1, P_cur)
+
+        x = self.transformer(x, attn_mask=attn_mask)
         x = self.encoder_norm(x)
 
         return {

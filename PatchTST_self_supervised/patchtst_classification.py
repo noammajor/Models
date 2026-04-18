@@ -42,7 +42,7 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
     print(f"Loading checkpoint: {checkpoint_path}")
 
     # Infer shape from first batch
-    sample_patches, _ = next(iter(classification_train))
+    sample_patches, _, _ = next(iter(classification_train))
     num_patch = sample_patches.shape[1]   # [B, P, PL, n_vars]
     n_v       = sample_patches.shape[-1]
     patch_len = sample_patches.shape[2]
@@ -96,12 +96,13 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
     for epoch in range(n_epochs):
         model.train()
         correct, total = 0, 0
-        for patches, labels in classification_train:
+        for patches, labels, padding_mask in classification_train:
             # PatchTST expects [B, P, n_vars, PL]
-            x = patches.permute(0, 1, 3, 2).to(device)
-            labels = labels.to(device)
+            x            = patches.permute(0, 1, 3, 2).to(device)
+            labels       = labels.to(device)
+            padding_mask = padding_mask.to(device)   # [B, P] bool
             optimizer.zero_grad()
-            logits = model(x)
+            logits = model(x, padding_mask=padding_mask)
             loss   = F.cross_entropy(logits, labels)
             loss.backward()
             optimizer.step()
@@ -114,10 +115,11 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
     model.eval()
     tc, tt = 0, 0
     with torch.no_grad():
-        for patches, labels in classification_test:
-            x = patches.permute(0, 1, 3, 2).to(device)
-            labels = labels.to(device)
-            logits = model(x)
+        for patches, labels, padding_mask in classification_test:
+            x            = patches.permute(0, 1, 3, 2).to(device)
+            labels       = labels.to(device)
+            padding_mask = padding_mask.to(device)
+            logits = model(x, padding_mask=padding_mask)
             tc += (logits.argmax(1) == labels).sum().item()
             tt += len(labels)
     test_acc = tc / tt

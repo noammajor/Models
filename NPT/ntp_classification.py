@@ -64,7 +64,7 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
     print(f"Loading checkpoint: {checkpoint_path}")
 
     # Infer n_vars and num_patches from first batch
-    sample_patches, _ = next(iter(classification_train))
+    sample_patches, _, _ = next(iter(classification_train))
     num_patch = sample_patches.shape[1]
     n_v       = sample_patches.shape[-1]   # [B, P, PL, n_vars]
 
@@ -103,14 +103,15 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
     for epoch in range(n_epochs):
         cls_head.train()
         correct, total = 0, 0
-        for patches, labels in classification_train:
-            patches = patches.to(device)   # [B, P, PL, n_vars]
-            labels  = labels.to(device)
+        for patches, labels, padding_mask in classification_train:
+            patches      = patches.to(device)       # [B, P, PL, n_vars]
+            labels       = labels.to(device)
+            padding_mask = padding_mask.to(device)  # [B, P] bool
             # PatchTST expects [B, P, n_vars, PL]
             x = patches.permute(0, 1, 3, 2)
             optimizer.zero_grad()
             with torch.no_grad():
-                enc = backbone.backbone(x)    # [B, n_vars, d_model, P]
+                enc = backbone.backbone(x, padding_mask=padding_mask)    # [B, n_vars, d_model, P]
             logits = cls_head(enc)            # [B, n_classes]
             loss   = F.cross_entropy(logits, labels)
             loss.backward()
@@ -124,11 +125,12 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
     cls_head.eval()
     tc, tt = 0, 0
     with torch.no_grad():
-        for patches, labels in classification_test:
-            patches = patches.to(device)
-            labels  = labels.to(device)
+        for patches, labels, padding_mask in classification_test:
+            patches      = patches.to(device)
+            labels       = labels.to(device)
+            padding_mask = padding_mask.to(device)
             x   = patches.permute(0, 1, 3, 2)
-            enc = backbone.backbone(x)
+            enc = backbone.backbone(x, padding_mask=padding_mask)
             logits = cls_head(enc)
             tc += (logits.argmax(1) == labels).sum().item()
             tt += len(labels)

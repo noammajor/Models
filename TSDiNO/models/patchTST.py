@@ -71,16 +71,17 @@ class PatchTST(nn.Module):
             self.head = ClassificationHead(self.n_vars, d_model, target_dim, head_dropout)
 
 
-    def forward(self, z):                             
+    def forward(self, z, padding_mask=None):
         """
-        z: tensor [bs x num_patch x n_vars x patch_len]
-        """   
+        z: tensor [bs x seq_len x n_vars]  (flat) or [bs x num_patch x n_vars x patch_len] (pre-patched)
+        padding_mask: [bs x num_patch] bool, True=real data (only used during classification)
+        """
         if self.head_type in ['prediction', 'regression', 'classification', 'CLS_Prediction']:
             z = self.normalization(z, mode='norm')   # instance-normalize before encoder
             patches_tensor = z.unfold(dimension=1, size=self.patch_len, step=self.patch_len)
         else:
             patches_tensor = z.unfold(dimension=1, size=self.patch_len, step=self.step_size)
-        z = self.backbone(patches_tensor)
+        z = self.backbone(patches_tensor, padding_mask=padding_mask)
         if self.head_type == "Dino":
             z = z[:, 0, :, :]                                                            # z: [bs x nvars x d_model]
             return z
@@ -338,9 +339,10 @@ class PatchTSTEncoder(nn.Module):
         W = F.interpolate(W, size=(seq_len, W.shape[-1]), mode='bilinear', align_corners=False)
         return W.squeeze(0).squeeze(0)           # [seq_len, d_model]
 
-    def forward(self, x) -> Tensor:
+    def forward(self, x, padding_mask=None) -> Tensor:
         """
         x: tensor [bs x num_patch x nvars x patch_len]
+        padding_mask: [bs x num_patch] bool, True=real data (optional, only for classification)
         """
         bs, num_patch, n_vars, patch_len = x.shape
         # Input encoding
@@ -359,8 +361,17 @@ class PatchTSTEncoder(nn.Module):
         u = torch.cat((cls_tokens, u), dim=1)
         u = self.dropout(u + self._get_pos_enc(u.shape[1]))
 
+        # Build key_padding_mask for attention (True = ignore token)
+        key_padding_mask = None
+        if padding_mask is not None:
+            pm = padding_mask.to(u.device).bool()              # [bs, num_patch], True=real
+            pm_exp = pm.unsqueeze(1).expand(-1, n_vars, -1).reshape(bs * n_vars, num_patch)
+            # CLS token is always real → False (not ignored); patch tokens: ignore if not real
+            cls_col = torch.zeros(bs * n_vars, 1, dtype=torch.bool, device=u.device)
+            key_padding_mask = torch.cat([cls_col, ~pm_exp], dim=1)  # [bs*n_vars, num_patch+1]
+
         # Encoder
-        z = self.encoder(u)                                                      # z: [bs * nvars x num_patch x d_model]
+        z = self.encoder(u, key_padding_mask=key_padding_mask)                  # z: [bs * nvars x num_patch+1 x d_model]
         #z = z[:, 0, :]                                                           # [bs*nvars x d_model]
         #z = torch.reshape(z, (bs, n_vars, self.d_model))
         z = torch.reshape(z, (bs, n_vars, -1, self.d_model))
@@ -382,17 +393,18 @@ class TSTEncoder(nn.Module):
                                                       pre_norm=pre_norm, store_attn=store_attn) for i in range(n_layers)])
         self.res_attention = res_attention
 
-    def forward(self, src:Tensor):
+    def forward(self, src:Tensor, key_padding_mask:Optional[Tensor]=None):
         """
         src: tensor [bs x q_len x d_model]
+        key_padding_mask: [bs x q_len] bool, True=ignore (optional)
         """
         output = src
         scores = None
         if self.res_attention:
-            for mod in self.layers: output, scores = mod(output, prev=scores)
+            for mod in self.layers: output, scores = mod(output, prev=scores, key_padding_mask=key_padding_mask)
             return output
         else:
-            for mod in self.layers: output = mod(output)
+            for mod in self.layers: output = mod(output, key_padding_mask=key_padding_mask)
             return output
 
 
@@ -437,18 +449,19 @@ class TSTEncoderLayer(nn.Module):
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
 
-    def forward(self, src:Tensor, prev:Optional[Tensor]=None):
+    def forward(self, src:Tensor, prev:Optional[Tensor]=None, key_padding_mask:Optional[Tensor]=None):
         """
         src: tensor [bs x q_len x d_model]
+        key_padding_mask: [bs x q_len] bool, True=ignore (optional)
         """
         # Multi-Head attention sublayer
         if self.pre_norm:
             src = self.norm_attn(src)
         ## Multi-Head attention
         if self.res_attention:
-            src2, attn, scores = self.self_attn(src, src, src, prev)
+            src2, attn, scores = self.self_attn(src, src, src, prev, key_padding_mask=key_padding_mask)
         else:
-            src2, attn = self.self_attn(src, src, src)
+            src2, attn = self.self_attn(src, src, src, key_padding_mask=key_padding_mask)
         if self.store_attn:
             self.attn = attn
         ## Add & Norm

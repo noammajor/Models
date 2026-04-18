@@ -57,12 +57,14 @@ class PatchTST(nn.Module):
             self.head = ClassificationHead(self.n_vars, d_model, target_dim, head_dropout)
 
 
-    def forward(self, z):                             
+    def forward(self, z, padding_mask=None):
         """
-        z: tensor [bs x num_patch x n_vars x patch_len]
-        """   
-        z = self.backbone(z)                                                                # z: [bs x nvars x d_model x num_patch]
-        z = self.head(z)                                                                    
+        z:            tensor [bs x num_patch x n_vars x patch_len]
+        padding_mask: [bs x num_patch] bool — True = real data, False = zero-padding.
+                      Only used during classification (default None).
+        """
+        z = self.backbone(z, padding_mask=padding_mask)                                     # z: [bs x nvars x d_model x num_patch]
+        z = self.head(z)
         # z: [bs x target_dim x nvars] for prediction
         #    [bs x target_dim] for regression
         #    [bs x target_dim] for classification
@@ -217,9 +219,11 @@ class PatchTSTEncoder(nn.Module):
         W = F.interpolate(W, size=(seq_len, W.shape[-1]), mode='bilinear', align_corners=False)
         return W.squeeze(0).squeeze(0)           # [seq_len, d_model]
 
-    def forward(self, x) -> Tensor:
+    def forward(self, x, padding_mask=None) -> Tensor:
         """
-        x: tensor [bs x num_patch x nvars x patch_len]
+        x:            tensor [bs x num_patch x nvars x patch_len]
+        padding_mask: [bs x num_patch] bool — True = real data, False = zero-padding.
+                      Only used during classification (default None).
         """
         bs, num_patch, n_vars, patch_len = x.shape
         # Input encoding
@@ -236,8 +240,15 @@ class PatchTSTEncoder(nn.Module):
         u = torch.reshape(x, (bs*n_vars, num_patch, self.d_model) )              # u: [bs * nvars x num_patch x d_model]
         u = self.dropout(u + self._get_pos_enc(num_patch))                       # u: [bs * nvars x num_patch x d_model]
 
+        # Padding key mask: True = padding position, should be ignored
+        key_padding_mask = None
+        if padding_mask is not None:
+            pm = padding_mask.to(x.device)                                       # (bs, P)
+            key_padding_mask = (~pm).unsqueeze(1).expand(-1, n_vars, -1) \
+                                    .reshape(bs * n_vars, num_patch)             # (bs*nvars, P)
+
         # Encoder
-        z = self.encoder(u)                                                      # z: [bs * nvars x num_patch x d_model]
+        z = self.encoder(u, key_padding_mask=key_padding_mask)                   # z: [bs * nvars x num_patch x d_model]
         z = torch.reshape(z, (-1,n_vars, num_patch, self.d_model))               # z: [bs x nvars x num_patch x d_model]
         z = z.permute(0,1,3,2)                                                   # z: [bs x nvars x d_model x num_patch]
 
@@ -257,17 +268,20 @@ class TSTEncoder(nn.Module):
                                                       pre_norm=pre_norm, store_attn=store_attn) for i in range(n_layers)])
         self.res_attention = res_attention
 
-    def forward(self, src:Tensor):
+    def forward(self, src:Tensor, key_padding_mask:Optional[Tensor]=None):
         """
         src: tensor [bs x q_len x d_model]
         """
         output = src
         scores = None
         if self.res_attention:
-            for mod in self.layers: output, scores = mod(output, prev=scores)
+            for mod in self.layers:
+                output, scores = mod(output, prev=scores,
+                                     key_padding_mask=key_padding_mask)
             return output
         else:
-            for mod in self.layers: output = mod(output)
+            for mod in self.layers:
+                output = mod(output, key_padding_mask=key_padding_mask)
             return output
 
 
@@ -309,7 +323,8 @@ class TSTEncoderLayer(nn.Module):
         self.store_attn = store_attn
 
 
-    def forward(self, src:Tensor, prev:Optional[Tensor]=None):
+    def forward(self, src:Tensor, prev:Optional[Tensor]=None,
+                key_padding_mask:Optional[Tensor]=None):
         """
         src: tensor [bs x q_len x d_model]
         """
@@ -318,9 +333,11 @@ class TSTEncoderLayer(nn.Module):
             src = self.norm_attn(src)
         ## Multi-Head attention
         if self.res_attention:
-            src2, attn, scores = self.self_attn(src, src, src, prev)
+            src2, attn, scores = self.self_attn(src, src, src, prev,
+                                                key_padding_mask=key_padding_mask)
         else:
-            src2, attn = self.self_attn(src, src, src)
+            src2, attn = self.self_attn(src, src, src,
+                                        key_padding_mask=key_padding_mask)
         if self.store_attn:
             self.attn = attn
         ## Add & Norm

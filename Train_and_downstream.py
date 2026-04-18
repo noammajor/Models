@@ -358,19 +358,25 @@ def run_dino(skip_train: bool = False,
         cls_dir = dino_cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
         cls_bs  = dino_cfg.get("batch_size_classification", 64)
         p_s        = args.patch_len
-        _n_patches = args.num_patches          # 72 when --num_patches 72
-        _target_T  = _n_patches * p_s          # 72 * 16 = 1152
+        _n_patches = 72                         # classification encoder always uses 72 patches
+        _target_T  = _n_patches * p_s
         import torch.nn.functional as _F
         def _dino_patch_collate(batch, _ps=p_s, _tT=_target_T, _nP=_n_patches):
-            xs, ys = zip(*batch)
+            xs, ys, orig_lens = zip(*batch)
+            orig_lens = torch.stack(orig_lens)                                   # (B,)
             max_t = max(x.shape[0] for x in xs)
             xs = torch.stack([_F.pad(x, (0, 0, 0, max_t - x.shape[0])) for x in xs])
             B_, T_, C_ = xs.shape
             if T_ != _tT:
                 idx = torch.linspace(0, T_ - 1, _tT).long()
-                xs = xs[:, idx, :]
+                xs  = xs[:, idx, :]
+                patch_idx    = idx[torch.arange(_nP) * _ps]
+                padding_mask = patch_idx.unsqueeze(0) < orig_lens.unsqueeze(1)  # (B, P)
+            else:
+                patch_starts = torch.arange(_nP) * _ps
+                padding_mask = patch_starts.unsqueeze(0) < orig_lens.unsqueeze(1)
             xs = xs.reshape(B_, _nP, _ps, C_)
-            return xs, torch.stack(ys)
+            return xs, torch.stack(ys), padding_mask
         if list(Path(os.path.join(cls_dir, classification_dataset)).glob("*_TRAIN.ts")):
             _raw_train, _, _raw_test, n_classes = make_uea_dataloaders(
                 cls_dir, classification_dataset, batch_size=cls_bs)
@@ -1139,18 +1145,24 @@ def run_jepa_simple(skip_train: bool = False,
                 cls_dir, classification_dataset, batch_size=cls_bs)
             # JEPA expects (B, P, PL, C) with P = config["ratio_patches"] (pretraining num_patches).
             # UEADataset returns (B, T, C) → subsample to ratio_patches * patch_size, then patch.
-            _n_patches = config["ratio_patches"]          # 32 (matches pretrained W_pos)
-            _target_T  = _n_patches * p_s                 # 32 * 16 = 512
+            _n_patches = 72                               # classification encoder always uses 72 patches
+            _target_T  = _n_patches * p_s
             def _patch_collate(batch, _ps=p_s, _tT=_target_T, _nP=_n_patches):
-                xs, ys = zip(*batch)
+                xs, ys, orig_lens = zip(*batch)
+                orig_lens = torch.stack(orig_lens)                               # (B,)
                 max_t = max(x.shape[0] for x in xs)
                 xs = torch.stack([torch.nn.functional.pad(x, (0, 0, 0, max_t - x.shape[0])) for x in xs])  # (B, T, C)
                 T  = xs.shape[1]
-                if T != _tT:                              # uniform resample to 512
+                if T != _tT:                              # uniform resample
                     idx = torch.linspace(0, T - 1, _tT).long()
                     xs  = xs[:, idx, :]
-                xs = xs.reshape(len(xs), _nP, _ps, xs.shape[-1])   # (B, 32, 16, C)
-                return xs, torch.stack(ys)
+                    patch_idx    = idx[torch.arange(_nP) * _ps]
+                    padding_mask = patch_idx.unsqueeze(0) < orig_lens.unsqueeze(1)  # (B, P)
+                else:
+                    patch_starts = torch.arange(_nP) * _ps
+                    padding_mask = patch_starts.unsqueeze(0) < orig_lens.unsqueeze(1)
+                xs = xs.reshape(len(xs), _nP, _ps, xs.shape[-1])   # (B, P, ps, C)
+                return xs, torch.stack(ys), padding_mask
             _wrap = lambda ds, shuf: torch.utils.data.DataLoader(
                 ds, batch_size=cls_bs, shuffle=shuf, collate_fn=_patch_collate)
             cls_train = _wrap(_uea_tr.dataset, True)
@@ -1391,19 +1403,25 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         cls_dir    = cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
         cls_bs     = cfg.get("batch_size", 64)
         p_s        = cfg.get("patch_len", 16)
-        _n_patches = num_patches if num_patches is not None else cfg.get("context_points", 512) // p_s
+        _n_patches = 72                               # classification encoder always uses 72 patches
         _target_T  = _n_patches * p_s
         import torch.nn.functional as _F
         def _ptst_patch_collate(batch, _ps=p_s, _tT=_target_T, _nP=_n_patches):
-            xs, ys = zip(*batch)
+            xs, ys, orig_lens = zip(*batch)
+            orig_lens = torch.stack(orig_lens)                                   # (B,)
             max_t = max(x.shape[0] for x in xs)
             xs = torch.stack([_F.pad(x, (0, 0, 0, max_t - x.shape[0])) for x in xs])
             B_, T_, C_ = xs.shape
             if T_ != _tT:
                 idx = torch.linspace(0, T_ - 1, _tT).long()
-                xs = xs[:, idx, :]
+                xs  = xs[:, idx, :]
+                patch_idx    = idx[torch.arange(_nP) * _ps]
+                padding_mask = patch_idx.unsqueeze(0) < orig_lens.unsqueeze(1)  # (B, P)
+            else:
+                patch_starts = torch.arange(_nP) * _ps
+                padding_mask = patch_starts.unsqueeze(0) < orig_lens.unsqueeze(1)
             xs = xs.reshape(B_, _nP, _ps, C_)
-            return xs, torch.stack(ys)
+            return xs, torch.stack(ys), padding_mask
         if list(Path(os.path.join(cls_dir, classification_dataset)).glob("*_TRAIN.ts")):
             _raw_tr, _, _raw_te, n_classes = make_uea_dataloaders(
                 cls_dir, classification_dataset, batch_size=cls_bs)
@@ -1561,19 +1579,25 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         cls_dir    = cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
         cls_bs     = cfg.get("batch_size", 64)
         p_s        = cfg["patch_size"]
-        _n_patches = num_patches if num_patches is not None else cfg.get("ratio_patches", 78) - cfg.get("horizon_t", 6)   # encoder context patches (not ratio)
+        _n_patches = 72                               # classification encoder always uses 72 patches
         _target_T  = _n_patches * p_s
         import torch.nn.functional as _F
         def _npt_patch_collate(batch, _ps=p_s, _tT=_target_T, _nP=_n_patches):
-            xs, ys = zip(*batch)
+            xs, ys, orig_lens = zip(*batch)
+            orig_lens = torch.stack(orig_lens)                                   # (B,)
             max_t = max(x.shape[0] for x in xs)
             xs = torch.stack([_F.pad(x, (0, 0, 0, max_t - x.shape[0])) for x in xs])
             B_, T_, C_ = xs.shape
             if T_ != _tT:
                 idx = torch.linspace(0, T_ - 1, _tT).long()
-                xs = xs[:, idx, :]
+                xs  = xs[:, idx, :]
+                patch_idx    = idx[torch.arange(_nP) * _ps]
+                padding_mask = patch_idx.unsqueeze(0) < orig_lens.unsqueeze(1)  # (B, P)
+            else:
+                patch_starts = torch.arange(_nP) * _ps
+                padding_mask = patch_starts.unsqueeze(0) < orig_lens.unsqueeze(1)
             xs = xs.reshape(B_, _nP, _ps, C_)
-            return xs, torch.stack(ys)
+            return xs, torch.stack(ys), padding_mask
         if list(Path(os.path.join(cls_dir, classification_dataset)).glob("*_TRAIN.ts")):
             _raw_tr, _, _raw_te, n_classes = make_uea_dataloaders(
                 cls_dir, classification_dataset, batch_size=cls_bs)
@@ -1870,12 +1894,36 @@ def run_lejepa(skip_train: bool = False,
     cls_acc = None
     if classification_dataset is not None:
         from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
-        cls_dir = config.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
-        cls_bs  = config.get("batch_size", 64)
-        p_s     = config["patch_size_forcasting"]
+        import torch.nn.functional as _F
+        cls_dir    = config.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
+        cls_bs     = config.get("batch_size", 64)
+        p_s        = config["patch_size_forcasting"]
+        _n_patches = 72                               # classification encoder always uses 72 patches
+        _target_T  = _n_patches * p_s
+        def _lejepa_patch_collate(batch, _ps=p_s, _tT=_target_T, _nP=_n_patches):
+            xs, ys, orig_lens = zip(*batch)
+            orig_lens = torch.stack(orig_lens)                                   # (B,)
+            max_t = max(x.shape[0] for x in xs)
+            xs = torch.stack([_F.pad(x, (0, 0, 0, max_t - x.shape[0])) for x in xs])
+            B_, T_, C_ = xs.shape
+            if T_ != _tT:
+                idx = torch.linspace(0, T_ - 1, _tT).long()
+                xs  = xs[:, idx, :]
+                patch_idx    = idx[torch.arange(_nP) * _ps]
+                padding_mask = patch_idx.unsqueeze(0) < orig_lens.unsqueeze(1)  # (B, P)
+            else:
+                patch_starts = torch.arange(_nP) * _ps
+                padding_mask = patch_starts.unsqueeze(0) < orig_lens.unsqueeze(1)
+            xs = xs.reshape(B_, _nP, _ps, C_)
+            return xs, torch.stack(ys), padding_mask
         if list(Path(os.path.join(cls_dir, classification_dataset)).glob("*_TRAIN.ts")):
-            cls_train, cls_val, cls_test, n_classes = make_uea_dataloaders(
+            _raw_tr, _, _raw_te, n_classes = make_uea_dataloaders(
                 cls_dir, classification_dataset, batch_size=cls_bs)
+            _wrap = lambda ds, shuf: torch.utils.data.DataLoader(
+                ds, batch_size=cls_bs, shuffle=shuf, collate_fn=_lejepa_patch_collate)
+            cls_train = _wrap(_raw_tr.dataset, True)
+            cls_val   = None
+            cls_test  = _wrap(_raw_te.dataset, False)
         else:
             _mk = lambda split: torch.utils.data.DataLoader(
                 ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
@@ -1926,6 +1974,7 @@ _TIMEDART_DATASET_MAP = {
 def run_timedart(skip_train: bool = False,
                  pretrain_dataset: str = None,
                  forecast_dataset: str = None,
+                 classification_dataset: str = None,
                  pretrain_only: bool = False,
                  pred_lens=None,
                  checkpoints=None,
@@ -1933,7 +1982,8 @@ def run_timedart(skip_train: bool = False,
                  lr: float = None,
                  pretrain_source: str = None,
                  gpu: int = None,
-                 linear_probe: bool = True):
+                 linear_probe: bool = True,
+                 pretrain_cls_model: bool = False):
     """
     TimeDart: diffusion-based pretraining with Monash/Synthetic data,
     followed by forecasting fine-tune using our PatchTSTForcastingAdapter
@@ -2092,8 +2142,16 @@ def run_timedart(skip_train: bool = False,
         base_args.task_name = "pretrain"
         base_args.data      = "monash" + _src_tag
 
+        # pretrain_cls_model=True → use ClsModel (Conv1d embedding) so the
+        # Conv1d is pretrained and can be fully loaded for classification.
+        if pretrain_cls_model:
+            base_args.downstream_task = "classification"
+
         from exp.exp_timedart import Exp_TimeDART
         exp = Exp_TimeDART(base_args)
+
+        # restore for forecasting fine-tune
+        base_args.downstream_task = "forecast"
 
         ckpt_path = ckpt_dir / base_args.data
         ckpt_path.mkdir(parents=True, exist_ok=True)
@@ -2216,7 +2274,59 @@ def run_timedart(skip_train: bool = False,
             best_mae  = mae
             best_pred = pred_len
 
-    return best_pred, best_mse, best_mae
+    # ── classification downstream ─────────────────────────────────────────────
+    cls_acc = None
+    if classification_dataset is not None:
+        from timedart_classification import classification_zeroshot as timedart_classify
+        from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
+        cls_dir    = cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
+        cls_bs     = cfg.get("batch_size_classification", 64)
+        p_s        = cfg.get("patch_len", 16)
+        _n_patches = 72                               # classification encoder always uses 72 patches
+        _target_T  = _n_patches * p_s
+
+        def _timedart_patch_collate(batch, _ps=p_s, _tT=_target_T, _nP=_n_patches):
+            import torch.nn.functional as F
+            xs, ys, orig_lens = zip(*batch)
+            orig_lens = torch.stack(orig_lens)
+            max_t = max(x.shape[0] for x in xs)
+            xs = torch.stack([F.pad(x, (0, 0, 0, max_t - x.shape[0])) for x in xs])
+            T = xs.shape[1]
+            if T != _tT:
+                idx = torch.linspace(0, T - 1, _tT).long()
+                xs  = xs[:, idx, :]
+                patch_idx    = idx[torch.arange(_nP) * _ps]
+                padding_mask = patch_idx.unsqueeze(0) < orig_lens.unsqueeze(1)
+            else:
+                patch_starts = torch.arange(_nP) * _ps
+                padding_mask = patch_starts.unsqueeze(0) < orig_lens.unsqueeze(1)
+            xs = xs.reshape(len(xs), _nP, _ps, xs.shape[-1])
+            return xs, torch.stack(ys), padding_mask
+
+        if list(Path(os.path.join(cls_dir, classification_dataset)).glob("*_TRAIN.ts")):
+            _raw_train, _, _raw_test, n_classes = make_uea_dataloaders(
+                cls_dir, classification_dataset, batch_size=cls_bs)
+            cls_train = torch.utils.data.DataLoader(
+                _raw_train.dataset, batch_size=cls_bs, shuffle=True,
+                collate_fn=_timedart_patch_collate)
+            cls_val   = None
+            cls_test  = torch.utils.data.DataLoader(
+                _raw_test.dataset, batch_size=cls_bs, shuffle=False,
+                collate_fn=_timedart_patch_collate)
+        else:
+            _mk = lambda split: torch.utils.data.DataLoader(
+                ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
+                batch_size=cls_bs, shuffle=(split == "train"))
+            cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
+            n_classes = cls_train.dataset.n_classes
+
+        cls_acc = timedart_classify(cfg, str(ckpt_file), cls_train, cls_val, cls_test, n_classes)
+        print(f"\n{'='*60}")
+        print(f"  [TimeDaRT] Classification on {classification_dataset}")
+        print(f"  Test Accuracy: {cls_acc:.4f}")
+        print(f"{'='*60}")
+
+    return best_pred, best_mse, best_mae, cls_acc
 
 
 class _FlatWindowAdapter(torch.utils.data.Dataset):

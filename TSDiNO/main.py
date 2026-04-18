@@ -975,8 +975,9 @@ def train_classification(args, classification_train=None, classification_val=Non
         train_loader = classification_train
         val_loader   = classification_val
         test_loader  = classification_test
-        # infer shape from first batch
-        _x, _ = next(iter(train_loader))  # [B, n_patches, patch_size, n_vars] or [B, T, C]
+        # infer shape from first batch (batch is (x, y, padding_mask) 3-tuple)
+        _batch = next(iter(train_loader))
+        _x = _batch[0]  # [B, n_patches, patch_size, n_vars] or [B, T, C]
         n_vars = _x.shape[-1]
         if _x.dim() == 3:   # raw (B, T, C) from UEADataset
             num_patch = _x.shape[1] // args.patch_len
@@ -1100,20 +1101,24 @@ def train_classification(args, classification_train=None, classification_val=Non
         correct = 0
         total = 0
 
-        for it, (inputs, labels) in enumerate(train_loader):
+        for it, batch in enumerate(train_loader):
+            inputs, labels = batch[0], batch[1]
+            padding_mask = batch[2] if len(batch) > 2 else None
             # Update learning rate
             step = epoch * len(train_loader) + it
             for param_group in optimizer.param_groups:
                 param_group['lr'] = lr_schedule[step]
 
             inputs, labels = inputs.to(device), labels.to(device)
+            if padding_mask is not None:
+                padding_mask = padding_mask.to(device)
             labels = labels.squeeze(-1) if labels.dim() > 1 else labels
             if inputs.dim() == 4:
                 B, P, PL, C = inputs.shape
                 inputs = inputs.reshape(B, P * PL, C)
 
             # Forward pass
-            outputs = model(inputs)  # [batch_size, n_classes]
+            outputs = model(inputs, padding_mask=padding_mask)  # [batch_size, n_classes]
             loss = criterion(outputs, labels)
 
             # Backward pass
@@ -1134,12 +1139,16 @@ def train_classification(args, classification_train=None, classification_val=Non
         correct = 0
         total = 0
         with torch.no_grad():
-            for inputs, labels in eval_loader:
+            for batch in eval_loader:
+                inputs, labels = batch[0], batch[1]
+                padding_mask = batch[2] if len(batch) > 2 else None
                 inputs, labels = inputs.to(device), labels.to(device)
+                if padding_mask is not None:
+                    padding_mask = padding_mask.to(device)
                 if inputs.dim() == 4:
                     B, P, PL, C = inputs.shape
                     inputs = inputs.reshape(B, P * PL, C)
-                outputs = model(inputs)
+                outputs = model(inputs, padding_mask=padding_mask)
                 loss = criterion(outputs, labels)
                 val_loss += loss.item()
                 _, predicted = outputs.max(1)
@@ -1173,12 +1182,16 @@ def train_classification(args, classification_train=None, classification_val=Non
     correct = 0
     total = 0
     with torch.no_grad():
-        for inputs, labels in test_loader:
+        for batch in test_loader:
+            inputs, labels = batch[0], batch[1]
+            padding_mask = batch[2] if len(batch) > 2 else None
             inputs, labels = inputs.to(device), labels.to(device)
+            if padding_mask is not None:
+                padding_mask = padding_mask.to(device)
             if inputs.dim() == 4:
                 B, P, PL, C = inputs.shape
                 inputs = inputs.reshape(B, P * PL, C)
-            outputs = model(inputs)
+            outputs = model(inputs, padding_mask=padding_mask)
             _, predicted = outputs.max(1)
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()

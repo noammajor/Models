@@ -47,7 +47,7 @@ def classification_zeroshot(self, path, classification_train, classification_val
     patch_len = config.get("patch_size", 16)
 
     # Infer from first batch — may already be pre-patched (B, P, PL, C) or raw (B, T, C)
-    sample_patches, _ = next(iter(classification_train))
+    sample_patches, _, _ = next(iter(classification_train))
     if sample_patches.dim() == 4:
         # Pre-patched by _patch_collate
         num_patches = sample_patches.shape[1]
@@ -61,19 +61,31 @@ def classification_zeroshot(self, path, classification_train, classification_val
         num_patches = target_T // patch_len
         n_v         = sample_patches.shape[-1]
 
-    def _to_patches(x):
+    def _to_patches(x, padding_mask=None):
         """Resample (B, T, C) to fixed target_T then reshape to (B, num_patches, patch_len, C).
-        Always subsamples patch dimension to encoder_num_patches to match encoder PE."""
+        Always subsamples patch dimension to encoder_num_patches to match encoder PE.
+        Returns (x, padding_mask) where padding_mask is (B, P) bool, True = real data."""
         if x.dim() == 3:
             B_, T_, C_ = x.shape
             if T_ != target_T:
                 idx = torch.linspace(0, T_ - 1, target_T, device=x.device).long()
                 x = x[:, idx, :]
+                if padding_mask is not None:
+                    real_count = padding_mask.to(x.device).sum(dim=1)        # (B,)
+                    patch_idx  = idx[torch.arange(num_patches, device=x.device) * patch_len]
+                    padding_mask = patch_idx.unsqueeze(0) < real_count.unsqueeze(1)
+            else:
+                if padding_mask is not None and padding_mask.shape[1] != num_patches:
+                    real_count   = padding_mask.to(x.device).sum(dim=1)
+                    patch_starts = torch.arange(num_patches, device=x.device) * patch_len
+                    padding_mask = patch_starts.unsqueeze(0) < real_count.unsqueeze(1)
             x = x.reshape(B_, num_patches, patch_len, C_)
         if x.shape[1] != encoder_num_patches:
             idx = torch.linspace(0, x.shape[1] - 1, encoder_num_patches, device=x.device).long()
             x = x[:, idx, :]
-        return x
+            if padding_mask is not None:
+                padding_mask = padding_mask.to(x.device)[:, idx]
+        return x, padding_mask
 
     cls_head = ClassificationHead(
         n_vars       = n_v,
@@ -95,15 +107,17 @@ def classification_zeroshot(self, path, classification_train, classification_val
     for epoch in range(n_epochs):
         cls_head.train()
         correct, total = 0, 0
-        for patches, labels in classification_train:
-            patches = _to_patches(patches).to(self.device)
-            labels  = labels.to(self.device)
+        for patches, labels, padding_mask in classification_train:
+            patches, padding_mask = _to_patches(patches, padding_mask)
+            patches      = patches.to(self.device)
+            padding_mask = padding_mask.to(self.device)
+            labels       = labels.to(self.device)
             B, P, PL, n_v_ = patches.shape
 
             optimizer.zero_grad()
             ctx_norm, _, _ = _instance_norm(patches)
             with torch.no_grad():
-                enc_out = self.encoder_for(ctx_norm)
+                enc_out = self.encoder_for(ctx_norm, padding_mask=padding_mask)
                 enc     = enc_out["data_patches"]          # [B*n_v, P, embed_dim]
             enc_p  = enc.reshape(B, n_v_, encoder_num_patches, embed_dim).permute(0, 1, 3, 2)
             logits = cls_head(enc_p)                       # [B, n_classes]
@@ -118,13 +132,14 @@ def classification_zeroshot(self, path, classification_train, classification_val
     cls_head.eval()
     tc, tt = 0, 0
     with torch.no_grad():
-        for patches, labels in classification_test:
-            patches = _to_patches(patches)
-            patches = patches.to(self.device)
-            labels  = labels.to(self.device)
+        for patches, labels, padding_mask in classification_test:
+            patches, padding_mask = _to_patches(patches, padding_mask)
+            patches      = patches.to(self.device)
+            padding_mask = padding_mask.to(self.device)
+            labels       = labels.to(self.device)
             B, P, PL, n_v_ = patches.shape
             ctx_norm, _, _ = _instance_norm(patches)
-            enc_out = self.encoder_for(ctx_norm)
+            enc_out = self.encoder_for(ctx_norm, padding_mask=padding_mask)
             enc     = enc_out["data_patches"]
             enc_p   = enc.reshape(B, n_v_, encoder_num_patches, embed_dim).permute(0, 1, 3, 2)
             logits  = cls_head(enc_p)
