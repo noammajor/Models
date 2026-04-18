@@ -1091,7 +1091,8 @@ class UEADataset(Dataset):
             self._normalizer = None
             self._label_map  = None
 
-        ts_path = root / (f'{dataset_name}_TRAIN.ts' if self.split in ('train', 'val')
+        # Use file-based splits: _TRAIN.ts for train, _TEST.ts for val and test
+        ts_path = root / (f'{dataset_name}_TRAIN.ts' if self.split == 'train'
                           else f'{dataset_name}_TEST.ts')
 
         all_df, labels_raw = self._load_ts(ts_path, load_from_tsfile_to_dataframe)
@@ -1112,15 +1113,6 @@ class UEADataset(Dataset):
         all_IDs = all_df.index.unique()
         self._samples = [all_df.loc[i].values.astype(np.float32) for i in all_IDs]
         self._labels  = int_labels
-
-        if self.split in ('train', 'val'):
-            from sklearn.model_selection import train_test_split
-            idx = np.arange(len(self._samples))
-            idx_tr, idx_va = train_test_split(idx, test_size=val_fraction,
-                                              stratify=self._labels, random_state=42)
-            keep = idx_tr if self.split == 'train' else idx_va
-            self._samples = [self._samples[i] for i in keep]
-            self._labels  = self._labels[keep]
 
         print(f"UEADataset [{self.split}] ({dataset_name}): "
               f"{len(self._samples)} samples, {self._samples[0].shape[0]} timesteps, "
@@ -1167,16 +1159,17 @@ def _pad_collate(batch):
 
 def make_uea_dataloaders(cls_dir: str, dataset_name: str, batch_size: int = 16):
     """Build train/val/test DataLoaders from a UEA .ts dataset.
+    Uses _TRAIN.ts for train, _TEST.ts for both val and test.
     Returns (train_loader, val_loader, test_loader, n_classes).
     """
-    # .ts files live in cls_dir/dataset_name/dataset_name_{TRAIN,TEST}.ts
     dataset_root = os.path.join(cls_dir, dataset_name)
     ds_train = UEADataset(dataset_root, dataset_name, split='train')
-    ds_val   = UEADataset(dataset_root, dataset_name, split='val',  _shared=ds_train)
     ds_test  = UEADataset(dataset_root, dataset_name, split='test', _shared=ds_train)
     mk = lambda ds, shuffle: torch.utils.data.DataLoader(
         ds, batch_size=batch_size, shuffle=shuffle, collate_fn=_pad_collate)
-    return mk(ds_train, True), mk(ds_val, False), mk(ds_test, False), ds_train.n_classes
+    train_loader = mk(ds_train, True)
+    test_loader  = mk(ds_test, False)
+    return train_loader, None, test_loader, ds_train.n_classes
 
 
 # ── Anomaly Detection ─────────────────────────────────────────────────────────

@@ -93,9 +93,6 @@ def classification_zeroshot(self, path, classification_train, classification_val
             x = x.reshape(B_, T_pad_ // patch_len, patch_len, C_)
         return x
 
-    best_val_acc = 0.0
-    best_state   = None
-
     for epoch in range(n_epochs):
         cls_head.train()
         correct, total = 0, 0
@@ -117,33 +114,8 @@ def classification_zeroshot(self, path, classification_train, classification_val
             scheduler.step()
             correct += (logits.argmax(1) == labels).sum().item()
             total   += len(labels)
-        train_acc = correct / total
-
-        # Validation
-        cls_head.eval()
-        vc, vt = 0, 0
-        with torch.no_grad():
-            for patches, labels in classification_val:
-                patches = _to_patches(patches).to(self.device)
-                labels  = labels.to(self.device)
-                B, P, PL, n_v_ = patches.shape
-                ctx_norm, _, _ = _instance_norm(patches)
-                enc_out = self.encoder(ctx_norm)
-                enc     = enc_out["data_patches"]
-                enc_p   = enc.reshape(B, n_v_, num_patches, embed_dim).permute(0, 1, 3, 2)
-                logits  = cls_head(enc_p)
-                vc += (logits.argmax(1) == labels).sum().item()
-                vt += len(labels)
-        val_acc = vc / vt
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            best_state   = {k: v.clone() for k, v in cls_head.state_dict().items()}
         if epoch % 5 == 0:
-            print(f"  Epoch {epoch:3d} | train acc {train_acc:.4f} | val acc {val_acc:.4f}")
-
-    # Test with best checkpoint
-    if best_state is not None:
-        cls_head.load_state_dict(best_state)
+            print(f"  Epoch {epoch:3d} | train acc {correct/total:.4f}")
     cls_head.eval()
     tc, tt = 0, 0
     with torch.no_grad():
