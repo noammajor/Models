@@ -1155,6 +1155,16 @@ class UEADataset(Dataset):
         return x, y
 
 
+def _pad_collate(batch):
+    """Collate variable-length (T, C) tensors by padding to max T in the batch."""
+    xs, ys = zip(*batch)
+    max_t = max(x.shape[0] for x in xs)
+    xs_padded = torch.stack([
+        torch.nn.functional.pad(x, (0, 0, 0, max_t - x.shape[0])) for x in xs
+    ])
+    return xs_padded, torch.stack(ys)
+
+
 def make_uea_dataloaders(cls_dir: str, dataset_name: str, batch_size: int = 16):
     """Build train/val/test DataLoaders from a UEA .ts dataset.
     Returns (train_loader, val_loader, test_loader, n_classes).
@@ -1165,7 +1175,7 @@ def make_uea_dataloaders(cls_dir: str, dataset_name: str, batch_size: int = 16):
     ds_val   = UEADataset(dataset_root, dataset_name, split='val',  _shared=ds_train)
     ds_test  = UEADataset(dataset_root, dataset_name, split='test', _shared=ds_train)
     mk = lambda ds, shuffle: torch.utils.data.DataLoader(
-        ds, batch_size=batch_size, shuffle=shuffle)
+        ds, batch_size=batch_size, shuffle=shuffle, collate_fn=_pad_collate)
     return mk(ds_train, True), mk(ds_val, False), mk(ds_test, False), ds_train.n_classes
 
 

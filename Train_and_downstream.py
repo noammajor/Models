@@ -1756,49 +1756,53 @@ def run_lejepa(skip_train: bool = False,
         return
 
     # ── forecasting downstream ─────────────────────────────────────────────────
-    # Use PatchTST-identical data: seq_len=336 (21 patches × 16)
-    _PATCHTST_SEQ_LEN = 336
-    p_s  = config["patch_size_forcasting"]
-    _ctx_patches = _PATCHTST_SEQ_LEN // p_s   # = 21
-    config["forecasting_context_patches"] = _ctx_patches
-    _csv = config["path_data_forcasting"][0]
+    best_mse = best_ckpt = None
+    if forecast_dataset is None:
+        print("\n[LE-JEPA] No forecast_dataset — skipping forecasting.")
+    else:
+        # Use PatchTST-identical data: seq_len=336 (21 patches × 16)
+        _PATCHTST_SEQ_LEN = 336
+        p_s  = config["patch_size_forcasting"]
+        _ctx_patches = _PATCHTST_SEQ_LEN // p_s   # = 21
+        config["forecasting_context_patches"] = _ctx_patches
+        _csv = config["path_data_forcasting"][0]
 
-    best_mse  = float('inf')
-    best_ckpt = None
-    ckpts     = checkpoints if checkpoints is not None else list(range(config["num_epochs"]))
+        _best_mse  = float('inf')
+        ckpts     = checkpoints if checkpoints is not None else list(range(config["num_epochs"]))
 
-    _fc_bs = _get_forecast_bs(config, 256)
-    _fc_nw = config.get("num_workers", 4)
-    for pred_len in pred_lens:
-        h_t = pred_len // p_s
-        model.forcast_train = torch.utils.data.DataLoader(
-            PatchTSTForcastingAdapter(_csv, 'train', _PATCHTST_SEQ_LEN, pred_len, p_s),
-            batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
-        model.forcast_val   = torch.utils.data.DataLoader(
-            PatchTSTForcastingAdapter(_csv, 'val',   _PATCHTST_SEQ_LEN, pred_len, p_s),
-            batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
-        model.forcast_test  = torch.utils.data.DataLoader(
-            PatchTSTForcastingAdapter(_csv, 'test',  _PATCHTST_SEQ_LEN, pred_len, p_s),
-            batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
-        model.config["horizon_t"] = h_t
+        _fc_bs = _get_forecast_bs(config, 256)
+        _fc_nw = config.get("num_workers", 4)
+        for pred_len in pred_lens:
+            h_t = pred_len // p_s
+            model.forcast_train = torch.utils.data.DataLoader(
+                PatchTSTForcastingAdapter(_csv, 'train', _PATCHTST_SEQ_LEN, pred_len, p_s),
+                batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
+            model.forcast_val   = torch.utils.data.DataLoader(
+                PatchTSTForcastingAdapter(_csv, 'val',   _PATCHTST_SEQ_LEN, pred_len, p_s),
+                batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
+            model.forcast_test  = torch.utils.data.DataLoader(
+                PatchTSTForcastingAdapter(_csv, 'test',  _PATCHTST_SEQ_LEN, pred_len, p_s),
+                batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
+            model.config["horizon_t"] = h_t
 
-        is_search    = (pred_len == pred_lens[0])
-        ckpts_to_run = ckpts if is_search else [best_ckpt if best_ckpt is not None else ckpts[-1]]
+            is_search    = (pred_len == pred_lens[0])
+            ckpts_to_run = ckpts if is_search else [best_ckpt if best_ckpt is not None else ckpts[-1]]
 
-        print(f"\n[LE-JEPA] pred_len={pred_len} (horizon_t={h_t})"
-              + ("" if is_search else f"  [best ckpt={ckpts_to_run[0]}]"))
+            print(f"\n[LE-JEPA] pred_len={pred_len} (horizon_t={h_t})"
+                  + ("" if is_search else f"  [best ckpt={ckpts_to_run[0]}]"))
 
-        for epoch in ckpts_to_run:
-            print(f"  → checkpoint epoch {epoch}")
-            ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
-            mse = model.forcasting_zeroshot(ckpt_tag)
-            if is_search and mse is not None and mse < best_mse:
-                best_mse  = mse
-                best_ckpt = epoch
+            for epoch in ckpts_to_run:
+                print(f"  → checkpoint epoch {epoch}")
+                ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
+                mse = model.forcasting_zeroshot(ckpt_tag)
+                if is_search and mse is not None and mse < _best_mse:
+                    _best_mse = mse
+                    best_ckpt = epoch
 
-        if is_search:
-            print(f"\n[LE-JEPA] Best checkpoint at pred_len={pred_lens[0]}: "
-                  f"epoch {best_ckpt} (MSE={best_mse:.4f})")
+            if is_search:
+                print(f"\n[LE-JEPA] Best checkpoint at pred_len={pred_lens[0]}: "
+                      f"epoch {best_ckpt} (MSE={_best_mse:.4f})")
+        best_mse = _best_mse
 
     # ── classification downstream ─────────────────────────────────────────────
     cls_acc = None
