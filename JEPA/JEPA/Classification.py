@@ -42,6 +42,7 @@ def classification_zeroshot(self, path, classification_train, classification_val
         p.requires_grad = False
 
     embed_dim = config["encoder_embed_dim"]
+    encoder_num_patches = self.encoder_for.W_pos.shape[0]
 
     patch_len = config.get("patch_size", 16)
 
@@ -62,13 +63,16 @@ def classification_zeroshot(self, path, classification_train, classification_val
 
     def _to_patches(x):
         """Resample (B, T, C) to fixed target_T then reshape to (B, num_patches, patch_len, C).
-        No-op if already (B, P, PL, C)."""
+        Always subsamples patch dimension to encoder_num_patches to match encoder PE."""
         if x.dim() == 3:
             B_, T_, C_ = x.shape
             if T_ != target_T:
                 idx = torch.linspace(0, T_ - 1, target_T, device=x.device).long()
                 x = x[:, idx, :]
             x = x.reshape(B_, num_patches, patch_len, C_)
+        if x.shape[1] != encoder_num_patches:
+            idx = torch.linspace(0, x.shape[1] - 1, encoder_num_patches, device=x.device).long()
+            x = x[:, idx, :]
         return x
 
     cls_head = ClassificationHead(
@@ -101,7 +105,7 @@ def classification_zeroshot(self, path, classification_train, classification_val
             with torch.no_grad():
                 enc_out = self.encoder_for(ctx_norm)
                 enc     = enc_out["data_patches"]          # [B*n_v, P, embed_dim]
-            enc_p  = enc.reshape(B, n_v_, num_patches, embed_dim).permute(0, 1, 3, 2)
+            enc_p  = enc.reshape(B, n_v_, encoder_num_patches, embed_dim).permute(0, 1, 3, 2)
             logits = cls_head(enc_p)                       # [B, n_classes]
             loss   = F.cross_entropy(logits, labels)
             loss.backward()
@@ -122,7 +126,7 @@ def classification_zeroshot(self, path, classification_train, classification_val
             ctx_norm, _, _ = _instance_norm(patches)
             enc_out = self.encoder_for(ctx_norm)
             enc     = enc_out["data_patches"]
-            enc_p   = enc.reshape(B, n_v_, num_patches, embed_dim).permute(0, 1, 3, 2)
+            enc_p   = enc.reshape(B, n_v_, encoder_num_patches, embed_dim).permute(0, 1, 3, 2)
             logits  = cls_head(enc_p)
             tc += (logits.argmax(1) == labels).sum().item()
             tt += len(labels)

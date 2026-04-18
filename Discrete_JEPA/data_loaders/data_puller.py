@@ -1161,10 +1161,16 @@ def make_uea_dataloaders(cls_dir: str, dataset_name: str, batch_size: int = 16):
     """Build train/val/test DataLoaders from a UEA .ts dataset.
     Uses _TRAIN.ts for train, _TEST.ts for both val and test.
     Returns (train_loader, val_loader, test_loader, n_classes).
+    Batch size is auto-reduced for high-dimensional datasets (n_vars > 500) to avoid OOM.
     """
     dataset_root = os.path.join(cls_dir, dataset_name)
     ds_train = UEADataset(dataset_root, dataset_name, split='train')
     ds_test  = UEADataset(dataset_root, dataset_name, split='test', _shared=ds_train)
+    # Auto-scale batch size down for very high-var datasets to avoid OOM
+    n_vars = ds_train._samples[0].shape[-1] if ds_train._samples else 1
+    if n_vars > 500:
+        batch_size = max(1, min(batch_size, 16))
+        print(f"[make_uea_dataloaders] {dataset_name}: n_vars={n_vars}, using batch_size={batch_size}")
     mk = lambda ds, shuffle: torch.utils.data.DataLoader(
         ds, batch_size=batch_size, shuffle=shuffle, collate_fn=_pad_collate)
     train_loader = mk(ds_train, True)
