@@ -1174,7 +1174,7 @@ def run_jepa_simple(skip_train: bool = False,
 
 def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
                  classification_dataset=None, anomaly_dataset: str = None,
-                 pretrain_only: bool = False, pred_len: int = None,
+                 pretrain_only: bool = False, classification_only: bool = False, pred_len: int = None,
                  checkpoints=None, random_encoder: bool = False, encoder_layers: int = None,
                  predictor_layers: int = None, lr: float = None, pretrain_source: str = None,
                  num_patches: int = None):
@@ -1198,7 +1198,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
 
     pretrain_source = _resolve_pretrain_source(cfg)
     _pretrain_dset  = pretrain_dataset or cfg.get("pretrain_dataset", "ettm1")
-    _forecast_dset  = forecast_dataset or cfg.get("forecast_dataset") or _pretrain_dset
+    _forecast_dset  = None if (pretrain_only or classification_only) else (forecast_dataset or cfg.get("forecast_dataset") or _pretrain_dset)
 
     # pretrain_source overrides _pretrain_dset for global data
     if pretrain_source in ('monash', 'synthetic', 'monash+synthetic'):
@@ -1562,6 +1562,7 @@ def run_lejepa(skip_train: bool = False,
                classification_dataset=None,
                anomaly_dataset: str = None,
                pretrain_only: bool = False,
+               classification_only: bool = False,
                pred_lens=None,
                checkpoints=None,
                encoder_layers: int = None,
@@ -1610,7 +1611,7 @@ def run_lejepa(skip_train: bool = False,
     sys.path.insert(0, _lj)
     from LeJepa import LeJEPA
 
-    forecast_dataset = forecast_dataset or config.get('forecast_dataset')
+    forecast_dataset = None if (pretrain_only or classification_only) else (forecast_dataset or config.get('forecast_dataset'))
     config["lr_forcasting"] = _get_forecast_lr(config, "lr_forcasting")
 
     # Single-dataset mode: align splits so test never leaks into pretraining
@@ -1644,6 +1645,8 @@ def run_lejepa(skip_train: bool = False,
         print(f"  MODEL: LE-JEPA")
         if pretrain_only:
             print(f"  pretrain: {_src_label}  [pretrain only]")
+        elif classification_only or forecast_dataset is None:
+            print(f"  pretrain: {_src_label}   [classify only]")
         else:
             ds_fore = get_dataset_info(forecast_dataset)
             print(f"  pretrain: {_src_label}   forecast: {forecast_dataset}")

@@ -92,7 +92,7 @@ config = {
     "forecasting_modes": ["zeroshot"],
 
     # ── Classification downstream ─────────────────────────────────────────────
-    "classification_data_dir": "/Users/noammajor/Downloads/Models/Classification data",
+    "classification_data_dir": "/home/shared/datasets/Classification_TS",
     "epoch_classification":    50,
     "lr_classification":       1e-3,
 

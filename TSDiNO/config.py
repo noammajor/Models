@@ -174,7 +174,7 @@ config = {
     "path_num": 0,
 
     # ── Local overrides (TEMP: remove after local testing) ────────────────────
-    "classification_data_dir": "/Users/noammajor/Downloads/Models/Classification data",
+    "classification_data_dir": "/home/shared/datasets/Classification_TS",
 
     # ── Pretraining data source ───────────────────────────────────────────────
     # pretrain_source: "monash" | "synthetic" | "monash+synthetic"
