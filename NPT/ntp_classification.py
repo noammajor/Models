@@ -71,7 +71,7 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
     # Build backbone and load pretrained weights
     backbone = _build_backbone(config, c_in=n_v, num_patch=num_patch, device=device)
     ckpt = torch.load(checkpoint_path, map_location="cpu")
-    state = ckpt.get("model", ckpt)
+    state = ckpt.get("encoder", ckpt.get("model", ckpt))
     backbone_dict = backbone.state_dict()
     filtered = {k: v for k, v in state.items()
                 if k in backbone_dict and backbone_dict[k].shape == v.shape
