@@ -1385,15 +1385,35 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     # ── classification downstream ─────────────────────────────────────────────
     cls_acc = None
     if classification_dataset is not None:
-        sys.path.insert(0, patchtst_dir)
+        sys.path.insert(0, str(patchtst_dir))
         from patchtst_classification import classification_zeroshot as ptst_classify
         from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
-        cls_dir = cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
-        cls_bs  = cfg.get("batch_size", 64)
-        p_s     = cfg.get("patch_len", 16)
+        cls_dir    = cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
+        cls_bs     = cfg.get("batch_size", 64)
+        p_s        = cfg.get("patch_len", 16)
+        _n_patches = num_patches if num_patches is not None else cfg.get("context_points", 512) // p_s
+        _target_T  = _n_patches * p_s
+        import torch.nn.functional as _F
+        def _ptst_patch_collate(batch, _ps=p_s, _tT=_target_T, _nP=_n_patches):
+            xs, ys = zip(*batch)
+            max_t = max(x.shape[0] for x in xs)
+            xs = torch.stack([_F.pad(x, (0, 0, 0, max_t - x.shape[0])) for x in xs])
+            B_, T_, C_ = xs.shape
+            if T_ != _tT:
+                idx = torch.linspace(0, T_ - 1, _tT).long()
+                xs = xs[:, idx, :]
+            xs = xs.reshape(B_, _nP, _ps, C_)
+            return xs, torch.stack(ys)
         if list(Path(os.path.join(cls_dir, classification_dataset)).glob("*_TRAIN.ts")):
-            cls_train, cls_val, cls_test, n_classes = make_uea_dataloaders(
+            _raw_tr, _, _raw_te, n_classes = make_uea_dataloaders(
                 cls_dir, classification_dataset, batch_size=cls_bs)
+            cls_train = torch.utils.data.DataLoader(
+                _raw_tr.dataset, batch_size=cls_bs, shuffle=True,
+                collate_fn=_ptst_patch_collate)
+            cls_val   = None
+            cls_test  = torch.utils.data.DataLoader(
+                _raw_te.dataset, batch_size=cls_bs, shuffle=False,
+                collate_fn=_ptst_patch_collate)
         else:
             _mk = lambda split: torch.utils.data.DataLoader(
                 ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
