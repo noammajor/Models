@@ -1339,47 +1339,48 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         return
 
     # ── forecasting downstream ────────────────────────────────────────────────
-    _target_points = pred_len if pred_len is not None else cfg.get("target_points", 96)
-    print(f"\n[PatchTST] Running forecasting fine-tuning on {_forecast_dset} (target_points={_target_points}) …")
-    result = subprocess.run(
-        [sys.executable, "patchtst_finetune.py",
-         "--dset_finetune",      _forecast_dset,
-         "--is_linear_probe",    "1",
-         "--context_points",  str(cfg.get("context_points", 512)),
-         "--patch_len",       str(cfg.get("patch_len", 16)),
-         "--stride",          str(cfg.get("stride", 16)),
-         "--n_layers",        str(cfg.get("n_layers", 3)),
-         "--n_heads",         str(cfg.get("n_heads", 16)),
-         "--d_model",         str(cfg.get("d_model", 128)),
-         "--d_ff",            str(cfg.get("d_ff", 512)),
-         "--dropout",         str(cfg.get("dropout", 0.2)),
-         "--head_dropout",    str(cfg.get("head_dropout", 0.2)),
-         "--target_points",   str(_target_points),
-         "--pretrained_model", pretrained_model_path,
-         "--random_encoder",   str(int(random_encoder)),
-         "--batch_size",       str(_get_forecast_bs(cfg, 256)),
-         "--num_workers",      str(cfg.get("num_workers", 4)),
-         "--lr",               str(cfg.get("finetune_lr", 1e-4)),
-         "--seed",             "42"],
-        cwd=patchtst_dir, capture_output=True, text=True,
-    )
-    print(result.stdout)
-    if result.returncode != 0:
-        print("[PatchTST] Forecasting fine-tuning exited with errors.")
-        print(result.stderr)
-        return None
+    mse_val, mae_val = None, None
+    if _forecast_dset is None:
+        print("\n[PatchTST] No forecast_dataset — skipping forecasting.")
+    else:
+        _target_points = pred_len if pred_len is not None else cfg.get("target_points", 96)
+        print(f"\n[PatchTST] Running forecasting fine-tuning on {_forecast_dset} (target_points={_target_points}) …")
+        result = subprocess.run(
+            [sys.executable, "patchtst_finetune.py",
+             "--dset_finetune",      _forecast_dset,
+             "--is_linear_probe",    "1",
+             "--context_points",  str(cfg.get("context_points", 512)),
+             "--patch_len",       str(cfg.get("patch_len", 16)),
+             "--stride",          str(cfg.get("stride", 16)),
+             "--n_layers",        str(cfg.get("n_layers", 3)),
+             "--n_heads",         str(cfg.get("n_heads", 16)),
+             "--d_model",         str(cfg.get("d_model", 128)),
+             "--d_ff",            str(cfg.get("d_ff", 512)),
+             "--dropout",         str(cfg.get("dropout", 0.2)),
+             "--head_dropout",    str(cfg.get("head_dropout", 0.2)),
+             "--target_points",   str(_target_points),
+             "--pretrained_model", pretrained_model_path,
+             "--random_encoder",   str(int(random_encoder)),
+             "--batch_size",       str(_get_forecast_bs(cfg, 256)),
+             "--num_workers",      str(cfg.get("num_workers", 4)),
+             "--lr",               str(cfg.get("finetune_lr", 1e-4)),
+             "--seed",             "42"],
+            cwd=patchtst_dir, capture_output=True, text=True,
+        )
+        print(result.stdout)
+        if result.returncode != 0:
+            print("[PatchTST] Forecasting fine-tuning exited with errors.")
+            print(result.stderr)
+            return None
 
-    # Parse MSE/MAE from stdout — the subprocess prints "score: [mse, mae]"
-    # This is guaranteed to be from the current run (not a stale csv).
-    import re as _re
-    mse_val = None
-    mae_val = None
-    _score_match = _re.search(r"score:\s*\[array\(([\d.]+)[^)]*\)[^,]*,\s*array\(([\d.]+)", result.stdout)
-    if _score_match:
-        mse_val = float(_score_match.group(1))
-        mae_val = float(_score_match.group(2))
-        print(f"[PatchTST] MSE on {_forecast_dset}: {mse_val:.4f}")
-        print(f"[PatchTST] MAE on {_forecast_dset}: {mae_val:.4f}")
+        # Parse MSE/MAE from stdout — the subprocess prints "score: [mse, mae]"
+        import re as _re
+        _score_match = _re.search(r"score:\s*\[array\(([\d.]+)[^)]*\)[^,]*,\s*array\(([\d.]+)", result.stdout)
+        if _score_match:
+            mse_val = float(_score_match.group(1))
+            mae_val = float(_score_match.group(2))
+            print(f"[PatchTST] MSE on {_forecast_dset}: {mse_val:.4f}")
+            print(f"[PatchTST] MAE on {_forecast_dset}: {mae_val:.4f}")
 
     # ── classification downstream ─────────────────────────────────────────────
     cls_acc = None
