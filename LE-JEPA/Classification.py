@@ -131,5 +131,5 @@ def classification_zeroshot(self, path, classification_train, classification_val
             tc += (logits.argmax(1) == labels).sum().item()
             tt += len(labels)
     test_acc = tc / tt
-    print(f"[LE-JEPA] Test Accuracy: {test_acc:.4f}  (best val: {best_val_acc:.4f})")
+    print(f"[LE-JEPA] Test Accuracy: {test_acc:.4f}")
     return test_acc

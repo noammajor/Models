@@ -1133,7 +1133,7 @@ def run_jepa_simple(skip_train: bool = False,
             _wrap = lambda ds, shuf: torch.utils.data.DataLoader(
                 ds, batch_size=cls_bs, shuffle=shuf, collate_fn=_patch_collate)
             cls_train = _wrap(_uea_tr.dataset, True)
-            cls_val   = _wrap(_uea_va.dataset, False)
+            cls_val   = None
             cls_test  = _wrap(_uea_te.dataset, False)
         else:
             _mk = lambda split: torch.utils.data.DataLoader(
