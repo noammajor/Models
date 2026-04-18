@@ -1408,7 +1408,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
 
 def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
             classification_dataset=None, anomaly_dataset: str = None,
-            pretrain_only: bool = False, pred_len: int = None,
+            pretrain_only: bool = False, classification_only: bool = False,
+            pred_len: int = None,
             checkpoints=None, encoder_layers: int = None, predictor_layers: int = None,
             lr: float = None, pretrain_source: str = None, num_patches: int = None):
     npt_dir = Path(__file__).parent / "NPT"
@@ -1426,7 +1427,9 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         cfg['pretrained_model_id'] = encoder_layers  # unique checkpoint per layer config
     if num_patches is not None:
         cfg['context_patches'] = num_patches
-        cfg['ratio_patches']   = num_patches   # no forecasting horizon for classification pre-training
+        # NPT computes context_patches = ratio_patches - horizon_t, so add horizon_t here
+        # to ensure the encoder W_pos actually gets num_patches slots (not num_patches - 6)
+        cfg['ratio_patches']   = num_patches + cfg.get('horizon_t', 6)
     if lr is not None:
         cfg['lr'] = lr
 
@@ -1434,7 +1437,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     _pretrain_dset   = pretrain_dataset or cfg.get("pretrain_dataset", "monash")
     if _pretrain_source in ('monash', 'synthetic', 'monash+synthetic'):
         _pretrain_dset = _pretrain_source
-    _forecast_dset = None if pretrain_only else (forecast_dataset or cfg.get("forecast_dataset") or _pretrain_dset)
+    _forecast_dset = None if (pretrain_only or classification_only) else (forecast_dataset or cfg.get("forecast_dataset") or _pretrain_dset)
     cfg["pretrain_dataset"] = _pretrain_dset
     cfg["forecast_dataset"] = _forecast_dset
 
