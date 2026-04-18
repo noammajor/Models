@@ -163,7 +163,7 @@ config = {
 
     # ── Downstream: Classification ────────────────────────────────────────────
     "n_classes": 6,
-    "epochs_classification": 50,
+    "epochs_classification": 20,
     "lr_classification": 0.001,
     "min_lr_classification": 1e-6,
     "batch_size_classification": 16,

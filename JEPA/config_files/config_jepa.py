@@ -93,7 +93,7 @@ config = {
 
     # ── Classification downstream ─────────────────────────────────────────────
     "classification_data_dir": "/home/shared/datasets/Classification_TS",
-    "epoch_classification":    50,
+    "epoch_classification":    20,
     "lr_classification":       1e-3,
 
     # ── Pretraining data source ───────────────────────────────────────────────
