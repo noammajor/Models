@@ -1123,7 +1123,8 @@ def run_jepa_simple(skip_train: bool = False,
             _target_T  = _n_patches * p_s                 # 32 * 16 = 512
             def _patch_collate(batch, _ps=p_s, _tT=_target_T, _nP=_n_patches):
                 xs, ys = zip(*batch)
-                xs = torch.stack(xs)                      # (B, T, C)
+                max_t = max(x.shape[0] for x in xs)
+                xs = torch.stack([torch.nn.functional.pad(x, (0, 0, 0, max_t - x.shape[0])) for x in xs])  # (B, T, C)
                 T  = xs.shape[1]
                 if T != _tT:                              # uniform resample to 512
                     idx = torch.linspace(0, T - 1, _tT).long()
