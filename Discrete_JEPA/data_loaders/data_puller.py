@@ -1169,7 +1169,7 @@ def make_uea_dataloaders(cls_dir: str, dataset_name: str, batch_size: int = 16):
     # Auto-scale batch size down for very high-var datasets to avoid OOM
     n_vars = ds_train._samples[0].shape[-1] if ds_train._samples else 1
     if n_vars > 500:
-        batch_size = max(1, min(batch_size, 2))
+        batch_size = max(1, min(batch_size, 32))
         print(f"[make_uea_dataloaders] {dataset_name}: n_vars={n_vars}, using batch_size={batch_size}")
     mk = lambda ds, shuffle: torch.utils.data.DataLoader(
         ds, batch_size=batch_size, shuffle=shuffle, collate_fn=_pad_collate)
