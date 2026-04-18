@@ -3,6 +3,7 @@ from torch import nn
 from torch import Tensor
 import torch.nn.functional as F
 from typing import Callable, Optional
+import numpy as np
 
 class MultiheadAttention(nn.Module):
     def __init__(self, d_model, n_heads, d_k=None, d_v=None, res_attention=False, attn_dropout=0., proj_dropout=0., qkv_bias=True, lsa=False):
