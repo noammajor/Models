@@ -56,9 +56,14 @@ def classification_zeroshot(self, path, classification_train, classification_val
     embed_dim = config["encoder_embed_dim"]
 
     # Infer n_vars and num_patches from first batch
+    patch_len = config.get("patch_size_forcasting", 16)
     sample_patches, _ = next(iter(classification_train))
     if sample_patches.dim() == 3:
-        sample_patches = sample_patches.unsqueeze(-1)
+        # Raw (B, T, C) from UEADataset — patch to (B, P, patch_len, C)
+        B0, T0, C0 = sample_patches.shape
+        T_pad = ((T0 + patch_len - 1) // patch_len) * patch_len
+        sample_patches = F.pad(sample_patches, (0, 0, 0, T_pad - T0))
+        sample_patches = sample_patches.reshape(B0, T_pad // patch_len, patch_len, C0)
     num_patches = sample_patches.shape[1]
     n_v         = sample_patches.shape[-1]
 
