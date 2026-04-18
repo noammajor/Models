@@ -66,11 +66,16 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
         res_attention = False,
     ).to(device)
 
-    # Load pretrained backbone weights (ignore head)
+    # Load pretrained backbone weights (skip head and shape mismatches)
     ckpt = torch.load(checkpoint_path, map_location="cpu")
     state = ckpt.get("model", ckpt)
-    missing, unexpected = model.load_state_dict(state, strict=False)
-    print(f"  Loaded backbone — missing: {len(missing)}, unexpected: {len(unexpected)}")
+    model_dict = model.state_dict()
+    filtered = {k: v for k, v in state.items()
+                if k in model_dict and model_dict[k].shape == v.shape
+                and "head" not in k}
+    model_dict.update(filtered)
+    model.load_state_dict(model_dict)
+    print(f"  Loaded {len(filtered)}/{len(model_dict)} parameters from checkpoint")
 
     # Freeze backbone, train only head
     for name, p in model.named_parameters():

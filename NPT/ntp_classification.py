@@ -72,7 +72,13 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
     backbone = _build_backbone(config, c_in=n_v, num_patch=num_patch, device=device)
     ckpt = torch.load(checkpoint_path, map_location="cpu")
     state = ckpt.get("model", ckpt)
-    backbone.load_state_dict(state, strict=False)
+    backbone_dict = backbone.state_dict()
+    filtered = {k: v for k, v in state.items()
+                if k in backbone_dict and backbone_dict[k].shape == v.shape
+                and "head" not in k}
+    backbone_dict.update(filtered)
+    backbone.load_state_dict(backbone_dict)
+    print(f"  Loaded {len(filtered)}/{len(backbone_dict)} parameters from checkpoint")
     backbone.eval()
     for p in backbone.parameters():
         p.requires_grad = False
