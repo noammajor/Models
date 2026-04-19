@@ -1194,8 +1194,9 @@ class AnomalyDataPuller(Dataset):
     """
     Anomaly detection dataset loader matching the reference benchmark protocol.
 
-    Loads raw [T, C] time series, normalises with StandardScaler fit on train,
-    and returns sliding windows patched to [n_patches, patch_size, n_vars].
+    Loads raw [T, C] time series from prep_anomaly_data.py output, normalises
+    with StandardScaler fit on train, and returns sliding windows patched to
+    [n_patches, patch_size, n_vars].
 
     Expected files under {data_dir}/{dataset}/:
         train.npy        — [T, C]  float  (raw, unnormalised)
@@ -1221,7 +1222,7 @@ class AnomalyDataPuller(Dataset):
         if not root.exists():
             raise FileNotFoundError(
                 f"Anomaly dataset not found: {root}\n"
-                f"Place your dataset files under {root}/ and re-run.")
+                f"Run prep_anomaly_data.py to generate it.")
 
         # ── load raw [T, C] data ─────────────────────────────────────────────
         X_tr = np.load(root / "train.npy", allow_pickle=True).astype(np.float32)
@@ -1236,15 +1237,14 @@ class AnomalyDataPuller(Dataset):
         else:
             raise FileNotFoundError(f"No label file found in {root}.")
 
-        # ensure 2D [T, C]
+        # ensure 2D [T, C] — handles old pre-windowed [N, win, C] format
         if X_tr.ndim == 3:
-            # old pre-windowed format [N, window_size, C] → flatten back to [T, C]
             X_tr = X_tr.reshape(-1, X_tr.shape[-1])
             X_te = X_te.reshape(-1, X_te.shape[-1])
         if X_tr.ndim == 1:
             X_tr = X_tr[:, None]
             X_te = X_te[:, None]
-        if X_tr.shape[0] < X_tr.shape[1]:   # likely [C, T] → transpose
+        if X_tr.shape[0] < X_tr.shape[1]:
             X_tr = X_tr.T
             X_te = X_te.T
 
