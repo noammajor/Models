@@ -99,11 +99,13 @@ def anomaly_zeroshot(self, path, anomaly_train, anomaly_test,
             patches = patches.unsqueeze(-1)
         patches = patches.to(self.device)
         B, P, PL, C = patches.shape
-        # reshape to [B*C, P, PL] for encoder
-        x = patches.permute(0, 3, 1, 2).reshape(B * C, P, PL)
-        norm, _, _ = _instance_norm(x)
-        enc = self.encoder(norm)                              # [B*C, P, embed_dim]
-        return enc.reshape(B, C, P, embed_dim).mean(dim=1)   # [B, P, embed_dim]
+        # normalise per-channel then reshape back to 4D for LE-JEPA encoder
+        flat = patches.permute(0, 3, 1, 2).reshape(B * C, P, PL)
+        norm_flat, _, _ = _instance_norm(flat)
+        norm4d = norm_flat.reshape(B, C, P, PL).permute(0, 2, 3, 1)  # [B, P, PL, C]
+        enc_out = self.encoder(norm4d)                                 # expects [B, P, PL, C]
+        z = enc_out["data_patches"]                                    # [B*C, P, embed_dim]
+        return z.reshape(B, C, P, embed_dim).mean(dim=1)              # [B, P, embed_dim]
 
     # ── (1) train decoder (with validation + early stopping) ─────────────────
     all_batches   = list(anomaly_train)

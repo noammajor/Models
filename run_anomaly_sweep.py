@@ -98,7 +98,7 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
             for row in csv.DictReader(f):
                 rows.append(row)
                 existing.add((row["model"], int(row["encoder_layers"]),
-                              row["pretrain_source"], row["dataset"]))
+                              row.get("pretrain_source", "monash"), row["dataset"]))
 
     print(f"\n{'='*60}")
     print(f"  {model.upper()}  layers={encoder_layers}  src={pretrain_source}")
@@ -113,7 +113,7 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
             continue
 
         print(f"\n--- {model} / layers={encoder_layers} / {dataset} ---")
-        log_path = log_base / f"layers{encoder_layers}" / model / f"{dataset}.log"
+        log_path = log_base / f"layers{encoder_layers}" / pretrain_source / model / f"{dataset}.log"
 
         f1 = prec = rec = acc = None
         with log_to_file(log_path):
