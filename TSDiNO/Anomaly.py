@@ -103,9 +103,10 @@ def anomaly_zeroshot(args, path_num, anomaly_train, anomaly_test,
     if os.path.exists(checkpoint_path):
         ckpt   = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
         raw_sd = ckpt['teacher']
-        # TSMultiCropWrapper wraps as backbone.* → strip prefix
-        new_sd = {k[len('backbone.'):]: v
-                  for k, v in raw_sd.items() if k.startswith('backbone.')}
+        # TSMultiCropWrapper.backbone = PatchTST, PatchTST.backbone = PatchTSTEncoder
+        # → encoder weights are at backbone.backbone.*
+        new_sd = {k[len('backbone.backbone.'):]: v
+                  for k, v in raw_sd.items() if k.startswith('backbone.backbone.')}
         missing, unexpected = backbone.load_state_dict(new_sd, strict=False)
         print(f"  Loaded {len(new_sd)} weights | missing: {len(missing)} | unexpected: {len(unexpected)}")
     else:
