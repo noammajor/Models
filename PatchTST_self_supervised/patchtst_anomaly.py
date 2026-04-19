@@ -82,9 +82,13 @@ def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
     # Infer shape from first batch
     sample = next(iter(anomaly_train))
     patches_sample = sample[0] if isinstance(sample, (list, tuple)) else sample
-    num_patch = patches_sample.shape[1]
     patch_len = patches_sample.shape[2]
     n_vars    = patches_sample.shape[3]
+
+    # Load checkpoint first — infer num_patch from W_pos so size matches checkpoint
+    ckpt  = torch.load(checkpoint_path, map_location="cpu")
+    state = ckpt.get("model", ckpt)
+    num_patch = state["backbone.W_pos"].shape[0]   # e.g. 21 for cw=336
 
     # Build backbone with pretrain head to get intermediate representations
     backbone = PatchTST(
@@ -105,8 +109,6 @@ def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
         res_attention = False,
     ).to(device)
 
-    ckpt = torch.load(checkpoint_path, map_location="cpu")
-    state = ckpt.get("model", ckpt)
     backbone.load_state_dict(state, strict=False)
     backbone.eval()
     for p in backbone.parameters():
