@@ -23,10 +23,10 @@ Usage:
 """
 
 import argparse
-import csv
 import os
 import subprocess
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -87,21 +87,6 @@ def _launch(cmd: list, gpu: int, log_path: Path, dry_run: bool, label: str):
     proc._log_fh = fh
     proc._label  = label
     return proc
-
-
-def _wait(procs: list):
-    failed = []
-    for proc in procs:
-        proc.wait()
-        proc._log_fh.close()
-        status = "OK" if proc.returncode == 0 else f"FAILED (rc={proc.returncode})"
-        print(f"    {proc._label}: {status}")
-        if proc.returncode != 0:
-            failed.append(proc._label)
-    if failed:
-        print(f"\n  WARNING: {len(failed)} job(s) failed: {failed}")
-    else:
-        print(f"\n  All {len(procs)} jobs completed successfully.")
 
 
 # ── phase builders ────────────────────────────────────────────────────────────
@@ -175,25 +160,51 @@ def anomaly_cmd(model: str, dataset: str, seed: int, gpu: int, pretrain_source: 
     ]
 
 
-# ── CSV helpers ───────────────────────────────────────────────────────────────
+# ── per-model pipeline (runs in its own thread) ───────────────────────────────
 
-def _load_csv(path: Path, key_fields: list):
-    existing = set()
-    rows = []
-    if path.exists():
-        with open(path) as f:
-            for row in csv.DictReader(f):
-                rows.append(row)
-                existing.add(tuple(row[k] for k in key_fields))
-    return rows, existing
+def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
+                        skip_pretrain: bool, dry_run: bool, log_base: Path):
+    def _step(proc):
+        if proc:
+            proc.wait()
+            proc._log_fh.close()
+            status = "OK" if proc.returncode == 0 else f"FAILED (rc={proc.returncode})"
+            print(f"    {proc._label}: {status}")
 
+    if not skip_pretrain:
+        # 1a — standard pretrain (forecasting/anomaly context)
+        _step(_launch(pretrain_cmd(model, seed, gpu, pretrain_source),
+                      gpu, log_base / f"seed{seed}" / f"pretrain_{model}.log",
+                      dry_run, f"pretrain/{model}/seed{seed}"))
 
-def _append_csv(path: Path, fieldnames: list, rows: list):
-    path.parent.mkdir(exist_ok=True)
-    with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+        # 1b — classification pretrain (num_patches=72)
+        _step(_launch(pretrain_cls_cmd(model, seed, pretrain_source),
+                      gpu, log_base / f"seed{seed}" / f"pretrain_cls_{model}.log",
+                      dry_run, f"pretrain_cls/{model}/seed{seed}"))
+
+    # 2 — forecasting (all datasets in one subprocess)
+    _step(_launch(forecast_cmd(model, ",".join(FORECAST_DATASETS), seed, gpu, pretrain_source),
+                  gpu, log_base / f"seed{seed}" / f"forecast_{model}.log",
+                  dry_run, f"forecast/{model}/seed{seed}"))
+
+    # 3 — classification (sequential per dataset)
+    for dataset in CLASSIFICATION_DATASETS:
+        _step(_launch(classify_cmd(model, dataset, seed, gpu, pretrain_source),
+                      gpu, log_base / f"seed{seed}" / f"cls_{model}_{dataset}.log",
+                      dry_run, f"cls/{model}/{dataset}/seed{seed}"))
+
+    # 4 — anomaly (all datasets in parallel within this model)
+    procs = []
+    for dataset in ANOMALY_DATASETS:
+        proc = _launch(anomaly_cmd(model, dataset, seed, gpu, pretrain_source),
+                       gpu, log_base / f"seed{seed}" / f"anom_{model}_{dataset}.log",
+                       dry_run, f"anom/{model}/{dataset}/seed{seed}")
+        if proc:
+            procs.append(proc)
+    for proc in procs:
+        _step(proc)
+
+    print(f"  [{model}/seed{seed}] pipeline complete.")
 
 
 # ── main sweep ────────────────────────────────────────────────────────────────
@@ -201,86 +212,27 @@ def _append_csv(path: Path, fieldnames: list, rows: list):
 def run_seed_analysis(seeds, models, gpu_override, skip_pretrain, dry_run, pretrain_source=PRETRAIN_SOURCE):
     log_base = ROOT / "logs" / "seed_analysis"
 
-    forecast_csv = ROOT / "results" / "seed_analysis_forecast.csv"
-    cls_csv      = ROOT / "results" / "seed_analysis_classification.csv"
-    anom_csv     = ROOT / "results" / "seed_analysis_anomaly.csv"
-
     for seed in seeds:
         print(f"\n{'='*60}")
         print(f"  SEED {seed}  (encoder_layers={ENCODER_LAYERS}, src={pretrain_source})")
         print(f"{'='*60}")
 
-        # ── Phase 1a: standard pretrain (forecasting + anomaly) ──────────────
-        if not skip_pretrain:
-            print(f"\n  [seed={seed}] Phase 1a — Standard pretrain (forecasting/anomaly context)")
-            procs = []
-            for model in models:
-                gpu  = gpu_override if gpu_override is not None else MODEL_GPU[model]
-                cmd  = pretrain_cmd(model, seed, gpu, pretrain_source)
-                log  = log_base / f"seed{seed}" / f"pretrain_{model}.log"
-                proc = _launch(cmd, gpu, log, dry_run, f"pretrain/{model}/seed{seed}")
-                if proc is not None:
-                    procs.append(proc)
-            if procs:
-                print(f"\n  Waiting for {len(procs)} pretrain jobs …")
-                _wait(procs)
-
-            # ── Phase 1b: classification pretrain (num_patches=72, 1152 ts) ──
-            print(f"\n  [seed={seed}] Phase 1b — Classification pretrain (num_patches={CLS_NUM_PATCHES})")
-            procs = []
-            for model in models:
-                gpu  = gpu_override if gpu_override is not None else MODEL_GPU[model]
-                cmd  = pretrain_cls_cmd(model, seed, pretrain_source)
-                log  = log_base / f"seed{seed}" / f"pretrain_cls_{model}.log"
-                proc = _launch(cmd, gpu, log, dry_run, f"pretrain_cls/{model}/seed{seed}")
-                if proc is not None:
-                    procs.append(proc)
-            if procs:
-                print(f"\n  Waiting for {len(procs)} cls pretrain jobs …")
-                _wait(procs)
-
-        # ── Phase 2: forecasting ──────────────────────────────────────────────
-        print(f"\n  [seed={seed}] Phase 2 — Forecasting")
-        f_rows, f_existing = _load_csv(forecast_csv, ["model", "seed", "dataset", "pred_len"])
-        procs = []
+        threads = []
         for model in models:
             gpu = gpu_override if gpu_override is not None else MODEL_GPU[model]
-            log = log_base / f"seed{seed}" / f"forecast_{model}.log"
-            cmd = forecast_cmd(model, ",".join(FORECAST_DATASETS), seed, gpu, pretrain_source)
-            proc = _launch(cmd, gpu, log, dry_run, f"forecast/{model}/seed{seed}")
-            if proc is not None:
-                procs.append(proc)
-        if procs:
-            print(f"\n  Waiting for {len(procs)} forecast jobs …")
-            _wait(procs)
+            t = threading.Thread(
+                target=_run_model_pipeline,
+                args=(model, seed, gpu, pretrain_source, skip_pretrain, dry_run, log_base),
+                name=f"{model}/seed{seed}",
+                daemon=True,
+            )
+            threads.append(t)
+            t.start()
 
-        # ── Phase 3: classification ───────────────────────────────────────────
-        print(f"\n  [seed={seed}] Phase 3 — Classification")
-        for model in models:
-            gpu = gpu_override if gpu_override is not None else MODEL_GPU[model]
-            for dataset in CLASSIFICATION_DATASETS:
-                log = log_base / f"seed{seed}" / f"cls_{model}_{dataset}.log"
-                cmd = classify_cmd(model, dataset, seed, gpu, pretrain_source)
-                proc = _launch(cmd, gpu, log, dry_run, f"cls/{model}/{dataset}/seed{seed}")
-                if proc and not dry_run:
-                    proc.wait(); proc._log_fh.close()
-                    status = "OK" if proc.returncode == 0 else f"FAILED (rc={proc.returncode})"
-                    print(f"    {proc._label}: {status}")
+        for t in threads:
+            t.join()
 
-        # ── Phase 4: anomaly detection ────────────────────────────────────────
-        print(f"\n  [seed={seed}] Phase 4 — Anomaly detection")
-        procs = []
-        for model in models:
-            gpu = gpu_override if gpu_override is not None else MODEL_GPU[model]
-            for dataset in ANOMALY_DATASETS:
-                log = log_base / f"seed{seed}" / f"anom_{model}_{dataset}.log"
-                cmd = anomaly_cmd(model, dataset, seed, gpu, pretrain_source)
-                proc = _launch(cmd, gpu, log, dry_run, f"anom/{model}/{dataset}/seed{seed}")
-                if proc is not None:
-                    procs.append(proc)
-        if procs:
-            print(f"\n  Waiting for {len(procs)} anomaly jobs …")
-            _wait(procs)
+        print(f"\n  Seed {seed} complete.")
 
     print(f"\n\nSeed analysis complete. Logs in {log_base.relative_to(ROOT)}/")
     print(f"Results: results/seed_analysis_*.csv")
