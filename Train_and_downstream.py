@@ -288,7 +288,7 @@ def run_dino(skip_train: bool = False,
         print(f"  MODEL: DINO  (TSDiNO)")
         print(f"  pretrain: {pretrain_dataset}   forecast: {forecast_dataset}")
         print("="*60)
-    if not pretrain_only:
+    if not pretrain_only and forecast_dataset is not None:
         dino_cfg["data_path_forecast_training"]    = ds_fore["csv_path"]
         dino_cfg["data_path_forecast_test"]        = ds_fore["csv_path"]
         dino_cfg["parms_for_training_forecasting"] = ds_fore["columns"]
