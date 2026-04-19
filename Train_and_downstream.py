@@ -2425,7 +2425,7 @@ RUNNERS = {
     "lejepa":          run_lejepa,
     "patchtst":        run_patchtst,
     "patchtst_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, pretrain_only=False, pred_len=None, checkpoints=None, encoder_layers=None: run_patchtst(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, pretrain_only=pretrain_only, pred_len=pred_len, checkpoints=checkpoints, random_encoder=True, encoder_layers=encoder_layers),
-    "jepa_simple_random": lambda **kw: run_jepa_simple(**{**kw, "random_encoder": True}),
+    "jepa_simple_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, anomaly_dataset=None, pred_lens=None, checkpoints=None, pretrain_only=False, encoder_layers=None, predictor_layers=None, lr=None, pretrain_source=None, checkpoint=None, num_patches=None: run_jepa_simple(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, anomaly_dataset=anomaly_dataset, pred_lens=pred_lens, checkpoints=checkpoints, pretrain_only=pretrain_only, encoder_layers=encoder_layers, predictor_layers=predictor_layers, lr=lr, pretrain_source=pretrain_source, checkpoint=checkpoint, num_patches=num_patches, random_encoder=True),
     "npt":             run_ntp,
     "random":          run_random,
     "timedart":        run_timedart,
