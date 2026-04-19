@@ -182,10 +182,11 @@ def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
                       gpu, log_base / f"seed{seed}" / f"pretrain_cls_{model}.log",
                       dry_run, f"pretrain_cls/{model}/seed{seed}"))
 
-    # 2 — forecasting (all datasets in one subprocess)
-    _step(_launch(forecast_cmd(model, ",".join(FORECAST_DATASETS), seed, gpu, pretrain_source),
-                  gpu, log_base / f"seed{seed}" / f"forecast_{model}.log",
-                  dry_run, f"forecast/{model}/seed{seed}"))
+    # 2 — forecasting (one subprocess per dataset)
+    for dataset in FORECAST_DATASETS:
+        _step(_launch(forecast_cmd(model, dataset, seed, gpu, pretrain_source),
+                      gpu, log_base / f"seed{seed}" / f"forecast_{model}_{dataset}.log",
+                      dry_run, f"forecast/{model}/{dataset}/seed{seed}"))
 
     # 3 — classification (sequential per dataset)
     for dataset in CLASSIFICATION_DATASETS:
