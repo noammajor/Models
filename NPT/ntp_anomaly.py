@@ -84,8 +84,14 @@ def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
 
     # Load checkpoint first — infer num_patch from W_pos so size matches checkpoint
     ckpt  = torch.load(checkpoint_path, map_location="cpu")
-    state = ckpt.get("model", ckpt)
-    num_patch = state["backbone.W_pos"].shape[0]   # e.g. 21 for cw=336
+    # NPT saves ckpt["encoder"] = model.backbone.state_dict() (no "backbone." prefix)
+    state = ckpt.get("encoder", ckpt.get("model", ckpt))
+    if "W_pos" in state:
+        num_patch = state["W_pos"].shape[0]
+    elif "backbone.W_pos" in state:
+        num_patch = state["backbone.W_pos"].shape[0]
+    else:
+        raise KeyError(f"Cannot find W_pos in checkpoint keys: {list(state.keys())[:10]}")
 
     backbone = PatchTST(
         c_in         = n_vars,
@@ -105,7 +111,7 @@ def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
         res_attention = False,
     ).to(device)
 
-    backbone.load_state_dict(state, strict=False)
+    backbone.backbone.load_state_dict(state, strict=False)
     backbone.eval()
     for p in backbone.parameters():
         p.requires_grad = False

@@ -2,15 +2,14 @@
 """
 prep_anomaly_data.py — Preprocess anomaly detection datasets into standardised format.
 
-Reads each dataset from its native format (2D .npy, CSV, or Excel),
-applies a sliding window, and saves as:
-    {out_dir}/{DATASET}/train.npy       [N_train, window_size, C]
-    {out_dir}/{DATASET}/test.npy        [N_test,  window_size, C]
-    {out_dir}/{DATASET}/test_labels.npy [N_test,  window_size]   int
+Reads each dataset from its native format (2D .npy, CSV, or Excel) and saves as
+raw [T, C] arrays (no windowing, no normalisation — handled at load time):
+    {out_dir}/{DATASET}/train.npy       [T_train, C]  float32
+    {out_dir}/{DATASET}/test.npy        [T_test,  C]  float32
+    {out_dir}/{DATASET}/test_labels.npy [T_test]      int64
 
 Usage:
     python prep_anomaly_data.py
-    python prep_anomaly_data.py --window_size 100 --stride 100
     python prep_anomaly_data.py --in_dir /path/to/raw --out_dir /path/to/Anomaly_TS
 """
 
@@ -19,19 +18,6 @@ import numpy as np
 import os
 from pathlib import Path
 
-
-def sliding_windows(x, window_size, stride):
-    """x: [T, C] → [N, window_size, C]"""
-    T = x.shape[0]
-    starts = range(0, T - window_size + 1, stride)
-    return np.stack([x[s:s + window_size] for s in starts])
-
-
-def sliding_windows_1d(x, window_size, stride):
-    """x: [T] → [N, window_size]"""
-    T = x.shape[0]
-    starts = range(0, T - window_size + 1, stride)
-    return np.stack([x[s:s + window_size] for s in starts])
 
 
 def load_npy(path):
@@ -42,7 +28,7 @@ def load_npy_labels(path):
     return np.load(path, allow_pickle=True).astype(np.int64)
 
 
-def process_smd(in_dir, out_dir, window_size, stride):
+def process_smd(in_dir, out_dir):
     d = Path(in_dir) / "SMD"
     o = Path(out_dir) / "SMD"
     o.mkdir(parents=True, exist_ok=True)
@@ -51,23 +37,13 @@ def process_smd(in_dir, out_dir, window_size, stride):
     X_te = load_npy(d / "SMD_test.npy")             # [T, 38]
     labels = load_npy_labels(d / "SMD_test_label.npy")  # [T]
 
-    # Normalize using train stats
-    mean = X_tr.mean(axis=0, keepdims=True)
-    std  = X_tr.std(axis=0, keepdims=True) + 1e-8
-    X_tr = (X_tr - mean) / std
-    X_te = (X_te - mean) / std
-
-    train_w  = sliding_windows(X_tr, window_size, stride)
-    test_w   = sliding_windows(X_te, window_size, stride)
-    labels_w = sliding_windows_1d(labels, window_size, stride)
-
-    np.save(o / "train.npy",       train_w.astype(np.float32))
-    np.save(o / "test.npy",        test_w.astype(np.float32))
-    np.save(o / "test_labels.npy", labels_w.astype(np.int64))
-    print(f"SMD  → train {train_w.shape}  test {test_w.shape}  labels {labels_w.shape}")
+    np.save(o / "train.npy",       X_tr.astype(np.float32))
+    np.save(o / "test.npy",        X_te.astype(np.float32))
+    np.save(o / "test_labels.npy", labels.astype(np.int64))
+    print(f"SMD  → train {X_tr.shape}  test {X_te.shape}  labels {labels.shape}")
 
 
-def process_msl(in_dir, out_dir, window_size, stride):
+def process_msl(in_dir, out_dir):
     d = Path(in_dir) / "MSL"
     o = Path(out_dir) / "MSL"
     o.mkdir(parents=True, exist_ok=True)
@@ -76,22 +52,13 @@ def process_msl(in_dir, out_dir, window_size, stride):
     X_te = load_npy(d / "MSL_test.npy")                 # [T, 55]
     labels = np.load(d / "MSL_test_label.npy").astype(np.int64)  # [T]
 
-    mean = X_tr.mean(axis=0, keepdims=True)
-    std  = X_tr.std(axis=0, keepdims=True) + 1e-8
-    X_tr = (X_tr - mean) / std
-    X_te = (X_te - mean) / std
-
-    train_w  = sliding_windows(X_tr, window_size, stride)
-    test_w   = sliding_windows(X_te, window_size, stride)
-    labels_w = sliding_windows_1d(labels, window_size, stride)
-
-    np.save(o / "train.npy",       train_w.astype(np.float32))
-    np.save(o / "test.npy",        test_w.astype(np.float32))
-    np.save(o / "test_labels.npy", labels_w.astype(np.int64))
-    print(f"MSL  → train {train_w.shape}  test {test_w.shape}  labels {labels_w.shape}")
+    np.save(o / "train.npy",       X_tr.astype(np.float32))
+    np.save(o / "test.npy",        X_te.astype(np.float32))
+    np.save(o / "test_labels.npy", labels.astype(np.int64))
+    print(f"MSL  → train {X_tr.shape}  test {X_te.shape}  labels {labels.shape}")
 
 
-def process_smap(in_dir, out_dir, window_size, stride):
+def process_smap(in_dir, out_dir):
     d = Path(in_dir) / "SMAP"
     o = Path(out_dir) / "SMAP"
     o.mkdir(parents=True, exist_ok=True)
@@ -100,22 +67,13 @@ def process_smap(in_dir, out_dir, window_size, stride):
     X_te = load_npy(d / "SMAP_test.npy")                # [T, 25]
     labels = np.load(d / "SMAP_test_label.npy").astype(np.int64)  # [T]
 
-    mean = X_tr.mean(axis=0, keepdims=True)
-    std  = X_tr.std(axis=0, keepdims=True) + 1e-8
-    X_tr = (X_tr - mean) / std
-    X_te = (X_te - mean) / std
-
-    train_w  = sliding_windows(X_tr, window_size, stride)
-    test_w   = sliding_windows(X_te, window_size, stride)
-    labels_w = sliding_windows_1d(labels, window_size, stride)
-
-    np.save(o / "train.npy",       train_w.astype(np.float32))
-    np.save(o / "test.npy",        test_w.astype(np.float32))
-    np.save(o / "test_labels.npy", labels_w.astype(np.int64))
-    print(f"SMAP → train {train_w.shape}  test {test_w.shape}  labels {labels_w.shape}")
+    np.save(o / "train.npy",       X_tr.astype(np.float32))
+    np.save(o / "test.npy",        X_te.astype(np.float32))
+    np.save(o / "test_labels.npy", labels.astype(np.int64))
+    print(f"SMAP → train {X_tr.shape}  test {X_te.shape}  labels {labels.shape}")
 
 
-def process_psm(in_dir, out_dir, window_size, stride):
+def process_psm(in_dir, out_dir):
     import pandas as pd
     d = Path(in_dir) / "PSM"
     o = Path(out_dir) / "PSM"
@@ -131,22 +89,13 @@ def process_psm(in_dir, out_dir, window_size, stride):
     X_tr = np.nan_to_num(X_tr, nan=0.0)
     X_te = np.nan_to_num(X_te, nan=0.0)
 
-    mean = X_tr.mean(axis=0, keepdims=True)
-    std  = X_tr.std(axis=0, keepdims=True) + 1e-8
-    X_tr = (X_tr - mean) / std
-    X_te = (X_te - mean) / std
-
-    train_w  = sliding_windows(X_tr, window_size, stride)
-    test_w   = sliding_windows(X_te, window_size, stride)
-    labels_w = sliding_windows_1d(labels, window_size, stride)
-
-    np.save(o / "train.npy",       train_w.astype(np.float32))
-    np.save(o / "test.npy",        test_w.astype(np.float32))
-    np.save(o / "test_labels.npy", labels_w.astype(np.int64))
-    print(f"PSM  → train {train_w.shape}  test {test_w.shape}  labels {labels_w.shape}")
+    np.save(o / "train.npy",       X_tr.astype(np.float32))
+    np.save(o / "test.npy",        X_te.astype(np.float32))
+    np.save(o / "test_labels.npy", labels.astype(np.int64))
+    print(f"PSM  → train {X_tr.shape}  test {X_te.shape}  labels {labels.shape}")
 
 
-def process_swat(in_dir, out_dir, window_size, stride):
+def process_swat(in_dir, out_dir):
     import pandas as pd
     d = Path(in_dir) / "SWaT"
     o = Path(out_dir) / "SWaT"
@@ -184,32 +133,20 @@ def process_swat(in_dir, out_dir, window_size, stride):
     X_tr = np.nan_to_num(X_tr, nan=0.0)
     X_te = np.nan_to_num(X_te, nan=0.0)
 
-    mean = X_tr.mean(axis=0, keepdims=True)
-    std  = X_tr.std(axis=0, keepdims=True) + 1e-8
-    X_tr = (X_tr - mean) / std
-    X_te = (X_te - mean) / std
-
-    train_w  = sliding_windows(X_tr, window_size, stride)
-    test_w   = sliding_windows(X_te, window_size, stride)
-    labels_w = sliding_windows_1d(labels, window_size, stride)
-
-    np.save(o / "train.npy",       train_w.astype(np.float32))
-    np.save(o / "test.npy",        test_w.astype(np.float32))
-    np.save(o / "test_labels.npy", labels_w.astype(np.int64))
-    print(f"SWaT → train {train_w.shape}  test {test_w.shape}  labels {labels_w.shape}")
+    np.save(o / "train.npy",       X_tr.astype(np.float32))
+    np.save(o / "test.npy",        X_te.astype(np.float32))
+    np.save(o / "test_labels.npy", labels.astype(np.int64))
+    print(f"SWaT → train {X_tr.shape}  test {X_te.shape}  labels {labels.shape}")
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--in_dir",      default="anomoly detection data")
-    parser.add_argument("--out_dir",     default="Anomaly_TS")
-    parser.add_argument("--window_size", type=int, default=100)
-    parser.add_argument("--stride",      type=int, default=100)
-    parser.add_argument("--datasets",    nargs="+",
+    parser.add_argument("--in_dir",   default="anomoly detection data")
+    parser.add_argument("--out_dir",  default="Anomaly_TS")
+    parser.add_argument("--datasets", nargs="+",
                         default=["SMD", "MSL", "SMAP", "PSM", "SWaT"])
     args = parser.parse_args()
 
-    print(f"window_size={args.window_size}  stride={args.stride}")
     print(f"in:  {args.in_dir}")
     print(f"out: {args.out_dir}\n")
 
@@ -224,7 +161,7 @@ def main():
     for ds in args.datasets:
         if ds in processors:
             try:
-                processors[ds](args.in_dir, args.out_dir, args.window_size, args.stride)
+                processors[ds](args.in_dir, args.out_dir)
             except Exception as e:
                 print(f"{ds}: ERROR — {e}")
         else:

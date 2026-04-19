@@ -1192,27 +1192,30 @@ def make_uea_dataloaders(cls_dir: str, dataset_name: str, batch_size: int = 16):
 
 class AnomalyDataPuller(Dataset):
     """
-    Loads a time-series anomaly detection dataset.
+    Anomaly detection dataset loader matching the reference benchmark protocol.
 
-    Stand-in path: /home/shared/datasets/Anomaly_TS/{dataset_name}/
-    Expected files (auto-detected):
-        train.npy          — [N, T, C]  float,  no labels (normal data only)
-        test.npy           — [N, T, C]  float
-        test_labels.npy    — [N, T]     int (0=normal, 1=anomaly)
-           or test_labels_processed.npy
+    Loads raw [T, C] time series, normalises with StandardScaler fit on train,
+    and returns sliding windows patched to [n_patches, patch_size, n_vars].
 
-    All splits are StandardScaler-normalised using stats fit on the train split.
-    Windows are patched into [n_patches, patch_size, n_vars] on the fly.
+    Expected files under {data_dir}/{dataset}/:
+        train.npy        — [T, C]  float  (raw, unnormalised)
+        test.npy         — [T, C]  float
+        test_labels.npy  — [T]     int    (0=normal, 1=anomaly)
+
+    val split = last 20 % of train (matches reference loaders).
 
     Args:
         data_dir   : root directory containing dataset sub-folders
         dataset    : sub-folder name, e.g. "MSL"
-        patch_size : patch length; seq_len is zero-padded to a multiple of this
-        which      : "train" | "test"
+        patch_size : patch length used to reshape each window
+        win_size   : sliding window length in timesteps (default 100)
+        step       : stride between consecutive windows (default 1)
+        which      : "train" | "val" | "test"
     """
 
-    def __init__(self, data_dir: str, dataset: str, patch_size: int, which: str = "train"):
-        assert which in ("train", "test")
+    def __init__(self, data_dir: str, dataset: str, patch_size: int,
+                 win_size: int = 100, step: int = 1, which: str = "train"):
+        assert which in ("train", "val", "test")
         root = Path(data_dir) / dataset
 
         if not root.exists():
@@ -1220,76 +1223,79 @@ class AnomalyDataPuller(Dataset):
                 f"Anomaly dataset not found: {root}\n"
                 f"Place your dataset files under {root}/ and re-run.")
 
-        # ── load data ────────────────────────────────────────────────────────
+        # ── load raw [T, C] data ─────────────────────────────────────────────
         X_tr = np.load(root / "train.npy", allow_pickle=True).astype(np.float32)
         X_te = np.load(root / "test.npy",  allow_pickle=True).astype(np.float32)
 
-        # auto-detect label file name
         for label_file in ("test_labels.npy", "test_labels_processed.npy",
                            "test_label.npy", "labels_test.npy"):
             if (root / label_file).exists():
-                labels = np.load(root / label_file, allow_pickle=True).astype(np.int64)
+                labels = np.load(root / label_file, allow_pickle=True) \
+                             .astype(np.int64).reshape(-1)
                 break
         else:
-            raise FileNotFoundError(
-                f"No label file found in {root}. "
-                "Expected: test_labels.npy or test_labels_processed.npy")
+            raise FileNotFoundError(f"No label file found in {root}.")
 
-        # ensure [N, T, C] — swap if [N, C, T]
-        if X_tr.ndim == 2:
-            X_tr = X_tr[:, :, None]   # [N, T] → [N, T, 1]
-            X_te = X_te[:, :, None]
-        if X_tr.shape[1] < X_tr.shape[2]:
-            # likely [N, C, T] → transpose
-            X_tr = X_tr.transpose(0, 2, 1)
-            X_te = X_te.transpose(0, 2, 1)
+        # ensure 2D [T, C]
+        if X_tr.ndim == 1:
+            X_tr = X_tr[:, None]
+            X_te = X_te[:, None]
+        if X_tr.shape[0] < X_tr.shape[1]:   # likely [C, T] → transpose
+            X_tr = X_tr.T
+            X_te = X_te.T
 
         # ── StandardScaler fit on train ──────────────────────────────────────
-        N, T, C = X_tr.shape
         scaler = StandardScaler()
-        scaler.fit(X_tr.reshape(-1, C))
-        X_tr = scaler.transform(X_tr.reshape(-1, C)).reshape(N, T, C)
-        Nt, Tt, _ = X_te.shape
-        X_te = scaler.transform(X_te.reshape(-1, C)).reshape(Nt, Tt, C)
+        scaler.fit(X_tr)
+        X_tr = scaler.transform(X_tr).astype(np.float32)
+        X_te = scaler.transform(X_te).astype(np.float32)
 
-        # ── pad to multiple of patch_size ────────────────────────────────────
-        padded_T = int(np.ceil(T / patch_size)) * patch_size
-        def _pad(x):
-            p = padded_T - x.shape[1]
-            return np.pad(x, ((0, 0), (0, p), (0, 0))) if p > 0 else x
+        # ── val = last 20 % of train ─────────────────────────────────────────
+        split  = int(len(X_tr) * 0.8)
+        X_val  = X_tr[split:]
 
-        X_tr = _pad(X_tr)
-        X_te = _pad(X_te)
+        # ── assign split ──────────────────────────────────────────────────────
+        if which == "train":
+            self.data   = X_tr
+            self.labels = None
+        elif which == "val":
+            self.data   = X_val
+            self.labels = None
+        else:
+            self.data   = X_te
+            self.labels = labels
 
-        # labels: [N, T] or [N*T] — keep per-timestep for scoring
-        # pad labels to same length
-        if labels.ndim == 1:
-            labels = labels.reshape(Nt, -1)
-        lp = padded_T - labels.shape[1]
-        if lp > 0:
-            labels = np.pad(labels, ((0, 0), (0, lp)))
+        C = X_tr.shape[1]
+        padded_T = int(np.ceil(win_size / patch_size)) * patch_size
 
+        self.win_size   = win_size
+        self.padded_T   = padded_T
+        self.step       = step
         self.patch_size = patch_size
         self.n_patches  = padded_T // patch_size
         self.n_vars     = C
 
-        if which == "train":
-            self.X      = torch.tensor(X_tr)
-            self.labels = None
-        else:
-            self.X      = torch.tensor(X_te)
-            self.labels = torch.tensor(labels)   # [N, T]
-
+        n_windows = (len(self.data) - win_size) // step + 1
         print(f"AnomalyDataPuller [{which}] ({dataset}): "
-              f"{len(self.X)} windows, {padded_T} timesteps → "
+              f"{n_windows} windows, {padded_T} timesteps → "
               f"{self.n_patches} patches × {patch_size}, {C} vars")
 
     def __len__(self):
-        return len(self.X)
+        return (len(self.data) - self.win_size) // self.step + 1
 
     def __getitem__(self, idx):
-        # [T, C] → [n_patches, patch_size, C]
-        patches = self.X[idx].reshape(self.n_patches, self.patch_size, -1)
+        start  = idx * self.step
+        window = self.data[start:start + self.win_size]          # [win_size, C]
+
+        # pad to multiple of patch_size
+        if self.padded_T > self.win_size:
+            window = np.pad(window, ((0, self.padded_T - self.win_size), (0, 0)))
+
+        patches = window.reshape(self.n_patches, self.patch_size, self.n_vars)
+
         if self.labels is not None:
-            return patches, self.labels[idx]   # test: (patches, label_seq)
-        return patches                          # train: patches only
+            label = self.labels[start:start + self.win_size]
+            if len(label) < self.padded_T:
+                label = np.pad(label, (0, self.padded_T - len(label)))
+            return torch.tensor(patches), torch.tensor(label)
+        return torch.tensor(patches)
