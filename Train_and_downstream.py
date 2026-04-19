@@ -326,7 +326,7 @@ def run_dino(skip_train: bool = False,
     best_ckpt = os.path.abspath(checkpoint) if checkpoint else "best"
     best_mse  = None
 
-    if not classification_only:
+    if not classification_only and forecast_dataset is not None:
         # ── forecasting downstream ────────────────────────────────────────────
         print("\n[DINO] Running forecasting downstream task …")
         ckpts = checkpoints if checkpoints is not None else [80, 120, 160, 200, 240, 300]
