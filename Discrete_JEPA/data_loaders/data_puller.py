@@ -1237,6 +1237,10 @@ class AnomalyDataPuller(Dataset):
             raise FileNotFoundError(f"No label file found in {root}.")
 
         # ensure 2D [T, C]
+        if X_tr.ndim == 3:
+            # old pre-windowed format [N, window_size, C] → flatten back to [T, C]
+            X_tr = X_tr.reshape(-1, X_tr.shape[-1])
+            X_te = X_te.reshape(-1, X_te.shape[-1])
         if X_tr.ndim == 1:
             X_tr = X_tr[:, None]
             X_te = X_te[:, None]
