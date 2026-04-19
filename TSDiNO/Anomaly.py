@@ -92,7 +92,10 @@ def anomaly_zeroshot(args, path_num, anomaly_train, anomaly_test,
 
     # ── Resolve checkpoint path ───────────────────────────────────────────────
     if checkpoint_path is None:
-        checkpoint_path = os.path.join(args.output_dir, f'checkpoint{path_num:04d}.pth')
+        if isinstance(path_num, int):
+            checkpoint_path = os.path.join(args.output_dir, f'checkpoint{path_num:04d}.pth')
+        else:
+            checkpoint_path = os.path.join(args.output_dir, 'checkpoint_best.pth')
 
     print(f"\n=== TSDiNO Anomaly Detection ===")
     print(f"Loading checkpoint: {checkpoint_path}")
