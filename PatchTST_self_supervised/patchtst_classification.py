@@ -67,15 +67,18 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
     ).to(device)
 
     # Load pretrained backbone weights (skip head and shape mismatches)
-    ckpt = torch.load(checkpoint_path, map_location="cpu")
-    state = ckpt.get("model", ckpt)
-    model_dict = model.state_dict()
-    filtered = {k: v for k, v in state.items()
-                if k in model_dict and model_dict[k].shape == v.shape
-                and "head" not in k}
-    model_dict.update(filtered)
-    model.load_state_dict(model_dict)
-    print(f"  Loaded {len(filtered)}/{len(model_dict)} parameters from checkpoint")
+    if checkpoint_path is not None:
+        ckpt = torch.load(checkpoint_path, map_location="cpu")
+        state = ckpt.get("model", ckpt)
+        model_dict = model.state_dict()
+        filtered = {k: v for k, v in state.items()
+                    if k in model_dict and model_dict[k].shape == v.shape
+                    and "head" not in k}
+        model_dict.update(filtered)
+        model.load_state_dict(model_dict)
+        print(f"  Loaded {len(filtered)}/{len(model_dict)} parameters from checkpoint")
+    else:
+        print("  Random encoder — skipping checkpoint load")
 
     # Freeze backbone, train only head
     for name, p in model.named_parameters():

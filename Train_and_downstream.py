@@ -238,7 +238,8 @@ def run_dino(skip_train: bool = False,
     use_global_data = pretrain_source is not None
 
     # Resolve forecast dataset (always needed for downstream)
-    forecast_dataset = forecast_dataset or dino_cfg.get("forecast_dataset")
+    if not (anomaly_dataset is not None and forecast_dataset is None):
+        forecast_dataset = forecast_dataset or dino_cfg.get("forecast_dataset")
     dino_cfg["lr_forecasting"] = _get_forecast_lr(dino_cfg, "lr_forecasting")
     if pretrain_only and use_global_data:
         dino_cfg['saveckp_freq'] = 1  # save every epoch
@@ -246,7 +247,7 @@ def run_dino(skip_train: bool = False,
     if use_global_data:
         # No pretrain CSV needed; c_in = 1 (univariate global data)
         dino_cfg["c_in"] = 1
-        if not pretrain_only and classification_dataset is None:
+        if not pretrain_only and classification_dataset is None and anomaly_dataset is None:
             if forecast_dataset is None:
                 raise ValueError("forecast_dataset must be set when pretraining on global data")
         if not pretrain_only and forecast_dataset is not None:
@@ -476,9 +477,10 @@ def run_jepa(skip_train: bool = False,
     use_global_data = pretrain_source is not None
 
     # Resolve forecast dataset (always needed for downstream, optional for pretrain_only/classify)
-    forecast_dataset = forecast_dataset or config.get("forecast_dataset")
+    if not (anomaly_dataset is not None and forecast_dataset is None):
+        forecast_dataset = forecast_dataset or config.get("forecast_dataset")
     if use_global_data:
-        if not pretrain_only and classification_dataset is None and forecast_dataset is None:
+        if not pretrain_only and classification_dataset is None and forecast_dataset is None and anomaly_dataset is None:
             raise ValueError("forecast_dataset must be set when pretraining on global data")
         if pretrain_source in ('monash', 'monash+synthetic'):
             monash_dir = config.get('monash_data_dir', '../Monash')
@@ -706,11 +708,12 @@ def run_jepa2(skip_train: bool = False,
     pretrain_source = _resolve_pretrain_source(config)
     use_global_data = pretrain_source is not None
 
-    forecast_dataset = forecast_dataset or config.get("forecast_dataset")
+    if not (anomaly_dataset is not None and forecast_dataset is None):
+        forecast_dataset = forecast_dataset or config.get("forecast_dataset")
     if use_global_data:
-        if forecast_dataset is None:
+        if forecast_dataset is None and anomaly_dataset is None:
             raise ValueError("forecast_dataset must be set when pretraining on global data")
-        ds_fore = get_dataset_info(forecast_dataset)
+        ds_fore = get_dataset_info(forecast_dataset) if forecast_dataset else None
         if pretrain_source in ('monash', 'monash+synthetic'):
             monash_dir = config.get('monash_data_dir', '../Monash')
             if not os.path.isabs(monash_dir):
@@ -946,7 +949,7 @@ def run_jepa_simple(skip_train: bool = False,
         forecast_dataset = None   # caller passed None → don't default to config value
     config["lr_forcasting"] = _get_forecast_lr(config, "lr_forcasting")
     if use_global_data:
-        if not pretrain_only and classification_dataset is None and forecast_dataset is None:
+        if not pretrain_only and classification_dataset is None and forecast_dataset is None and anomaly_dataset is None:
             raise ValueError("forecast_dataset must be set when pretraining on global data")
         if pretrain_source in ('monash', 'monash+synthetic'):
             monash_dir = config.get('monash_data_dir', '../Monash')
@@ -1233,7 +1236,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
 
     pretrain_source = _resolve_pretrain_source(cfg)
     _pretrain_dset  = pretrain_dataset or cfg.get("pretrain_dataset", "ettm1")
-    _forecast_dset  = None if (pretrain_only or classification_only) else (forecast_dataset or cfg.get("forecast_dataset") or _pretrain_dset)
+    _forecast_dset  = None if (pretrain_only or classification_only or (anomaly_dataset is not None and forecast_dataset is None)) else (forecast_dataset or cfg.get("forecast_dataset") or _pretrain_dset)
 
     # pretrain_source overrides _pretrain_dset for global data
     if pretrain_source in ('monash', 'synthetic', 'monash+synthetic'):
@@ -1264,6 +1267,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     print("="*60)
 
     patchtst_dir = patchtst_dir.resolve()
+    _add_path(patchtst_dir)
 
     # Build common pretrain args from config
     pretrain_cmd = [
@@ -1347,6 +1351,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
             "masked_patchtst", cfg.get("model_type", "based_model"),
             f"layers{cfg['n_layers']}", model_fname
         )
+    if random_encoder:
+        pretrained_model_path = None
 
     if pretrain_only:
         print("\n[PatchTST] Pretrain-only mode — skipping forecasting.")
@@ -1499,7 +1505,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     _pretrain_dset   = pretrain_dataset or cfg.get("pretrain_dataset", "monash")
     if _pretrain_source in ('monash', 'synthetic', 'monash+synthetic'):
         _pretrain_dset = _pretrain_source
-    _forecast_dset = None if (pretrain_only or classification_only) else (forecast_dataset or cfg.get("forecast_dataset") or _pretrain_dset)
+    _forecast_dset = None if (pretrain_only or classification_only or (anomaly_dataset is not None and forecast_dataset is None)) else (forecast_dataset or cfg.get("forecast_dataset") or _pretrain_dset)
     cfg["pretrain_dataset"] = _pretrain_dset
     cfg["forecast_dataset"] = _forecast_dset
 
@@ -1699,7 +1705,7 @@ def run_lejepa(skip_train: bool = False,
     sys.path.insert(0, _lj)
     from LeJepa import LeJEPA
 
-    forecast_dataset = None if (pretrain_only or classification_only) else (forecast_dataset or config.get('forecast_dataset'))
+    forecast_dataset = None if (pretrain_only or classification_only or (anomaly_dataset is not None and forecast_dataset is None)) else (forecast_dataset or config.get('forecast_dataset'))
     if forecast_dataset is None:
         config.pop('path_data_forcasting', None)
         config.pop('forecast_dataset', None)
@@ -1715,7 +1721,7 @@ def run_lejepa(skip_train: bool = False,
     use_global_data = pretrain_source is not None
 
     if use_global_data:
-        if not pretrain_only and classification_dataset is None and forecast_dataset is None:
+        if not pretrain_only and classification_dataset is None and forecast_dataset is None and anomaly_dataset is None:
             raise ValueError("forecast_dataset must be set when pretraining on global data")
         if pretrain_source in ('monash', 'monash+synthetic'):
             monash_dir = config.get('monash_data_dir', '../Monash')
