@@ -37,6 +37,19 @@ from dataset_registry import get_dataset_info
 GLOBAL_SEED = 42
 _SEED_TAG   = ''   # set by run() when seed is provided; used by runners to suffix checkpoint paths
 
+# Per-dataset anomaly detection hyperparameters matching TSLib reference configs
+_ANOMALY_RATIO = {
+    "SMD":  0.5,   # TSLib uses 0.5 for SMD
+    "MSL":  1.0,
+    "SMAP": 1.0,
+    "PSM":  1.0,
+    "SWaT": 1.0,
+}
+
+def _get_anomaly_ratio(dataset: str, cfg: dict) -> float:
+    """Return TSLib-matched anomaly ratio, falling back to config or 1.0."""
+    return _ANOMALY_RATIO.get(dataset, cfg.get("anomaly_ratio", 1.0))
+
 def _set_seed(seed: int = GLOBAL_SEED):
     random.seed(seed)
     np.random.seed(seed)
@@ -424,7 +437,7 @@ def run_dino(skip_train: bool = False,
         args.path_num = best_ckpt if best_ckpt is not None else 0
         anom_result = _anom_mod.anomaly_zeroshot(
             args, args.path_num, anom_train, anom_test,
-            anomaly_ratio=dino_cfg.get("anomaly_ratio", 1.0))
+            anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, dino_cfg))
 
     return best_ckpt, best_mse, cls_acc, anom_result
 
@@ -1203,7 +1216,7 @@ def run_jepa_simple(skip_train: bool = False,
             batch_size=anom_bs, shuffle=False)
         ckpt_tag   = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
         anom_result = model.anomaly_zeroshot(ckpt_tag, anom_train, anom_test,
-                                             anomaly_ratio=config.get("anomaly_ratio", 1.0))
+                                             anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, config))
 
     return best_ckpt, best_mse, cls_acc, anom_result
 
@@ -1467,7 +1480,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
             batch_size=anom_bs, shuffle=False)
         anom_result = ptst_anomaly(cfg, pretrained_model_path, anom_train, anom_test,
-                                   anomaly_ratio=cfg.get("anomaly_ratio", 1.0))
+                                   anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg))
 
     return mse_val, mae_val, cls_acc, anom_result
 
@@ -1643,7 +1656,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
             batch_size=anom_bs, shuffle=False)
         anom_result = npt_anomaly(cfg, _ckpt_path, anom_train, anom_test,
-                                  anomaly_ratio=cfg.get("anomaly_ratio", 1.0))
+                                  anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg))
 
     return mse_trained, cls_acc, anom_result
 
@@ -1965,7 +1978,7 @@ def run_lejepa(skip_train: bool = False,
             batch_size=anom_bs, shuffle=False)
         ckpt_tag    = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
         anom_result = model.anomaly_zeroshot(ckpt_tag, anom_train, anom_test,
-                                             anomaly_ratio=config.get("anomaly_ratio", 1.0))
+                                             anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, config))
 
     return best_ckpt, best_mse, cls_acc, anom_result
 
@@ -2360,7 +2373,7 @@ def run_timedart(skip_train: bool = False,
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
             batch_size=anom_bs, shuffle=False)
         anom_result = timedart_anomaly(cfg, str(ckpt_file), anom_train, anom_test,
-                                       anomaly_ratio=cfg.get("anomaly_ratio", 1.0))
+                                       anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg))
 
     return best_pred, best_mse, best_mae, cls_acc, anom_result
 

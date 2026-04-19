@@ -1214,9 +1214,14 @@ class AnomalyDataPuller(Dataset):
         which      : "train" | "val" | "test"
     """
 
+    # TSLib uses step=100 for SMD (non-overlapping); all others step=1
+    _DEFAULT_STEP = {"SMD": 100}
+
     def __init__(self, data_dir: str, dataset: str, patch_size: int,
-                 win_size: int = 100, step: int = 1, which: str = "train"):
+                 win_size: int = 100, step: int = None, which: str = "train"):
         assert which in ("train", "val", "test")
+        if step is None:
+            step = self._DEFAULT_STEP.get(dataset, 1)
         root = Path(data_dir) / dataset
 
         if not root.exists():
