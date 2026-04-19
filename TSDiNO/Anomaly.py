@@ -164,7 +164,7 @@ def anomaly_zeroshot(args, path_num, anomaly_train, anomaly_test,
             with torch.no_grad():
                 z = _encode(raw)
             recon  = decoder(z)
-            target = raw.permute(0, 1, 3, 2).reshape(B, P * PL, C)
+            target = raw.reshape(B, P * PL, C)
             loss   = F.mse_loss(recon, target)
             optimizer.zero_grad(); loss.backward(); optimizer.step()
             total_loss += loss.item()
@@ -179,7 +179,7 @@ def anomaly_zeroshot(args, path_num, anomaly_train, anomaly_test,
                 B, P, PL, C = raw.shape
                 z      = _encode(raw)
                 recon  = decoder(z)
-                target = raw.permute(0, 1, 3, 2).reshape(B, P * PL, C)
+                target = raw.reshape(B, P * PL, C)
                 val_loss += F.mse_loss(recon, target).item()
         val_loss /= len(val_batches)
         # early stopping
@@ -209,7 +209,7 @@ def anomaly_zeroshot(args, path_num, anomaly_train, anomaly_test,
             B, P, PL, C = raw.shape
             z      = _encode(raw)
             recon  = decoder(z)
-            target = raw.permute(0, 1, 3, 2).reshape(B, P * PL, C)
+            target = raw.reshape(B, P * PL, C)
             score  = F.mse_loss(recon, target, reduction="none").mean(dim=-1)  # [B, T]
             train_energy.append(score.cpu().numpy())
     train_energy = np.concatenate(train_energy).reshape(-1)
@@ -223,7 +223,7 @@ def anomaly_zeroshot(args, path_num, anomaly_train, anomaly_test,
             B, P, PL, C = raw.shape
             z      = _encode(raw)
             recon  = decoder(z)
-            target = raw.permute(0, 1, 3, 2).reshape(B, P * PL, C)
+            target = raw.reshape(B, P * PL, C)
             score  = F.mse_loss(recon, target, reduction="none").mean(dim=-1)  # [B, T]
             test_energy.append(score.cpu().numpy())
             all_labels.append(labels.numpy())
