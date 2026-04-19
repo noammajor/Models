@@ -45,11 +45,12 @@ CLASSIFICATION_DATASETS = [
 ]
 
 MODEL_GPU = {
-    "dino":        0,
-    "jepa_simple": 1,
-    "lejepa":      2,
-    "patchtst":    3,
-    "npt":         4,
+    "dino":               0,
+    "jepa_simple":        1,
+    "lejepa":             2,
+    "patchtst":           3,
+    "npt":                4,
+    "jepa_simple_random": 5,
 }
 ALL_MODELS = list(MODEL_GPU.keys())
 

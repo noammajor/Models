@@ -1,32 +1,46 @@
 """
-JEPA anomaly detection (reconstruction-based).
+TimeDaRT anomaly detection (reconstruction-based).
 
-Frozen pretrained target encoder + linear reconstruction decoder trained on
+Frozen pretrained TimeDaRT encoder + linear reconstruction decoder trained on
 normal data only. Anomaly score = per-timestep reconstruction MSE.
 Threshold = percentile of combined train+test energy.
 """
 
+import os
+import sys
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from pathlib import Path
+from types import SimpleNamespace
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 
-from JEPA.Training import _instance_norm
+_DIR  = Path(__file__).parent
+_ROOT = _DIR.parent
+
+for _p in [str(_DIR), str(_ROOT)]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from models.TimeDART import Model
+from utils.tools import transfer_weights
 
 
 class _LinearReconDecoder(nn.Module):
-    """[B, P, embed_dim] → [B, T, n_vars]"""
-    def __init__(self, embed_dim: int, patch_size: int, n_vars: int):
+    """[B, n_vars, d_model, n_patches] → [B, T, n_vars]"""
+    def __init__(self, d_model: int, patch_size: int, n_vars: int):
         super().__init__()
         self.patch_size = patch_size
-        self.n_vars = n_vars
-        self.proj = nn.Linear(embed_dim, patch_size * n_vars)
+        self.proj = nn.Linear(d_model, patch_size)
 
     def forward(self, z):
-        B, P, _ = z.shape
-        out = self.proj(z)
-        return out.reshape(B, P * self.patch_size, self.n_vars)
+        # z: [B, C, d_model, P]
+        B, C, D, P = z.shape
+        z   = z.permute(0, 1, 3, 2)                    # [B, C, P, D]
+        out = self.proj(z)                              # [B, C, P, patch_size]
+        out = out.reshape(B, C, P * self.patch_size)    # [B, C, T]
+        return out.permute(0, 2, 1)                     # [B, T, C]
 
 
 def _adjustment(gt, pred):
@@ -47,86 +61,125 @@ def _adjustment(gt, pred):
     return gt, pred
 
 
-def anomaly_zeroshot(self, path, anomaly_train, anomaly_test,
+def _build_model_args(config, n_vars, device):
+    patch_len = config.get("patch_len", 16)
+    stride    = config.get("stride", patch_len)
+    return SimpleNamespace(
+        input_len    = 512,          # dummy — encoder handles any T via unfold
+        d_model      = config.get("d_model",   256),
+        n_heads      = config.get("n_heads",   8),
+        d_ff         = config.get("d_ff",      512),
+        dropout      = config.get("dropout",   0.1),
+        head_dropout = config.get("head_dropout", 0.1),
+        device       = device,
+        task_name    = "pretrain",
+        pred_len     = 0,
+        use_norm     = config.get("use_norm", True),
+        patch_len    = patch_len,
+        stride       = stride,
+        time_steps   = config.get("time_steps", 1000),
+        scheduler    = config.get("scheduler",  "cosine"),
+        mask_ratio   = config.get("mask_ratio", 1.0),
+        e_layers     = config.get("e_layers",   3),
+        d_layers     = config.get("d_layers",   1),
+        enc_in       = n_vars,
+        dec_in       = n_vars,
+        c_out        = n_vars,
+    )
+
+
+def _encode(model, x):
+    """
+    x: [B, T, C]
+    returns: [B, C, d_model, P]
+    """
+    B, T, C = x.shape
+    if model.use_norm:
+        means  = x.mean(dim=1, keepdim=True).detach()
+        x      = x - means
+        stdevs = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-5).detach()
+        x      = x / stdevs
+    x = model.channel_independence(x)   # [B*C, T, 1]
+    x = model.patch(x)                  # [B*C, P, patch_len]
+    P = x.shape[1]
+    x = model.enc_embedding(x)          # [B*C, P, d_model]
+    x = model.positional_encoding(x)    # [B*C, P, d_model]
+    x = model.encoder(x, is_mask=False) # [B*C, P, d_model]
+    x = x.reshape(B, C, P, model.d_model)
+    return x.permute(0, 1, 3, 2)        # [B, C, d_model, P]
+
+
+def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
                      anomaly_ratio: float = 1.0):
     """
-    Reconstruction-based anomaly detection with frozen JEPA encoder.
+    Reconstruction-based anomaly detection with frozen TimeDaRT encoder.
 
     Args:
-        path          : checkpoint tag, e.g. "" or "_epoch50"
-        anomaly_train : DataLoader — batches of patches [B, P, patch_size, n_vars]
-        anomaly_test  : DataLoader — batches of (patches, labels [B, T])
-        anomaly_ratio : top-X% of combined energy flagged as anomaly
+        config         : dict from config_timedart.py
+        checkpoint_path: path to pretrained ckpt_best.pth
+        anomaly_train  : DataLoader — batches of patches [B, P, patch_size, n_vars]
+        anomaly_test   : DataLoader — batches of (patches, labels [B, T])
+        anomaly_ratio  : top-X% of combined energy flagged as anomaly
     Returns:
         dict with f1, precision, recall, accuracy, threshold
     """
-    config          = self.config
-    checkpoint_path = f"{self.path_save}{path}best_model.pt"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    print(f"\n=== JEPA Anomaly Detection ===")
+    print(f"\n=== TimeDaRT Anomaly Detection ===")
     print(f"Loading checkpoint: {checkpoint_path}")
 
-    ckpt = torch.load(checkpoint_path, map_location="cpu")
-    self.encoder_for.load_state_dict(ckpt["target_encoder"])
-    self.encoder_for.to(self.device)
-    self.encoder_for.eval()
-    for p in self.encoder_for.parameters():
+    sample         = next(iter(anomaly_train))
+    patches_sample = sample[0] if isinstance(sample, (list, tuple)) else sample
+    patch_len = patches_sample.shape[2]
+    n_vars    = patches_sample.shape[3]
+
+    args  = _build_model_args(config, n_vars, device)
+    model = Model(args).float().to(device)
+
+    if os.path.exists(checkpoint_path):
+        model = transfer_weights(checkpoint_path, model, exclude_head=True, device=str(device))
+    else:
+        print(f"  WARNING: checkpoint not found at {checkpoint_path}, using random init")
+
+    model.eval()
+    for p in model.parameters():
         p.requires_grad = False
 
-    embed_dim = config["encoder_embed_dim"]
-
-    # Infer shape from first batch
-    sample = next(iter(anomaly_train))
-    patches_sample = sample[0] if isinstance(sample, (list, tuple)) else sample
-    if patches_sample.dim() == 3:
-        patches_sample = patches_sample.unsqueeze(-1)
-    patch_size = patches_sample.shape[2]
-    n_vars     = patches_sample.shape[3]
-
-    decoder   = _LinearReconDecoder(embed_dim, patch_size, n_vars).to(self.device)
+    d_model = config.get("d_model", 256)
+    decoder = _LinearReconDecoder(d_model, patch_len, n_vars).to(device)
     optimizer = torch.optim.Adam(decoder.parameters(),
                                  lr=config.get("lr_anomaly", 1e-3))
     n_epochs  = config.get("epoch_anomaly", 10)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
 
-    def _encode(patches):
-        """patches [B, P, PL, C] → z [B, P, embed_dim]"""
-        if patches.dim() == 3:
-            patches = patches.unsqueeze(-1)
-        patches = patches.to(self.device)
+    def _to_flat(patches):
         B, P, PL, C = patches.shape
-        # JEPA encoder expects [B*C, P, PL]
-        x = patches.permute(0, 3, 1, 2).reshape(B * C, P, PL)
-        ctx_norm, _, _ = _instance_norm(x)
-        enc_out = self.encoder_for(ctx_norm)
-        z = enc_out["data_patches"]                       # [B*C, P, embed_dim]
-        return z.reshape(B, C, P, embed_dim).mean(dim=1)  # [B, P, embed_dim]
+        return patches.reshape(B, P * PL, C)
 
     # ── (1) train decoder (with validation + early stopping) ─────────────────
-    all_batches = list(anomaly_train)
-    n_val_b     = max(1, len(all_batches) // 5)
+    all_batches   = list(anomaly_train)
+    n_val_b       = max(1, len(all_batches) // 5)
     train_batches = all_batches[:-n_val_b]
     val_batches   = all_batches[-n_val_b:]
 
-    patience    = config.get("anomaly_patience", 3)
-    best_val    = float('inf')
-    best_state  = None
-    no_improve  = 0
+    patience   = config.get("anomaly_patience", 3)
+    best_val   = float('inf')
+    best_state = None
+    no_improve = 0
 
     print(f"  Training decoder ({n_epochs} epochs, patience={patience}) …")
     for epoch in range(n_epochs):
-        # train
         decoder.train()
         total_loss = 0.0
         for batch in train_batches:
             patches = batch[0] if isinstance(batch, (list, tuple)) else batch
-            if patches.dim() == 3: patches = patches.unsqueeze(-1)
-            raw = patches.to(self.device)
-            B, P, PL, C = raw.shape
+            patches = patches.to(device)
+            B, P, PL, C = patches.shape
+            x = _to_flat(patches).float()
             with torch.no_grad():
-                z = _encode(raw)
+                z = _encode(model, x)
             recon  = decoder(z)
-            target = raw.reshape(B, P * PL, C)
+            target = patches.reshape(B, P * PL, C)
             loss   = F.mse_loss(recon, target)
             optimizer.zero_grad(); loss.backward(); optimizer.step()
             total_loss += loss.item()
@@ -136,15 +189,14 @@ def anomaly_zeroshot(self, path, anomaly_train, anomaly_test,
         with torch.no_grad():
             for batch in val_batches:
                 patches = batch[0] if isinstance(batch, (list, tuple)) else batch
-                if patches.dim() == 3: patches = patches.unsqueeze(-1)
-                raw = patches.to(self.device)
-                B, P, PL, C = raw.shape
-                z      = _encode(raw)
+                patches = patches.to(device)
+                B, P, PL, C = patches.shape
+                x = _to_flat(patches).float()
+                z      = _encode(model, x)
                 recon  = decoder(z)
-                target = raw.reshape(B, P * PL, C)
+                target = patches.reshape(B, P * PL, C)
                 val_loss += F.mse_loss(recon, target).item()
         val_loss /= len(val_batches)
-        # early stopping
         if val_loss < best_val:
             best_val   = val_loss
             best_state = {k: v.clone() for k, v in decoder.state_dict().items()}
@@ -166,12 +218,12 @@ def anomaly_zeroshot(self, path, anomaly_train, anomaly_test,
     with torch.no_grad():
         for batch in anomaly_train:
             patches = batch[0] if isinstance(batch, (list, tuple)) else batch
-            if patches.dim() == 3: patches = patches.unsqueeze(-1)
-            raw = patches.to(self.device)
-            B, P, PL, C = raw.shape
-            z      = _encode(raw)
+            patches = patches.to(device)
+            B, P, PL, C = patches.shape
+            x      = _to_flat(patches).float()
+            z      = _encode(model, x)
             recon  = decoder(z)
-            target = raw.reshape(B, P * PL, C)
+            target = patches.reshape(B, P * PL, C)
             score  = F.mse_loss(recon, target, reduction="none").mean(dim=-1)
             train_energy.append(score.cpu().numpy())
     train_energy = np.concatenate(train_energy).reshape(-1)
@@ -180,12 +232,12 @@ def anomaly_zeroshot(self, path, anomaly_train, anomaly_test,
     test_energy, all_labels = [], []
     with torch.no_grad():
         for patches, labels in anomaly_test:
-            if patches.dim() == 3: patches = patches.unsqueeze(-1)
-            raw = patches.to(self.device)
-            B, P, PL, C = raw.shape
-            z      = _encode(raw)
+            patches = patches.to(device)
+            B, P, PL, C = patches.shape
+            x      = _to_flat(patches).float()
+            z      = _encode(model, x)
             recon  = decoder(z)
-            target = raw.reshape(B, P * PL, C)
+            target = patches.reshape(B, P * PL, C)
             score  = F.mse_loss(recon, target, reduction="none").mean(dim=-1)
             test_energy.append(score.cpu().numpy())
             all_labels.append(labels.numpy())
@@ -204,7 +256,7 @@ def anomaly_zeroshot(self, path, anomaly_train, anomaly_test,
         gt, pred, average="binary", zero_division=0)
 
     print(f"\n{'='*60}")
-    print(f"  [JEPA] Anomaly Detection")
+    print(f"  [TimeDaRT] Anomaly Detection")
     print(f"  Threshold: {threshold:.6f}  (top {anomaly_ratio}%)")
     print(f"  Accuracy : {accuracy:.4f}")
     print(f"  Precision: {precision:.4f}")

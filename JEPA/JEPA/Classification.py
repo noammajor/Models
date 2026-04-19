@@ -15,7 +15,8 @@ from JEPA.Training import _instance_norm
 
 def classification_zeroshot(self, path, classification_train, classification_val,
                              classification_test, n_classes,
-                             checkpoint_path_override=None):
+                             checkpoint_path_override=None,
+                             random_encoder=False):
     """
     Linear-probe classification with frozen JEPA encoder.
 
@@ -32,10 +33,12 @@ def classification_zeroshot(self, path, classification_train, classification_val
                       else f"{self.path_save}{path}best_model.pt"
 
     print(f"\n=== JEPA Classification (linear probe) ===")
-    print(f"Loading checkpoint: {checkpoint_path}")
-
-    ckpt = torch.load(checkpoint_path, map_location="cpu")
-    self.encoder_for.load_state_dict(ckpt["target_encoder"])
+    if random_encoder:
+        print("Random encoder — skipping checkpoint load")
+    else:
+        print(f"Loading checkpoint: {checkpoint_path}")
+        ckpt = torch.load(checkpoint_path, map_location="cpu")
+        self.encoder_for.load_state_dict(ckpt["target_encoder"])
     self.encoder_for.to(self.device)
     self.encoder_for.eval()
     for p in self.encoder_for.parameters():

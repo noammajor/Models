@@ -46,6 +46,7 @@ MODEL_GPU = {
     "lejepa":      2,
     "patchtst":    3,
     "npt":         4,
+    "timedart":    5,
 }
 ALL_MODELS = list(MODEL_GPU.keys())
 

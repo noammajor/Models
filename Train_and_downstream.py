@@ -889,7 +889,8 @@ def run_jepa_simple(skip_train: bool = False,
                     lr: float = None,
                     pretrain_source: str = None,
                     checkpoint: str = None,
-                    num_patches: int = None):
+                    num_patches: int = None,
+                    random_encoder: bool = False):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -1177,7 +1178,8 @@ def run_jepa_simple(skip_train: bool = False,
         ckpt_tag  = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
         _ckpt_override = os.path.abspath(checkpoint) if checkpoint else None
         cls_acc   = model.classification_zeroshot(ckpt_tag, cls_train, cls_val, cls_test, n_classes,
-                                                  checkpoint_path_override=_ckpt_override)
+                                                  checkpoint_path_override=_ckpt_override,
+                                                  random_encoder=random_encoder)
         print(f"\n{'='*60}")
         print(f"  [JEPA simple] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
@@ -1975,6 +1977,7 @@ def run_timedart(skip_train: bool = False,
                  pretrain_dataset: str = None,
                  forecast_dataset: str = None,
                  classification_dataset: str = None,
+                 anomaly_dataset: str = None,
                  pretrain_only: bool = False,
                  pred_lens=None,
                  checkpoints=None,
@@ -2021,8 +2024,9 @@ def run_timedart(skip_train: bool = False,
     ckpt_dir  = Path(__file__).parent / f"outputs/timedart_pretrain{_src_tag}_layers{cfg['e_layers']}"
     ckpt_file = ckpt_dir / f"monash{_src_tag}" / "ckpt_best.pth"
 
-    forecast_dataset = forecast_dataset or "etth1"
-    pretrain_src     = _resolve_pretrain_source(cfg)
+    _explicit_forecast = forecast_dataset   # None means caller didn't request forecasting
+    forecast_dataset   = forecast_dataset or "etth1"
+    pretrain_src       = _resolve_pretrain_source(cfg)
 
     # Always use cuda:0 — CUDA_VISIBLE_DEVICES is already set by the caller
     # to select the physical GPU, so the logical index is always 0.
@@ -2186,93 +2190,97 @@ def run_timedart(skip_train: bool = False,
     # Wraps the exact same splits / normalisation used by all other models.
     # Returns (batch_x, batch_y, zeros_xmark, zeros_ymark) matching TimeDart's
     # train loop which only uses batch_x (input) and batch_y (target).
-    from data_loaders.data_puller import PatchTSTForcastingAdapter
 
     if not ckpt_file.exists():
         print(f"[TimeDart] WARNING: checkpoint not found at {ckpt_file}")
 
-    ds_info   = get_dataset_info(forecast_dataset)
-    _csv      = ds_info["csv_path"]
-    _c_in     = ds_info["c_in"]
-    _fc_bs    = _get_forecast_bs(cfg, 128)
-    _fc_nw    = cfg.get('num_workers', 4)
-    _PATCHTST_SEQ_LEN = 336
+    if _explicit_forecast is None and (classification_dataset is not None or anomaly_dataset is not None):
+        # Anomaly-only or classification-only call — skip forecasting
+        best_pred, best_mse, best_mae = None, float('inf'), float('inf')
+    else:
+        from data_loaders.data_puller import PatchTSTForcastingAdapter
+        from exp.exp_timedart import Exp_TimeDART
 
-    best_mse  = float('inf')
-    best_mae  = float('inf')
-    best_pred = None
+        ds_info   = get_dataset_info(forecast_dataset)
+        _csv      = ds_info["csv_path"]
+        _c_in     = ds_info["c_in"]
+        _fc_bs    = _get_forecast_bs(cfg, 128)
+        _fc_nw    = cfg.get('num_workers', 4)
+        _PATCHTST_SEQ_LEN = 336
 
-    from exp.exp_timedart import Exp_TimeDART
+        best_mse  = float('inf')
+        best_mae  = float('inf')
+        best_pred = None
 
-    for pred_len in pred_lens:
-        # Build our standard forecasting loaders
-        def _fc_loader(split):
-            ds = _FlatWindowAdapter(
-                PatchTSTForcastingAdapter(_csv, split, _PATCHTST_SEQ_LEN, pred_len, patch_len))
-            return torch.utils.data.DataLoader(
-                ds, batch_size=_fc_bs, shuffle=(split == 'train'),
-                num_workers=_fc_nw, drop_last=True)
+        for pred_len in pred_lens:
+            # Build our standard forecasting loaders
+            def _fc_loader(split):
+                ds = _FlatWindowAdapter(
+                    PatchTSTForcastingAdapter(_csv, split, _PATCHTST_SEQ_LEN, pred_len, patch_len))
+                return torch.utils.data.DataLoader(
+                    ds, batch_size=_fc_bs, shuffle=(split == 'train'),
+                    num_workers=_fc_nw, drop_last=True)
 
-        ft_args = SimpleNamespace(**vars(base_args))
-        ft_args.task_name      = "finetune"
-        ft_args.pred_len       = pred_len
-        ft_args.test_pred_len  = pred_len
-        ft_args.train_epochs   = cfg.get('epochs_forecasting', 20)
-        ft_args.learning_rate  = _get_forecast_lr(cfg, 'lr_forecasting', 1e-4)
-        ft_args.batch_size     = _fc_bs
-        ft_args.enc_in         = _c_in
-        ft_args.dec_in         = _c_in
-        ft_args.c_out          = _c_in
-        ft_args.load_checkpoints = str(ckpt_file) if ckpt_file.exists() else None
-        ft_args.checkpoints    = str(Path(__file__).parent / "outputs" / "timedart_finetune")
-        # Use constant LR for forecasting — exponential decay kills LR by epoch 10
-        ft_args.lradj          = "constant"
-        ft_args.patience       = cfg.get('patience', 5)
+            ft_args = SimpleNamespace(**vars(base_args))
+            ft_args.task_name      = "finetune"
+            ft_args.pred_len       = pred_len
+            ft_args.test_pred_len  = pred_len
+            ft_args.train_epochs   = cfg.get('epochs_forecasting', 20)
+            ft_args.learning_rate  = _get_forecast_lr(cfg, 'lr_forecasting', 1e-4)
+            ft_args.batch_size     = _fc_bs
+            ft_args.enc_in         = _c_in
+            ft_args.dec_in         = _c_in
+            ft_args.c_out          = _c_in
+            ft_args.load_checkpoints = str(ckpt_file) if ckpt_file.exists() else None
+            ft_args.checkpoints    = str(Path(__file__).parent / "outputs" / "timedart_finetune")
+            # Use constant LR for forecasting — exponential decay kills LR by epoch 10
+            ft_args.lradj          = "constant"
+            ft_args.patience       = cfg.get('patience', 5)
 
-        setting = f"timedart_{forecast_dataset}_pl{pred_len}_dm{cfg['d_model']}_el{cfg['e_layers']}"
+            setting = f"timedart_{forecast_dataset}_pl{pred_len}_dm{cfg['d_model']}_el{cfg['e_layers']}"
 
-        print(f"\n[TimeDart] {'Linear probing' if linear_probe else 'Fine-tuning'} pred_len={pred_len} on {forecast_dataset} …")
-        exp = Exp_TimeDART(ft_args)
+            print(f"\n[TimeDart] {'Linear probing' if linear_probe else 'Fine-tuning'} pred_len={pred_len} on {forecast_dataset} …")
+            exp = Exp_TimeDART(ft_args)
 
-        if linear_probe:
-            for name, param in exp.model.named_parameters():
-                if 'head' not in name:
-                    param.requires_grad = False
-            print("  [TimeDart] Encoder frozen — training head only.")
+            if linear_probe:
+                for name, param in exp.model.named_parameters():
+                    if 'head' not in name:
+                        param.requires_grad = False
+                print("  [TimeDart] Encoder frozen — training head only.")
 
-        # Inject our loaders directly — bypasses TimeDart's _get_data()
-        exp._td_train_loader = _fc_loader('train')
-        exp._td_val_loader   = _fc_loader('val')
-        exp._td_test_loader  = _fc_loader('test')
-        _patch_timedart_get_data(exp)
+            # Inject our loaders directly — bypasses TimeDart's _get_data()
+            exp._td_train_loader = _fc_loader('train')
+            exp._td_val_loader   = _fc_loader('val')
+            exp._td_test_loader  = _fc_loader('test')
+            _patch_timedart_get_data(exp)
 
-        exp.train(setting)
+            exp.train(setting)
 
-        # ── compute test MSE + MAE using full predictions ─────────────────────
-        exp.model.eval()
-        preds_list, trues_list = [], []
-        with torch.no_grad():
-            for batch_x, batch_y, _, _ in exp._td_test_loader:
-                batch_x = batch_x.float().to(_device)
-                batch_y = batch_y.float().to(_device)
-                pred = exp.model(batch_x)
-                f_dim = -1 if ft_args.features == "MS" else 0
-                pred = pred[:, -pred_len:, f_dim:]
-                batch_y = batch_y[:, -pred_len:, f_dim:]
-                preds_list.append(pred.detach().cpu().numpy())
-                trues_list.append(batch_y.detach().cpu().numpy())
-        exp.model.train()
-        import numpy as _np
-        preds_arr = _np.concatenate(preds_list, axis=0)
-        trues_arr = _np.concatenate(trues_list, axis=0)
-        mse = float(_np.mean((preds_arr - trues_arr) ** 2))
-        mae = float(_np.mean(_np.abs(preds_arr - trues_arr)))
-        print(f"  [TimeDart] pred_len={pred_len} → test MSE={mse:.4f}  MAE={mae:.4f}")
+            # ── compute test MSE + MAE using full predictions ─────────────────────
+            exp.model.eval()
+            preds_list, trues_list = [], []
+            with torch.no_grad():
+                for batch_x, batch_y, _, _ in exp._td_test_loader:
+                    batch_x = batch_x.float().to(_device)
+                    batch_y = batch_y.float().to(_device)
+                    pred = exp.model(batch_x)
+                    f_dim = -1 if ft_args.features == "MS" else 0
+                    pred = pred[:, -pred_len:, f_dim:]
+                    batch_y = batch_y[:, -pred_len:, f_dim:]
+                    preds_list.append(pred.detach().cpu().numpy())
+                    trues_list.append(batch_y.detach().cpu().numpy())
+            exp.model.train()
+            import numpy as _np
+            preds_arr = _np.concatenate(preds_list, axis=0)
+            trues_arr = _np.concatenate(trues_list, axis=0)
+            mse = float(_np.mean((preds_arr - trues_arr) ** 2))
+            mae = float(_np.mean(_np.abs(preds_arr - trues_arr)))
+            print(f"  [TimeDart] pred_len={pred_len} → test MSE={mse:.4f}  MAE={mae:.4f}")
 
-        if pred_len == pred_lens[0] and mse < best_mse:
-            best_mse  = mse
-            best_mae  = mae
-            best_pred = pred_len
+            if pred_len == pred_lens[0] and mse < best_mse:
+                best_mse  = mse
+                best_mae  = mae
+                best_pred = pred_len
 
     # ── classification downstream ─────────────────────────────────────────────
     cls_acc = None
@@ -2326,7 +2334,24 @@ def run_timedart(skip_train: bool = False,
         print(f"  Test Accuracy: {cls_acc:.4f}")
         print(f"{'='*60}")
 
-    return best_pred, best_mse, best_mae, cls_acc
+    # ── anomaly detection downstream ──────────────────────────────────────────
+    anom_result = None
+    if anomaly_dataset is not None:
+        from timedart_anomaly import anomaly_zeroshot as timedart_anomaly
+        from data_loaders.data_puller import AnomalyDataPuller
+        anom_dir = cfg.get("anomaly_data_dir", "/home/shared/datasets/Anomaly_TS")
+        anom_bs  = cfg.get("batch_size", 64)
+        p_s      = cfg.get("patch_len", 16)
+        anom_train = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
+            batch_size=anom_bs, shuffle=False)
+        anom_test  = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
+            batch_size=anom_bs, shuffle=False)
+        anom_result = timedart_anomaly(cfg, str(ckpt_file), anom_train, anom_test,
+                                       anomaly_ratio=cfg.get("anomaly_ratio", 1.0))
+
+    return best_pred, best_mse, best_mae, cls_acc, anom_result
 
 
 class _FlatWindowAdapter(torch.utils.data.Dataset):
@@ -2400,6 +2425,7 @@ RUNNERS = {
     "lejepa":          run_lejepa,
     "patchtst":        run_patchtst,
     "patchtst_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, pretrain_only=False, pred_len=None, checkpoints=None, encoder_layers=None: run_patchtst(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, pretrain_only=pretrain_only, pred_len=pred_len, checkpoints=checkpoints, random_encoder=True, encoder_layers=encoder_layers),
+    "jepa_simple_random": lambda **kw: run_jepa_simple(**{**kw, "random_encoder": True}),
     "npt":             run_ntp,
     "random":          run_random,
     "timedart":        run_timedart,

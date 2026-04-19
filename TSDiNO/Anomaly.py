@@ -124,6 +124,7 @@ def anomaly_zeroshot(args, path_num, anomaly_train, anomaly_test,
     decoder   = _LinearReconDecoder(d_model, patch_len).to(device)
     optimizer = torch.optim.Adam(decoder.parameters(), lr=1e-3)
     n_epochs  = getattr(args, 'epoch_anomaly', 10)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
 
     def _encode(patches):
         """
@@ -149,7 +150,6 @@ def anomaly_zeroshot(args, path_num, anomaly_train, anomaly_test,
     best_val   = float('inf')
     best_state = None
     no_improve = 0
-    base_lr    = 1e-3
 
     print(f"  Training decoder ({n_epochs} epochs, patience={patience}) …")
     for epoch in range(n_epochs):
@@ -192,9 +192,7 @@ def anomaly_zeroshot(args, path_num, anomaly_train, anomaly_test,
             if no_improve >= patience:
                 print(f"    Early stopping at epoch {epoch+1}")
                 break
-        # cosine LR decay
-        for pg in optimizer.param_groups:
-            pg['lr'] = base_lr * (1 - epoch / n_epochs)
+        scheduler.step()
         if epoch % max(1, n_epochs // 5) == 0:
             print(f"    epoch {epoch+1:3d} | train {total_loss/len(train_batches):.6f} | val {val_loss:.6f}")
     if best_state is not None:
