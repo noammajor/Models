@@ -2586,7 +2586,7 @@ if __name__ == "__main__":
         help="Run pretraining only, skip downstream evaluation (true | false)",
     )
     parser.add_argument("--task", type=str, default=None,
-                        choices=["pretrain", "forecast", "classify"],
+                        choices=["pretrain", "forecast", "classify", "anomaly"],
                         help="Task to run: pretrain | forecast | classify. "
                              "Overrides --skip_train / --pretrain_only when set.")
     parser.add_argument("--classification_dataset", type=str, default=None,
