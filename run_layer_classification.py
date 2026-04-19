@@ -52,6 +52,7 @@ MODEL_GPU = {
     "npt":                4,
     "jepa_simple_random": 5,
     "patchtst_random":    5,
+    "timedart":           0,
 }
 ALL_MODELS = list(MODEL_GPU.keys())
 
