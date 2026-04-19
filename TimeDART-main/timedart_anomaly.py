@@ -74,7 +74,7 @@ def _build_model_args(config, n_vars, device):
         device       = device,
         task_name    = "pretrain",
         pred_len     = 0,
-        use_norm     = config.get("use_norm", True),
+        use_norm     = False,   # data already StandardScaler-normalised by AnomalyDataPuller
         patch_len    = patch_len,
         stride       = stride,
         time_steps   = config.get("time_steps", 1000),
