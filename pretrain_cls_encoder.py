@@ -62,7 +62,7 @@ ALL_MODELS = list(MODEL_GPU.keys())
 def launch_model(model: str, gpu: int, pretrain_source: str,
                  log_dir: Path, dry_run: bool):
     lr = MODEL_LR[model]
-    log_path = log_dir / f"{model}_layers{ENCODER_LAYERS}_cw{CONTEXT_WINDOW}.log"
+    log_path = log_dir / f"{model}_layers{ENCODER_LAYERS}_{pretrain_source}_cw{CONTEXT_WINDOW}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
