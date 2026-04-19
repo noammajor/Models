@@ -1,19 +1,17 @@
 """
 TimeDaRT linear-probe classification.
 
-Uses TimeDaRT's own ClsModel (task_name="finetune") with:
-  - Pretrained encoder loaded from pretrain checkpoint via transfer_weights
-  - Encoder frozen (linear probe)
-  - ClsEmbedding + OldClsHead trained on the classification split
-
-ClsEmbedding is a Conv1d on the raw multivariate sequence, so its weights
-are always randomly initialised (different arch from the pretrain PatchEmbedding).
-Only the CausalTransformer encoder is transferred from the pretrain checkpoint.
+Frozen pretrained TimeDaRT (Model) backbone + ClassificationHead.
+Identical pattern to JEPA / LE-JEPA / NPT / PatchTST:
+  - Channel-independent PatchEmbedding (same as pretrain)
+  - CausalTransformer encoder (frozen, weights loaded from checkpoint)
+  - ClassificationHead: last patch → flatten(n_vars * d_model) → dropout → linear → n_classes
 """
 
 import os
 import sys
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,28 +23,45 @@ for _p in [str(_DIR), str(_ROOT)]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from models.TimeDART import ClsModel
+from models.TimeDART import Model
 from utils.tools import transfer_weights
 
 
-def _build_args(config, n_vars, n_classes, device):
+class ClassificationHead(nn.Module):
+    """Last patch → flatten(n_vars * d_model) → dropout → linear → n_classes."""
+
+    def __init__(self, n_vars, d_model, n_classes, head_dropout):
+        super().__init__()
+        self.flatten = nn.Flatten(start_dim=1)
+        self.dropout = nn.Dropout(head_dropout)
+        self.linear  = nn.Linear(n_vars * d_model, n_classes)
+
+    def forward(self, x):
+        """
+        x: [B, n_vars, d_model, n_patches]
+        returns: [B, n_classes]
+        """
+        x = x[:, :, :, -1]        # last patch: [B, n_vars, d_model]
+        x = self.flatten(x)        # [B, n_vars * d_model]
+        x = self.dropout(x)
+        return self.linear(x)
+
+
+def _build_model_args(config, n_vars, device):
     patch_len = config.get("patch_len", 16)
     stride    = config.get("stride",    patch_len)
-    # seq_len inside ClsModel = int((input_len - patch_len) / stride) + 2
-    # With 72 patches: (input_len - patch_len) / stride + 2 = 72
-    #   → input_len = (72 - 2) * stride + patch_len = 70*stride + patch_len
-    input_len = 70 * stride + patch_len
+    input_len = 72 * stride          # matches exactly 72 patches from our collate
     return SimpleNamespace(
         input_len    = input_len,
-        d_model      = config.get("d_model",     256),
-        n_heads      = config.get("n_heads",     8),
-        d_ff         = config.get("d_ff",        512),
-        dropout      = config.get("dropout",     0.1),
+        d_model      = config.get("d_model",   256),
+        n_heads      = config.get("n_heads",   8),
+        d_ff         = config.get("d_ff",      512),
+        dropout      = config.get("dropout",   0.1),
         head_dropout = config.get("head_dropout", 0.1),
         device       = device,
-        task_name    = "finetune",   # builds ClsEmbedding + OldClsHead
-        pred_len     = 0,            # unused for classification
-        use_norm     = config.get("use_norm", False),
+        task_name    = "pretrain",   # builds encoder + pretrain head (head unused)
+        pred_len     = 0,
+        use_norm     = config.get("use_norm", True),
         patch_len    = patch_len,
         stride       = stride,
         time_steps   = config.get("time_steps", 1000),
@@ -57,8 +72,37 @@ def _build_args(config, n_vars, n_classes, device):
         enc_in       = n_vars,
         dec_in       = n_vars,
         c_out        = n_vars,
-        num_classes  = n_classes,
     )
+
+
+def _encode(model, x, padding_mask=None):
+    """Run encoder-only path of Model (no diffusion, no decoder, no head).
+
+    x:            [B, T, C]
+    padding_mask: [B, P] bool, True=real data (optional)
+    returns:      [B, C, d_model, P]  — matches ClassificationHead interface
+    """
+    B, T, C = x.shape
+    if model.use_norm:
+        means  = x.mean(dim=1, keepdim=True).detach()
+        x      = x - means
+        stdevs = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-5).detach()
+        x      = x / stdevs
+    x = model.channel_independence(x)   # [B*C, T, 1]
+    x = model.patch(x)                  # [B*C, P, patch_len]
+    P = x.shape[1]
+    x = model.enc_embedding(x)          # [B*C, P, d_model]
+    x = model.positional_encoding(x)    # [B*C, P, d_model]
+
+    # Expand padding mask from [B, P] to [B*C, P] and invert for PyTorch convention
+    kpm = None
+    if padding_mask is not None:
+        pm  = padding_mask.to(x.device).bool()              # [B, P], True=real
+        kpm = (~pm).unsqueeze(1).expand(-1, C, -1).reshape(B * C, P)  # [B*C, P], True=ignore
+
+    x = model.encoder(x, is_mask=False, key_padding_mask=kpm)  # [B*C, P, d_model]
+    x = x.reshape(B, C, P, model.d_model)   # [B, C, P, d_model]
+    return x.permute(0, 1, 3, 2)            # [B, C, d_model, P]
 
 
 def classification_zeroshot(config, checkpoint_path,
@@ -82,32 +126,33 @@ def classification_zeroshot(config, checkpoint_path,
     print(f"\n=== TimeDaRT Classification (linear probe) ===")
     print(f"Loading checkpoint: {checkpoint_path}")
 
-    # Infer n_vars from first batch
     sample_patches, _, _ = next(iter(classification_train))
     n_v = sample_patches.shape[-1]   # [B, P, PL, n_vars]
 
-    args  = _build_args(config, n_v, n_classes, device)
-    model = ClsModel(args).float().to(device)
+    args  = _build_model_args(config, n_v, device)
+    model = Model(args).float().to(device)
 
-    # Load pretrained encoder weights (enc_embedding will show as unmatched — different arch)
+    # Load encoder + enc_embedding (PatchEmbedding — same arch as pretrain)
     if os.path.exists(checkpoint_path):
         model = transfer_weights(checkpoint_path, model, exclude_head=True, device=str(device))
     else:
         print(f"  WARNING: checkpoint not found at {checkpoint_path}, using random init")
 
-    # Freeze the encoder (pretrained); train ClsEmbedding + head
-    for name, param in model.named_parameters():
-        param.requires_grad = ("encoder" not in name)
-    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    total     = sum(p.numel() for p in model.parameters())
-    print(f"  Trainable: {trainable:,} / {total:,} parameters")
+    model.eval()
+    for p in model.parameters():
+        p.requires_grad = False
+
+    d_model = config.get("d_model", 256)
+    cls_head = ClassificationHead(
+        n_vars=n_v, d_model=d_model,
+        n_classes=n_classes,
+        head_dropout=config.get("head_dropout", 0.1),
+    ).to(device)
 
     n_epochs  = config.get("epoch_classification", 20)
-    optimizer = torch.optim.Adam(
-        [p for p in model.parameters() if p.requires_grad],
-        lr=config.get("lr_classification", 1e-3),
-        weight_decay=1e-4,
-    )
+    optimizer = torch.optim.Adam(cls_head.parameters(),
+                                 lr=config.get("lr_classification", 1e-3),
+                                 weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer, max_lr=config.get("lr_classification", 1e-3),
         total_steps=n_epochs * len(classification_train),
@@ -115,38 +160,38 @@ def classification_zeroshot(config, checkpoint_path,
     )
 
     def _to_flat(patches):
-        """[B, P, PL, C] → [B, P*PL, C]"""
         B, P, PL, C = patches.shape
         return patches.reshape(B, P * PL, C)
 
     for epoch in range(n_epochs):
-        model.train()
-        # keep encoder frozen even in train mode
-        for name, module in model.named_modules():
-            if "encoder" in name:
-                module.eval()
-        correct, total_n = 0, 0
+        cls_head.train()
+        correct, total = 0, 0
         for patches, labels, padding_mask in classification_train:
             x      = _to_flat(patches).float().to(device)
             labels = labels.to(device)
+            padding_mask = padding_mask.to(device)
             optimizer.zero_grad()
-            logits = model(x)          # ClsModel.forward → forecast → OldClsHead
+            with torch.no_grad():
+                enc = _encode(model, x, padding_mask)  # [B, C, d_model, P]
+            logits = cls_head(enc)         # [B, n_classes]
             loss   = F.cross_entropy(logits, labels)
             loss.backward()
             optimizer.step()
             scheduler.step()
             correct += (logits.argmax(1) == labels).sum().item()
-            total_n += len(labels)
+            total   += len(labels)
         if epoch % 5 == 0:
-            print(f"  Epoch {epoch:3d} | train acc {correct/total_n:.4f}")
+            print(f"  Epoch {epoch:3d} | train acc {correct/total:.4f}")
 
-    model.eval()
+    cls_head.eval()
     tc, tt = 0, 0
     with torch.no_grad():
         for patches, labels, padding_mask in classification_test:
             x      = _to_flat(patches).float().to(device)
             labels = labels.to(device)
-            logits = model(x)
+            padding_mask = padding_mask.to(device)
+            enc    = _encode(model, x, padding_mask)
+            logits = cls_head(enc)
             tc += (logits.argmax(1) == labels).sum().item()
             tt += len(labels)
     test_acc = tc / tt

@@ -64,14 +64,16 @@ class TransformerEncoderBlock(nn.Module):
         self.norm2 = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, mask):
+    def forward(self, x, mask, key_padding_mask=None):
         """
         :param x: [batch_size * num_features, seq_len, d_model]
-        :param mask: [1, 1, seq_len, seq_len]
+        :param mask: [seq_len, seq_len] causal mask or None
+        :param key_padding_mask: [batch_size * num_features, seq_len] bool, True=ignore (optional)
         :return: [batch_size * num_features, seq_len, d_model]
         """
         # Self-attention
-        attn_output, _ = self.attention(x, x, x, attn_mask=mask)
+        attn_output, _ = self.attention(x, x, x, attn_mask=mask,
+                                        key_padding_mask=key_padding_mask)
         x = self.norm1(x + self.dropout(attn_output))
 
         # Feed-forward network
@@ -100,12 +102,13 @@ class CausalTransformer(nn.Module):
         )
         self.norm = nn.LayerNorm(d_model)
 
-    def forward(self, x, is_mask=True):
+    def forward(self, x, is_mask=True, key_padding_mask=None):
         # x: [batch_size * num_features, seq_len, d_model]
+        # key_padding_mask: [batch_size * num_features, seq_len] bool, True=ignore (optional)
         seq_len = x.size(1)
         mask = generate_causal_mask(seq_len).to(x.device) if is_mask else None
         for layer in self.layers:
-            x = layer(x, mask)
+            x = layer(x, mask, key_padding_mask=key_padding_mask)
 
         x = self.norm(x)
         return x
