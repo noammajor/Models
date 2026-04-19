@@ -1244,8 +1244,13 @@ class AnomalyDataPuller(Dataset):
             X_tr = X_tr.transpose(0, 2, 1)
             X_te = X_te.transpose(0, 2, 1)
 
-        # data already normalized by prep_anomaly_data.py
+        # ── StandardScaler fit on train ──────────────────────────────────────
         N, T, C = X_tr.shape
+        scaler = StandardScaler()
+        scaler.fit(X_tr.reshape(-1, C))
+        X_tr = scaler.transform(X_tr.reshape(-1, C)).reshape(N, T, C)
+        Nt, Tt, _ = X_te.shape
+        X_te = scaler.transform(X_te.reshape(-1, C)).reshape(Nt, Tt, C)
 
         # ── pad to multiple of patch_size ────────────────────────────────────
         padded_T = int(np.ceil(T / patch_size)) * patch_size
