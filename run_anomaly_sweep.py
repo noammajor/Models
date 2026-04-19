@@ -41,12 +41,13 @@ ANOMALY_DATASETS = ["SMD", "MSL", "SMAP", "SWaT", "PSM"]
 LAYER_CONFIGS = [2, 4, 8, 12, 24]
 
 MODEL_GPU = {
-    "dino":        0,
-    "jepa_simple": 1,
-    "lejepa":      2,
-    "patchtst":    3,
-    "npt":         4,
-    "timedart":    5,
+    "dino":            0,
+    "jepa_simple":     1,
+    "lejepa":          2,
+    "patchtst":        3,
+    "npt":             4,
+    "timedart":        5,
+    "patchtst_random": 5,
 }
 ALL_MODELS = list(MODEL_GPU.keys())
 
