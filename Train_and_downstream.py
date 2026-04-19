@@ -1705,7 +1705,12 @@ def run_lejepa(skip_train: bool = False,
     sys.path.insert(0, _lj)
     from LeJepa import LeJEPA
 
-    forecast_dataset = None if (pretrain_only or classification_only or (anomaly_dataset is not None and forecast_dataset is None)) else (forecast_dataset or config.get('forecast_dataset'))
+    if pretrain_only or classification_only or (anomaly_dataset is not None and forecast_dataset is None):
+        forecast_dataset = None
+    elif forecast_dataset is None and not skip_train:
+        # Fresh pretrain run — fall back to config default
+        forecast_dataset = config.get('forecast_dataset')
+    # else: forecast_dataset was explicitly passed — keep it
     if forecast_dataset is None:
         config.pop('path_data_forcasting', None)
         config.pop('forecast_dataset', None)
