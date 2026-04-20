@@ -342,7 +342,7 @@ def run_dino(skip_train: bool = False,
     if not classification_only and forecast_dataset is not None:
         # ── forecasting downstream ────────────────────────────────────────────
         print("\n[DINO] Running forecasting downstream task …")
-        ckpts = checkpoints if checkpoints is not None else [80, 120, 160, 200, 240, 300]
+        ckpts = checkpoints if checkpoints is not None else ["best"]
         best_ckpt = None
         best_mse  = float('inf')
 
@@ -355,7 +355,8 @@ def run_dino(skip_train: bool = False,
                   + ("" if is_search else f"  [best ckpt={ckpts_to_run[0]}]"))
             for ckpt in ckpts_to_run:
                 args.path_num = ckpt
-                print(f"  → checkpoint {ckpt} ({'random init' if ckpt == 0 else f'epoch {ckpt}'})")
+                _ckpt_label = 'random init' if ckpt == 0 else ('best' if ckpt == 'best' else f'epoch {ckpt}')
+                print(f"  → checkpoint {ckpt} ({_ckpt_label})")
                 mse = dino_main.test_run(args)
                 if is_search and mse is not None and mse < best_mse:
                     best_mse  = mse
