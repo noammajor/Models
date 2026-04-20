@@ -640,7 +640,7 @@ def run_jepa(skip_train: bool = False,
         "predictor":         "predictor_forecasting",
         "predictor_s2p_p2p": "predictor_s2p_p2p_forecasting",
     }
-    ckpts = checkpoints if checkpoints is not None else [40, 60, 90, 120, 160]
+    ckpts = checkpoints if checkpoints is not None else ["best"]
     p_s = config["patch_size_forcasting"]
     best_ckpt = None
     best_mse  = float('inf')
@@ -844,7 +844,7 @@ def run_jepa2(skip_train: bool = False,
         "predictor":         "predictor_forecasting",
         "predictor_s2p_p2p": "predictor_s2p_p2p_forecasting",
     }
-    ckpts = checkpoints if checkpoints is not None else [40, 60, 90, 120, 160]
+    ckpts = checkpoints if checkpoints is not None else ["best"]
     p_s = config["patch_size_forcasting"]
     best_ckpt = None
     best_mse  = float('inf')
@@ -874,12 +874,13 @@ def run_jepa2(skip_train: bool = False,
               + ("" if is_search else f"  [best ckpt={ckpts_to_run[0]}]"))
         for epoch in ckpts_to_run:
             print(f"  → checkpoint epoch {epoch}")
+            ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
             for mode in modes:
                 method_name = _MODE_MAP.get(mode)
                 if method_name is None:
                     print(f"  [JEPA2] Unknown forecasting mode '{mode}', skipping.")
                     continue
-                mse = getattr(model, method_name)(f"_epoch{epoch}")
+                mse = getattr(model, method_name)(ckpt_tag)
                 if is_search and mode == modes[0] and mse is not None and mse < best_mse:
                     best_mse  = mse
                     best_ckpt = epoch
@@ -1115,7 +1116,7 @@ def run_jepa_simple(skip_train: bool = False,
     if forecast_dataset is None:
         print("\n[JEPA simple] No forecast_dataset — skipping forecasting.")
     else:
-        ckpts = checkpoints if checkpoints is not None else [80, 120, 160, 200, 240, 300]
+        ckpts = checkpoints if checkpoints is not None else ["best"]
         p_s = config["patch_size_forcasting"]
         _csv = config["path_data_forcasting"][0]
         _fc_bs2 = _get_forecast_bs(config, 256)
@@ -1226,10 +1227,12 @@ def run_jepa_simple(skip_train: bool = False,
 
 def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
                  classification_dataset=None, anomaly_dataset: str = None,
-                 pretrain_only: bool = False, classification_only: bool = False, pred_len: int = None,
+                 pretrain_only: bool = False, classification_only: bool = False, pred_lens=None,
                  checkpoints=None, random_encoder: bool = False, encoder_layers: int = None,
                  predictor_layers: int = None, lr: float = None, pretrain_source: str = None,
                  num_patches: int = None):
+    if pred_lens is None:
+        pred_lens = [96, 192, 336, 720]
     patchtst_dir = Path(__file__).parent / "PatchTST_self_supervised"
     djepa_dir    = Path(__file__).parent / "Discrete_JEPA"
     _add_path(djepa_dir)
@@ -1377,44 +1380,45 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     if _forecast_dset is None:
         print("\n[PatchTST] No forecast_dataset — skipping forecasting.")
     else:
-        _target_points = pred_len if pred_len is not None else cfg.get("target_points", 96)
-        print(f"\n[PatchTST] Running forecasting fine-tuning on {_forecast_dset} (target_points={_target_points}) …")
-        result = subprocess.run(
-            [sys.executable, "patchtst_finetune.py",
-             "--dset_finetune",      _forecast_dset,
-             "--is_linear_probe",    "1",
-             "--context_points",  str(cfg.get("context_points", 512)),
-             "--patch_len",       str(cfg.get("patch_len", 16)),
-             "--stride",          str(cfg.get("stride", 16)),
-             "--n_layers",        str(cfg.get("n_layers", 3)),
-             "--n_heads",         str(cfg.get("n_heads", 16)),
-             "--d_model",         str(cfg.get("d_model", 128)),
-             "--d_ff",            str(cfg.get("d_ff", 512)),
-             "--dropout",         str(cfg.get("dropout", 0.2)),
-             "--head_dropout",    str(cfg.get("head_dropout", 0.2)),
-             "--target_points",   str(_target_points),
-             "--pretrained_model", pretrained_model_path,
-             "--random_encoder",   str(int(random_encoder)),
-             "--batch_size",       str(_get_forecast_bs(cfg, 256)),
-             "--num_workers",      str(cfg.get("num_workers", 4)),
-             "--lr",               str(cfg.get("finetune_lr", 1e-4)),
-             "--seed",             "42"],
-            cwd=patchtst_dir, capture_output=True, text=True,
-        )
-        print(result.stdout)
-        if result.returncode != 0:
-            print("[PatchTST] Forecasting fine-tuning exited with errors.")
-            print(result.stderr)
-            return None
-
-        # Parse MSE/MAE from stdout — the subprocess prints "score: [mse, mae]"
         import re as _re
-        _score_match = _re.search(r"score:\s*\[array\(([\d.]+)[^)]*\)[^,]*,\s*array\(([\d.]+)", result.stdout)
-        if _score_match:
-            mse_val = float(_score_match.group(1))
-            mae_val = float(_score_match.group(2))
-            print(f"[PatchTST] MSE on {_forecast_dset}: {mse_val:.4f}")
-            print(f"[PatchTST] MAE on {_forecast_dset}: {mae_val:.4f}")
+        print(f"\n[PatchTST] Running forecasting fine-tuning on {_forecast_dset} …")
+        for _pl in pred_lens:
+            print(f"\n[PatchTST] pred_len={_pl}")
+            result = subprocess.run(
+                [sys.executable, "patchtst_finetune.py",
+                 "--dset_finetune",      _forecast_dset,
+                 "--is_linear_probe",    "1",
+                 "--context_points",  str(cfg.get("context_points", 512)),
+                 "--patch_len",       str(cfg.get("patch_len", 16)),
+                 "--stride",          str(cfg.get("stride", 16)),
+                 "--n_layers",        str(cfg.get("n_layers", 3)),
+                 "--n_heads",         str(cfg.get("n_heads", 16)),
+                 "--d_model",         str(cfg.get("d_model", 128)),
+                 "--d_ff",            str(cfg.get("d_ff", 512)),
+                 "--dropout",         str(cfg.get("dropout", 0.2)),
+                 "--head_dropout",    str(cfg.get("head_dropout", 0.2)),
+                 "--target_points",   str(_pl),
+                 "--pretrained_model", pretrained_model_path,
+                 "--random_encoder",   str(int(random_encoder)),
+                 "--batch_size",       str(_get_forecast_bs(cfg, 256)),
+                 "--num_workers",      str(cfg.get("num_workers", 4)),
+                 "--lr",               str(cfg.get("finetune_lr", 1e-4)),
+                 "--seed",             "42"],
+                cwd=patchtst_dir, capture_output=True, text=True,
+            )
+            print(result.stdout)
+            if result.returncode != 0:
+                print(f"[PatchTST] pred_len={_pl} exited with errors.")
+                print(result.stderr)
+                continue
+
+            _score_match = _re.search(r"score:\s*\[array\(([\d.]+)[^)]*\)[^,]*,\s*array\(([\d.]+)", result.stdout)
+            if _score_match:
+                _mse = float(_score_match.group(1))
+                _mae = float(_score_match.group(2))
+                print(f"[PatchTST] pred_len={_pl}  MSE={_mse:.4f}  MAE={_mae:.4f}")
+                if mse_val is None or _mse < mse_val:
+                    mse_val, mae_val = _mse, _mae
 
     # ── classification downstream ─────────────────────────────────────────────
     cls_acc = None
@@ -1491,9 +1495,11 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
 def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
             classification_dataset=None, anomaly_dataset: str = None,
             pretrain_only: bool = False, classification_only: bool = False,
-            pred_len: int = None,
+            pred_lens=None,
             checkpoints=None, encoder_layers: int = None, predictor_layers: int = None,
             lr: float = None, pretrain_source: str = None, num_patches: int = None):
+    if pred_lens is None:
+        pred_lens = [96, 192, 336, 720]
     npt_dir = Path(__file__).parent / "NPT"
     _add_path(npt_dir)
 
@@ -1577,19 +1583,20 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         print("[NPT] Skipping pretraining.")
 
     mse_trained = None
+    mae_trained = None
     if _forecast_dset:
-        if pred_len is not None:
-            cfg["horizon_t"] = pred_len // cfg["patch_size"]
-
         print(f"\n[NPT] Running zero-shot forecasting on {_forecast_dset} …")
-        mse_trained, mae_trained = zeroshot_forecasting(cfg, _ckpt_path)
-
-        if mse_trained is not None:
-            print(f"\n{'='*60}")
-            print(f"  Results on {_forecast_dset}")
-            print(f"  {'':20s}  {'MSE':>8}  {'MAE':>8}")
-            print(f"  {'NPT (pretrained)':20s}  {mse_trained:8.4f}  {mae_trained:8.4f}")
-            print(f"{'='*60}")
+        for _pl in pred_lens:
+            cfg["horizon_t"] = _pl // cfg["patch_size"]
+            _mse, _mae = zeroshot_forecasting(cfg, _ckpt_path)
+            if _mse is not None:
+                print(f"\n{'='*60}")
+                print(f"  Results on {_forecast_dset}  pred_len={_pl}")
+                print(f"  {'':20s}  {'MSE':>8}  {'MAE':>8}")
+                print(f"  {'NPT (pretrained)':20s}  {_mse:8.4f}  {_mae:8.4f}")
+                print(f"{'='*60}")
+                if mse_trained is None or _mse < mse_trained:
+                    mse_trained, mae_trained = _mse, _mae
     else:
         print("[NPT] No forecast_dataset set — skipping forecasting.")
 
@@ -1881,7 +1888,7 @@ def run_lejepa(skip_train: bool = False,
         _csv = config["path_data_forcasting"][0]
 
         _best_mse  = float('inf')
-        ckpts     = checkpoints if checkpoints is not None else list(range(config["num_epochs"]))
+        ckpts     = checkpoints if checkpoints is not None else ["best"]
 
         _fc_bs = _get_forecast_bs(config, 256)
         _fc_nw = config.get("num_workers", 4)
