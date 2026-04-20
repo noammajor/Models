@@ -35,7 +35,7 @@ sys.path.insert(0, str(ROOT))
 
 SEEDS            = [2003, 123, 456, 789, 1337]
 ENCODER_LAYERS   = 8
-PRETRAIN_SOURCE  = "monash+synthetic"
+PRETRAIN_SOURCE  = "monash"
 LR               = 5e-4   # LAYER_LR[8] from run_layer_sweep.py
 CLS_NUM_PATCHES  = 72     # 72 × 16 = 1152 ts — covers longest UEA dataset (SelfRegulationSCP2)
 
@@ -218,7 +218,7 @@ def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
 
 def run_seed_analysis(seeds, models, gpu_override, skip_pretrain, dry_run,
                       pretrain_source=PRETRAIN_SOURCE, phases=None, forecast_datasets=None):
-    log_base = ROOT / "logs" / "seed_analysis"
+    log_base = ROOT / "logs" / "forecasting" / "seed_analysis"
     if phases is None:
         phases = {"pretrain", "forecast", "classify", "anomaly"}
 
