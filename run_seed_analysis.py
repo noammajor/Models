@@ -164,9 +164,11 @@ def anomaly_cmd(model: str, dataset: str, seed: int, gpu: int, pretrain_source: 
 
 def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
                         skip_pretrain: bool, dry_run: bool, log_base: Path,
-                        phases: set = None):
+                        phases: set = None, forecast_datasets: list = None):
     if phases is None:
         phases = {"pretrain", "forecast", "classify", "anomaly"}
+    if forecast_datasets is None:
+        forecast_datasets = FORECAST_DATASETS
 
     def _step(proc):
         if proc:
@@ -187,7 +189,7 @@ def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
                       dry_run, f"pretrain_cls/{model}/seed{seed}"))
 
     if "forecast" in phases:
-        for dataset in FORECAST_DATASETS:
+        for dataset in forecast_datasets:
             _step(_launch(forecast_cmd(model, dataset, seed, gpu, pretrain_source),
                           gpu, log_base / f"seed{seed}" / f"forecast_{model}_{dataset}.log",
                           dry_run, f"forecast/{model}/{dataset}/seed{seed}"))
@@ -215,7 +217,7 @@ def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
 # ── main sweep ────────────────────────────────────────────────────────────────
 
 def run_seed_analysis(seeds, models, gpu_override, skip_pretrain, dry_run,
-                      pretrain_source=PRETRAIN_SOURCE, phases=None):
+                      pretrain_source=PRETRAIN_SOURCE, phases=None, forecast_datasets=None):
     log_base = ROOT / "logs" / "seed_analysis"
     if phases is None:
         phases = {"pretrain", "forecast", "classify", "anomaly"}
@@ -231,7 +233,7 @@ def run_seed_analysis(seeds, models, gpu_override, skip_pretrain, dry_run,
             gpu = gpu_override if gpu_override is not None else MODEL_GPU[model]
             t = threading.Thread(
                 target=_run_model_pipeline,
-                args=(model, seed, gpu, pretrain_source, skip_pretrain, dry_run, log_base, phases),
+                args=(model, seed, gpu, pretrain_source, skip_pretrain, dry_run, log_base, phases, forecast_datasets),
                 name=f"{model}/seed{seed}",
                 daemon=True,
             )
