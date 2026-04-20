@@ -266,6 +266,9 @@ def main():
                         choices=["pretrain", "forecast", "classify", "anomaly"],
                         default=None,
                         help="Run only these phases (default: all). E.g. --phases forecast")
+    parser.add_argument("--forecast_datasets", nargs="+", default=None,
+                        choices=FORECAST_DATASETS, metavar="DATASET",
+                        help=f"Forecast datasets to run (default: all). E.g. --forecast_datasets electricity traffic")
     parser.add_argument("--gpu_override", type=int, default=None,
                         help="Run all models on this GPU")
     parser.add_argument("--dry_run",      action="store_true",
