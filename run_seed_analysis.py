@@ -283,6 +283,8 @@ def main():
     effective_gpus = {m: (args.gpu_override if args.gpu_override is not None else MODEL_GPU[m])
                       for m in args.models}
     print(f"  GPU map:        {effective_gpus}")
+    if args.forecast_datasets:
+        print(f"  Forecast datasets:{args.forecast_datasets}")
     if args.skip_pretrain:
         print(f"  [skip_pretrain=True]")
     if args.dry_run:
@@ -296,6 +298,7 @@ def main():
         dry_run=args.dry_run,
         pretrain_source=args.pretrain_source,
         phases=set(args.phases) if args.phases else None,
+        forecast_datasets=args.forecast_datasets,
     )
 
 
