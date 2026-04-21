@@ -221,13 +221,11 @@ def _extract_dino(ckpt: Path, loader, device) -> tuple:
         B, P, PL, C = patches.shape
         x  = patches.permute(0, 1, 3, 2).float().to(device)  # [B, P, C, PL]
         pm = padding_mask.to(device)
-        # Use backbone directly for patch-level embeddings: [B, C, d_model, P]
-        z = model.backbone(x, padding_mask=pm)
-        B_, C_, D_, P_ = z.shape
-        # one point per (sample, channel, patch) triple — same as other models
-        z = z.permute(0, 1, 3, 2).reshape(B_ * C_ * P_, D_)  # [B*C*P, d_model]
+        z = model.backbone(x, padding_mask=pm)   # [B, C, d_model, P]
+        # mean-pool over channels and patches → one vector per sample
+        z = z.mean(dim=(1, 3))                   # [B, d_model]
         all_embs.append(z.cpu().numpy())
-        all_labels.append(labels.numpy().repeat(C_ * P_))
+        all_labels.append(labels.numpy())
 
     return np.concatenate(all_embs), np.concatenate(all_labels)
 
@@ -288,9 +286,10 @@ def _extract_jepa(ckpt: Path, loader, encoder_layers: int, device,
         ctx_norm, _, _ = _instance_norm(patches)
         out = encoder(ctx_norm, padding_mask=padding_mask)
         enc = out["data_patches"]            # [B*C, P, embed_dim]
-        # one point per (sample, channel, patch) triple
-        all_embs.append(enc.reshape(-1, embed_dim).cpu().numpy())
-        all_labels.append(labels.numpy().repeat(C * P))
+        # mean-pool over patches and channels → one vector per sample
+        enc = enc.reshape(B, C, P, embed_dim).mean(dim=(1, 2))  # [B, embed_dim]
+        all_embs.append(enc.cpu().numpy())
+        all_labels.append(labels.numpy())
 
     return np.concatenate(all_embs), np.concatenate(all_labels)
 
@@ -350,9 +349,10 @@ def _extract_lejepa(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         ctx_norm, _, _ = _instance_norm(patches)
         out = encoder(ctx_norm, padding_mask=padding_mask)
         enc = out["data_patches"]            # [B*C, P, embed_dim]
-        # one point per (sample, channel, patch) triple
-        all_embs.append(enc.reshape(-1, embed_dim).cpu().numpy())
-        all_labels.append(labels.numpy().repeat(C * P))
+        # mean-pool over patches and channels → one vector per sample
+        enc = enc.reshape(B, C, P, embed_dim).mean(dim=(1, 2))  # [B, embed_dim]
+        all_embs.append(enc.cpu().numpy())
+        all_labels.append(labels.numpy())
 
     return np.concatenate(all_embs), np.concatenate(all_labels)
 
@@ -411,11 +411,10 @@ def _extract_npt(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         x            = patches.permute(0, 1, 3, 2).float().to(device)  # [B,P,C,PL]
         padding_mask = padding_mask.to(device)
         z = backbone.backbone(x, padding_mask=padding_mask)  # [B, C, d_model, P]
-        B_, C_, D_, P_ = z.shape
-        # one point per (sample, channel, patch) triple
-        z = z.permute(0, 1, 3, 2).reshape(B_ * C_ * P_, D_)  # [B*C*P, d_model]
+        # mean-pool over channels and patches → one vector per sample
+        z = z.mean(dim=(1, 3))                               # [B, d_model]
         all_embs.append(z.cpu().numpy())
-        all_labels.append(labels.numpy().repeat(C_ * P_))
+        all_labels.append(labels.numpy())
 
     return np.concatenate(all_embs), np.concatenate(all_labels)
 
@@ -473,11 +472,10 @@ def _extract_patchtst(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         x            = patches.permute(0, 1, 3, 2).float().to(device)  # [B,P,C,PL]
         padding_mask = padding_mask.to(device)
         z = model.backbone(x, padding_mask=padding_mask)  # [B, C, d_model, P]
-        B_, C_, D_, P_ = z.shape
-        # one point per (sample, channel, patch) triple
-        z = z.permute(0, 1, 3, 2).reshape(B_ * C_ * P_, D_)  # [B*C*P, d_model]
+        # mean-pool over channels and patches → one vector per sample
+        z = z.mean(dim=(1, 3))                             # [B, d_model]
         all_embs.append(z.cpu().numpy())
-        all_labels.append(labels.numpy().repeat(C_ * P_))
+        all_labels.append(labels.numpy())
 
     return np.concatenate(all_embs), np.concatenate(all_labels)
 
@@ -557,11 +555,10 @@ def _extract_timedart(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         x            = patches.reshape(B, P * PL, C).float().to(device)
         padding_mask = padding_mask.to(device)
         z = _encode(x, padding_mask)          # [B, C, d_model, P]
-        B_, C_, D_, P_ = z.shape
-        # one point per (sample, channel, patch) triple
-        z = z.permute(0, 1, 3, 2).reshape(B_ * C_ * P_, D_)  # [B*C*P, d_model]
+        # mean-pool over channels and patches → one vector per sample
+        z = z.mean(dim=(1, 3))                # [B, d_model]
         all_embs.append(z.cpu().numpy())
-        all_labels.append(labels.numpy().repeat(C_ * P_))
+        all_labels.append(labels.numpy())
 
     return np.concatenate(all_embs), np.concatenate(all_labels)
 
