@@ -621,48 +621,52 @@ def plot_model(model_name: str, dataset_results: dict, output_dir: Path,
                max_points: int = 500, method: str = "tsne", pca_components: int = 50):
     """
     dataset_results: {dataset_name: (embeddings [N,d], labels [N])}
-    One figure per model, one subplot per dataset.
+    One figure per (model, dataset) — paper-ready styling.
     """
-    n_ds  = len(dataset_results)
-    ncols = min(n_ds, 3)
-    nrows = (n_ds + ncols - 1) // ncols
-    fig, axes = plt.subplots(nrows, ncols,
-                             figsize=(5 * ncols, 4 * nrows),
-                             squeeze=False)
+    pca_tag = f"_pca{pca_components}" if pca_components > 0 else "_nopca"
 
-    for idx, (ds_name, (embs, labels)) in enumerate(dataset_results.items()):
-        ax    = axes[idx // ncols][idx % ncols]
+    plt.rcParams.update({
+        "font.family":    "serif",
+        "font.size":      13,
+        "axes.linewidth": 0.8,
+        "axes.spines.top":    False,
+        "axes.spines.right":  False,
+        "axes.spines.left":   False,
+        "axes.spines.bottom": False,
+    })
+
+    for ds_name, (embs, labels) in dataset_results.items():
         n_cls = len(np.unique(labels))
         cmap  = plt.get_cmap("tab10" if n_cls <= 10 else "tab20")
 
         embs, labels = _subsample(embs, labels, max_points)
         print(f"  [{model_name}] {method.upper()} on {ds_name}: {len(embs)} points, {n_cls} classes …")
-        perp = 50.0
-        xy   = _reduce(embs, method=method, perplexity=perp, pca_components=pca_components)
+        xy = _reduce(embs, method=method, perplexity=50.0, pca_components=pca_components)
 
+        fig, ax = plt.subplots(figsize=(5, 5))
         for cls_id in np.unique(labels):
             mask = labels == cls_id
-            ax.scatter(xy[mask, 0], xy[mask, 1], s=8, alpha=0.6,
-                       color=cmap(int(cls_id) % 20), label=str(int(cls_id)))
+            ax.scatter(xy[mask, 0], xy[mask, 1],
+                       s=20, alpha=0.75, linewidths=0,
+                       color=cmap(int(cls_id) % 20),
+                       label=f"Class {int(cls_id)}")
 
-        ax.set_title(ds_name, fontsize=11)
+        ax.set_title(f"{ds_name}", fontsize=15, fontweight="bold", pad=10)
+        ax.set_xlabel(f"{method.upper()} dim 1", fontsize=12)
+        ax.set_ylabel(f"{method.upper()} dim 2", fontsize=12)
         ax.set_xticks([])
         ax.set_yticks([])
-        if n_cls <= 12:
-            ax.legend(markerscale=2, fontsize=7, loc="best")
+        legend = ax.legend(markerscale=1.5, fontsize=9, framealpha=0.9,
+                           loc="best", ncol=2 if n_cls > 6 else 1)
+        legend.get_frame().set_linewidth(0.5)
 
-    # Hide unused subplots
-    for idx in range(n_ds, nrows * ncols):
-        axes[idx // ncols][idx % ncols].set_visible(False)
+        fig.tight_layout()
+        out_file = output_dir / f"{method}{pca_tag}_{model_name}_{ds_name}.png"
+        fig.savefig(out_file, bbox_inches="tight", dpi=300)
+        print(f"  [{model_name}] Saved → {out_file}")
+        plt.close(fig)
 
-    pca_tag = f"_pca{pca_components}" if pca_components > 0 else "_nopca"
-    fig.suptitle(f"{model_name} — {method.upper()}{pca_tag} embeddings", fontsize=13, fontweight="bold")
-    fig.tight_layout()
-
-    out_file = output_dir / f"{method}{pca_tag}_{model_name}.png"
-    fig.savefig(out_file, bbox_inches="tight", dpi=150)
-    print(f"  [{model_name}] Saved → {out_file}")
-    plt.close(fig)
+    plt.rcParams.update(plt.rcParamsDefault)
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
