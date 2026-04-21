@@ -666,7 +666,7 @@ def main():
                         help="Root directory for classification datasets")
     parser.add_argument("--output_dir",      type=str, default="plots",
                         help="Directory for output figures (default: plots/)")
-    parser.add_argument("--max_points",      type=int, default=100,
+    parser.add_argument("--max_points",      type=int, default=500,
                         help="Max points per dataset fed into t-SNE (stratified, default: 100)")
     parser.add_argument("--batch_size",      type=int, default=64)
     parser.add_argument("--gpu",             type=int, default=0)
