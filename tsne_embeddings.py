@@ -580,6 +580,22 @@ _EXTRACTORS = {
 
 # ── t-SNE + plotting ──────────────────────────────────────────────────────────
 
+def _subsample(embeddings: np.ndarray, labels: np.ndarray, max_points: int):
+    """Stratified subsample to max_points (equal per class)."""
+    if len(embeddings) <= max_points:
+        return embeddings, labels
+    classes   = np.unique(labels)
+    per_class = max(1, max_points // len(classes))
+    idx = []
+    rng = np.random.default_rng(42)
+    for c in classes:
+        c_idx   = np.where(labels == c)[0]
+        chosen  = rng.choice(c_idx, min(per_class, len(c_idx)), replace=False)
+        idx.append(chosen)
+    idx = np.concatenate(idx)
+    return embeddings[idx], labels[idx]
+
+
 def _do_tsne(embeddings: np.ndarray, perplexity: float = 30.0, n_iter: int = 1000):
     """Run t-SNE on embeddings [N, D] and return xy [N, 2]."""
     tsne = TSNE(n_components=2, perplexity=perplexity, max_iter=n_iter,
@@ -587,7 +603,8 @@ def _do_tsne(embeddings: np.ndarray, perplexity: float = 30.0, n_iter: int = 100
     return tsne.fit_transform(embeddings)
 
 
-def plot_model(model_name: str, dataset_results: dict, output_dir: Path):
+def plot_model(model_name: str, dataset_results: dict, output_dir: Path,
+               max_points: int = 100):
     """
     dataset_results: {dataset_name: (embeddings [N,d], labels [N])}
     One figure per model, one subplot per dataset.
@@ -604,7 +621,8 @@ def plot_model(model_name: str, dataset_results: dict, output_dir: Path):
         n_cls = len(np.unique(labels))
         cmap  = plt.get_cmap("tab10" if n_cls <= 10 else "tab20")
 
-        print(f"  [{model_name}] t-SNE on {ds_name}: {len(embs)} samples, {n_cls} classes …")
+        embs, labels = _subsample(embs, labels, max_points)
+        print(f"  [{model_name}] t-SNE on {ds_name}: {len(embs)} points, {n_cls} classes …")
         perp = min(30.0, max(5.0, float(len(embs)) / 10.0))
         xy   = _do_tsne(embs, perplexity=perp)
 
@@ -651,6 +669,8 @@ def main():
                         help="Root directory for classification datasets")
     parser.add_argument("--output_dir",      type=str, default="plots",
                         help="Directory for output figures (default: plots/)")
+    parser.add_argument("--max_points",      type=int, default=100,
+                        help="Max points per dataset fed into t-SNE (stratified, default: 100)")
     parser.add_argument("--batch_size",      type=int, default=64)
     parser.add_argument("--gpu",             type=int, default=0)
     args = parser.parse_args()
@@ -701,7 +721,7 @@ def main():
                 traceback.print_exc()
 
         if dataset_results:
-            plot_model(model_name, dataset_results, output_dir)
+            plot_model(model_name, dataset_results, output_dir, max_points=args.max_points)
         else:
             print(f"  [{model_name}] No datasets succeeded — skipping plot.")
 
