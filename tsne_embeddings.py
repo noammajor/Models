@@ -219,7 +219,7 @@ def _extract_dino(ckpt: Path, loader, device) -> tuple:
     all_embs, all_labels = [], []
     for patches, labels, padding_mask in loader:
         B, P, PL, C = patches.shape
-        x  = patches.reshape(B, P * PL, C).float().to(device)
+        x  = patches.permute(0, 1, 3, 2).float().to(device)  # [B, P, C, PL]
         pm = padding_mask.to(device)
         # Use backbone directly for patch-level embeddings: [B, C, d_model, P]
         z = model.backbone(x, padding_mask=pm)
@@ -582,7 +582,7 @@ _EXTRACTORS = {
 
 def _do_tsne(embeddings: np.ndarray, perplexity: float = 30.0, n_iter: int = 1000):
     """Run t-SNE on embeddings [N, D] and return xy [N, 2]."""
-    tsne = TSNE(n_components=2, perplexity=perplexity, n_iter=n_iter,
+    tsne = TSNE(n_components=2, perplexity=perplexity, max_iter=n_iter,
                 random_state=42, init="pca")
     return tsne.fit_transform(embeddings)
 
