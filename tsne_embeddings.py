@@ -224,8 +224,8 @@ def _extract_dino(ckpt: Path, loader, device) -> tuple:
         x  = patches.permute(0, 1, 3, 2).float().to(device)  # [B, P, C, PL]
         pm = padding_mask.to(device)
         z = model.backbone(x, padding_mask=pm)   # [B, C, d_model, P]
-        # mean-pool over channels and patches → one vector per sample
-        z = z.mean(dim=(1, 3))                   # [B, d_model]
+        B_, C_, D_, P_ = z.shape
+        z = z.reshape(B_, C_ * D_ * P_)          # [B, C*d_model*P]
         all_embs.append(z.cpu().numpy())
         all_labels.append(labels.numpy())
 
@@ -288,8 +288,7 @@ def _extract_jepa(ckpt: Path, loader, encoder_layers: int, device,
         ctx_norm, _, _ = _instance_norm(patches)
         out = encoder(ctx_norm, padding_mask=padding_mask)
         enc = out["data_patches"]            # [B*C, P, embed_dim]
-        # mean-pool over patches and channels → one vector per sample
-        enc = enc.reshape(B, C, P, embed_dim).mean(dim=(1, 2))  # [B, embed_dim]
+        enc = enc.reshape(B, C * P * embed_dim)  # [B, C*P*embed_dim]
         all_embs.append(enc.cpu().numpy())
         all_labels.append(labels.numpy())
 
@@ -351,8 +350,7 @@ def _extract_lejepa(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         ctx_norm, _, _ = _instance_norm(patches)
         out = encoder(ctx_norm, padding_mask=padding_mask)
         enc = out["data_patches"]            # [B*C, P, embed_dim]
-        # mean-pool over patches and channels → one vector per sample
-        enc = enc.reshape(B, C, P, embed_dim).mean(dim=(1, 2))  # [B, embed_dim]
+        enc = enc.reshape(B, C * P * embed_dim)  # [B, C*P*embed_dim]
         all_embs.append(enc.cpu().numpy())
         all_labels.append(labels.numpy())
 
@@ -413,8 +411,8 @@ def _extract_npt(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         x            = patches.permute(0, 1, 3, 2).float().to(device)  # [B,P,C,PL]
         padding_mask = padding_mask.to(device)
         z = backbone.backbone(x, padding_mask=padding_mask)  # [B, C, d_model, P]
-        # mean-pool over channels and patches → one vector per sample
-        z = z.mean(dim=(1, 3))                               # [B, d_model]
+        B_, C_, D_, P_ = z.shape
+        z = z.reshape(B_, C_ * D_ * P_)                      # [B, C*d_model*P]
         all_embs.append(z.cpu().numpy())
         all_labels.append(labels.numpy())
 
@@ -474,8 +472,8 @@ def _extract_patchtst(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         x            = patches.permute(0, 1, 3, 2).float().to(device)  # [B,P,C,PL]
         padding_mask = padding_mask.to(device)
         z = model.backbone(x, padding_mask=padding_mask)  # [B, C, d_model, P]
-        # mean-pool over channels and patches → one vector per sample
-        z = z.mean(dim=(1, 3))                             # [B, d_model]
+        B_, C_, D_, P_ = z.shape
+        z = z.reshape(B_, C_ * D_ * P_)                    # [B, C*d_model*P]
         all_embs.append(z.cpu().numpy())
         all_labels.append(labels.numpy())
 
@@ -557,8 +555,8 @@ def _extract_timedart(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         x            = patches.reshape(B, P * PL, C).float().to(device)
         padding_mask = padding_mask.to(device)
         z = _encode(x, padding_mask)          # [B, C, d_model, P]
-        # mean-pool over channels and patches → one vector per sample
-        z = z.mean(dim=(1, 3))                # [B, d_model]
+        B_, C_, D_, P_ = z.shape
+        z = z.reshape(B_, C_ * D_ * P_)       # [B, C*d_model*P]
         all_embs.append(z.cpu().numpy())
         all_labels.append(labels.numpy())
 
@@ -596,12 +594,14 @@ def _subsample(embeddings: np.ndarray, labels: np.ndarray, max_points: int):
 
 
 def _reduce(embeddings: np.ndarray, method: str = "tsne",
-            perplexity: float = 30.0, n_iter: int = 1000) -> np.ndarray:
-    """L2-normalize → PCA(50) → tsne or umap → xy [N, 2]."""
+            perplexity: float = 30.0, n_iter: int = 1000,
+            pca_components: int = 50) -> np.ndarray:
+    """L2-normalize → optional PCA → tsne or umap → xy [N, 2]."""
     embs = normalize(embeddings, norm="l2")
-    n_components = min(50, embs.shape[0] - 1, embs.shape[1])
-    if n_components > 2:
-        embs = PCA(n_components=n_components, random_state=42).fit_transform(embs)
+    if pca_components > 0:
+        n_components = min(pca_components, embs.shape[0] - 1, embs.shape[1])
+        if n_components > 2:
+            embs = PCA(n_components=n_components, random_state=42).fit_transform(embs)
 
     if method == "umap":
         try:
@@ -618,7 +618,7 @@ def _reduce(embeddings: np.ndarray, method: str = "tsne",
 
 
 def plot_model(model_name: str, dataset_results: dict, output_dir: Path,
-               max_points: int = 500, method: str = "tsne"):
+               max_points: int = 500, method: str = "tsne", pca_components: int = 50):
     """
     dataset_results: {dataset_name: (embeddings [N,d], labels [N])}
     One figure per model, one subplot per dataset.
@@ -638,7 +638,7 @@ def plot_model(model_name: str, dataset_results: dict, output_dir: Path,
         embs, labels = _subsample(embs, labels, max_points)
         print(f"  [{model_name}] {method.upper()} on {ds_name}: {len(embs)} points, {n_cls} classes …")
         perp = 50.0
-        xy   = _reduce(embs, method=method, perplexity=perp)
+        xy   = _reduce(embs, method=method, perplexity=perp, pca_components=pca_components)
 
         for cls_id in np.unique(labels):
             mask = labels == cls_id
@@ -655,10 +655,11 @@ def plot_model(model_name: str, dataset_results: dict, output_dir: Path,
     for idx in range(n_ds, nrows * ncols):
         axes[idx // ncols][idx % ncols].set_visible(False)
 
-    fig.suptitle(f"{model_name} — {method.upper()} embeddings", fontsize=13, fontweight="bold")
+    pca_tag = f"_pca{pca_components}" if pca_components > 0 else "_nopca"
+    fig.suptitle(f"{model_name} — {method.upper()}{pca_tag} embeddings", fontsize=13, fontweight="bold")
     fig.tight_layout()
 
-    out_file = output_dir / f"{method}_{model_name}.png"
+    out_file = output_dir / f"{method}{pca_tag}_{model_name}.png"
     fig.savefig(out_file, bbox_inches="tight", dpi=150)
     print(f"  [{model_name}] Saved → {out_file}")
     plt.close(fig)
@@ -688,6 +689,8 @@ def main():
     parser.add_argument("--method",          type=str, default="tsne",
                         choices=["tsne", "umap"],
                         help="Dimensionality reduction method (default: tsne)")
+    parser.add_argument("--pca_components",  type=int, default=50,
+                        help="PCA dims before reduction (0 = skip PCA, default: 50)")
     parser.add_argument("--batch_size",      type=int, default=64)
     parser.add_argument("--gpu",             type=int, default=0)
     args = parser.parse_args()
@@ -739,7 +742,8 @@ def main():
 
         if dataset_results:
             plot_model(model_name, dataset_results, output_dir,
-                       max_points=args.max_points, method=args.method)
+                       max_points=args.max_points, method=args.method,
+                       pca_components=args.pca_components)
         else:
             print(f"  [{model_name}] No datasets succeeded — skipping plot.")
 
