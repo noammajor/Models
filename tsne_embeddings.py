@@ -26,6 +26,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import normalize
 
 ROOT        = Path(__file__).parent.resolve()
 PATCH_SIZE  = 16
@@ -593,15 +595,30 @@ def _subsample(embeddings: np.ndarray, labels: np.ndarray, max_points: int):
     return embeddings[idx], labels[idx]
 
 
-def _do_tsne(embeddings: np.ndarray, perplexity: float = 30.0, n_iter: int = 1000):
-    """Run t-SNE on embeddings [N, D] and return xy [N, 2]."""
-    tsne = TSNE(n_components=2, perplexity=perplexity, max_iter=n_iter,
-                random_state=42, init="pca")
-    return tsne.fit_transform(embeddings)
+def _reduce(embeddings: np.ndarray, method: str = "tsne",
+            perplexity: float = 30.0, n_iter: int = 1000) -> np.ndarray:
+    """L2-normalize → PCA(50) → tsne or umap → xy [N, 2]."""
+    embs = normalize(embeddings, norm="l2")
+    n_components = min(50, embs.shape[0] - 1, embs.shape[1])
+    if n_components > 2:
+        embs = PCA(n_components=n_components, random_state=42).fit_transform(embs)
+
+    if method == "umap":
+        try:
+            import umap
+        except ImportError:
+            raise ImportError("Install umap-learn: pip install umap-learn")
+        reducer = umap.UMAP(n_components=2, random_state=42,
+                            n_neighbors=min(15, len(embs) - 1))
+        return reducer.fit_transform(embs)
+    else:
+        tsne = TSNE(n_components=2, perplexity=perplexity, max_iter=n_iter,
+                    random_state=42, init="pca")
+        return tsne.fit_transform(embs)
 
 
 def plot_model(model_name: str, dataset_results: dict, output_dir: Path,
-               max_points: int = 100):
+               max_points: int = 500, method: str = "tsne"):
     """
     dataset_results: {dataset_name: (embeddings [N,d], labels [N])}
     One figure per model, one subplot per dataset.
@@ -619,9 +636,9 @@ def plot_model(model_name: str, dataset_results: dict, output_dir: Path,
         cmap  = plt.get_cmap("tab10" if n_cls <= 10 else "tab20")
 
         embs, labels = _subsample(embs, labels, max_points)
-        print(f"  [{model_name}] t-SNE on {ds_name}: {len(embs)} points, {n_cls} classes …")
-        perp = min(30.0, max(5.0, float(len(embs)) / 10.0))
-        xy   = _do_tsne(embs, perplexity=perp)
+        print(f"  [{model_name}] {method.upper()} on {ds_name}: {len(embs)} points, {n_cls} classes …")
+        perp = 50.0
+        xy   = _reduce(embs, method=method, perplexity=perp)
 
         for cls_id in np.unique(labels):
             mask = labels == cls_id
@@ -638,10 +655,10 @@ def plot_model(model_name: str, dataset_results: dict, output_dir: Path,
     for idx in range(n_ds, nrows * ncols):
         axes[idx // ncols][idx % ncols].set_visible(False)
 
-    fig.suptitle(f"{model_name} — t-SNE embeddings", fontsize=13, fontweight="bold")
+    fig.suptitle(f"{model_name} — {method.upper()} embeddings", fontsize=13, fontweight="bold")
     fig.tight_layout()
 
-    out_file = output_dir / f"tsne_{model_name}.png"
+    out_file = output_dir / f"{method}_{model_name}.png"
     fig.savefig(out_file, bbox_inches="tight", dpi=150)
     print(f"  [{model_name}] Saved → {out_file}")
     plt.close(fig)
@@ -667,7 +684,10 @@ def main():
     parser.add_argument("--output_dir",      type=str, default="plots",
                         help="Directory for output figures (default: plots/)")
     parser.add_argument("--max_points",      type=int, default=500,
-                        help="Max points per dataset fed into t-SNE (stratified, default: 100)")
+                        help="Max points per dataset (stratified, default: 500)")
+    parser.add_argument("--method",          type=str, default="tsne",
+                        choices=["tsne", "umap"],
+                        help="Dimensionality reduction method (default: tsne)")
     parser.add_argument("--batch_size",      type=int, default=64)
     parser.add_argument("--gpu",             type=int, default=0)
     args = parser.parse_args()
@@ -718,7 +738,8 @@ def main():
                 traceback.print_exc()
 
         if dataset_results:
-            plot_model(model_name, dataset_results, output_dir, max_points=args.max_points)
+            plot_model(model_name, dataset_results, output_dir,
+                       max_points=args.max_points, method=args.method)
         else:
             print(f"  [{model_name}] No datasets succeeded — skipping plot.")
 
