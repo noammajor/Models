@@ -164,6 +164,16 @@ def compare_tensors(tensor1, tensor2):
 def transfer_weights(weights_path, model, exclude_head=True, device='cpu'):
     new_state_dict = torch.load(weights_path,  map_location=device)['model_state_dict']
 
+    # Print positional encoding size from checkpoint vs model
+    for key in ['positional_encoding.position_encoding.pe',
+                'positional_encoding.pe', 'pos_encoding.pe']:
+        if key in new_state_dict:
+            ckpt_shape = new_state_dict[key].shape
+            model_shape = model.state_dict().get(key, None)
+            model_shape = model_shape.shape if model_shape is not None else 'not in model'
+            print(f'  [PE] {key}: ckpt={ckpt_shape}  model={model_shape}')
+            break
+
     matched_layers = 0
     unmatched_layers = []
     for name, param in model.state_dict().items():
