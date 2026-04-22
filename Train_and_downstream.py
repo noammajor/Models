@@ -2054,7 +2054,8 @@ def run_timedart(skip_train: bool = False,
 
     _src_tag  = f"_{cfg['pretrain_source'].replace('+', '_')}" if cfg.get('pretrain_source', 'monash') != 'monash' else ''
     ckpt_dir  = Path(__file__).parent / f"outputs/timedart_pretrain{_src_tag}_layers{cfg['e_layers']}"
-    ckpt_file = ckpt_dir / f"monash{_src_tag}" / "ckpt_best.pth"
+    ckpt_file     = ckpt_dir / f"monash{_src_tag}" / "ckpt_best.pth"
+    cls_ckpt_file = ckpt_dir / f"monash{_src_tag}_cls" / "ckpt_best.pth"
 
     _explicit_forecast = forecast_dataset   # None means caller didn't request forecasting
     forecast_dataset   = forecast_dataset or "etth1"
@@ -2189,7 +2190,8 @@ def run_timedart(skip_train: bool = False,
         # restore for forecasting fine-tune
         base_args.downstream_task = "forecast"
 
-        ckpt_path = ckpt_dir / base_args.data
+        _ckpt_subdir = (base_args.data + "_cls") if pretrain_cls_model else base_args.data
+        ckpt_path = ckpt_dir / _ckpt_subdir
         ckpt_path.mkdir(parents=True, exist_ok=True)
 
         optimizer       = torch.optim.Adam(exp.model.parameters(), lr=cfg['learning_rate'])
@@ -2360,7 +2362,8 @@ def run_timedart(skip_train: bool = False,
             cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
             n_classes = cls_train.dataset.n_classes
 
-        cls_acc = timedart_classify(cfg, str(ckpt_file), cls_train, cls_val, cls_test, n_classes)
+        _cls_ckpt = cls_ckpt_file if cls_ckpt_file.exists() else ckpt_file
+        cls_acc = timedart_classify(cfg, str(_cls_ckpt), cls_train, cls_val, cls_test, n_classes)
         print(f"\n{'='*60}")
         print(f"  [TimeDaRT] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
