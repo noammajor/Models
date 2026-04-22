@@ -2485,7 +2485,8 @@ def run(model: str,
         pretrain_source: str = None,
         gpu: int = None,
         num_patches: int = None,
-        seed: int = None):
+        seed: int = None,
+        pretrain_cls_model: bool = False):
     """
     Unified entry point. Each run handles ONE task.
 
@@ -2565,6 +2566,7 @@ def run(model: str,
     if 'gpu'                    in sig.parameters: kwargs['gpu']                    = gpu
     if 'num_patches'            in sig.parameters: kwargs['num_patches']            = num_patches
     if 'seed'                   in sig.parameters: kwargs['seed']                   = seed
+    if 'pretrain_cls_model'     in sig.parameters: kwargs['pretrain_cls_model']     = pretrain_cls_model
     return runner(**kwargs)
 
 
@@ -2619,6 +2621,8 @@ if __name__ == "__main__":
                         help="Override number of patches (context window = num_patches × patch_size)")
     parser.add_argument("--seed",             type=int,   default=None,
                         help="Random seed (also suffixes checkpoint paths with _seedN)")
+    parser.add_argument("--pretrain_cls_model", type=str, default="false",
+                        help="Use cls embedding model for pretraining (saves to separate _cls checkpoint)")
     args = parser.parse_args()
     run(model=args.model,
         task=args.task,
@@ -2634,4 +2638,5 @@ if __name__ == "__main__":
         lr=args.lr,
         pretrain_source=args.pretrain_source,
         num_patches=args.num_patches,
-        seed=args.seed)
+        seed=args.seed,
+        pretrain_cls_model=args.pretrain_cls_model.lower() == "true")
