@@ -618,12 +618,14 @@ def _reduce(embeddings: np.ndarray, method: str = "tsne",
 
 
 def plot_model(model_name: str, dataset_results: dict, output_dir: Path,
-               max_points: int = 500, method: str = "tsne", pca_components: int = 50):
+               max_points: int = 500, method: str = "tsne", pca_components: int = 50,
+               perplexity: float = 50.0):
     """
     dataset_results: {dataset_name: (embeddings [N,d], labels [N])}
     One figure per (model, dataset) — paper-ready styling.
     """
-    pca_tag = f"_pca{pca_components}" if pca_components > 0 else "_nopca"
+    pca_tag  = f"_pca{pca_components}" if pca_components > 0 else "_nopca"
+    perp_tag = f"_perp{int(perplexity)}"
 
     plt.rcParams.update({
         "font.family":    "serif",
@@ -641,7 +643,7 @@ def plot_model(model_name: str, dataset_results: dict, output_dir: Path,
 
         embs, labels = _subsample(embs, labels, max_points)
         print(f"  [{model_name}] {method.upper()} on {ds_name}: {len(embs)} points, {n_cls} classes …")
-        xy = _reduce(embs, method=method, perplexity=50.0, pca_components=pca_components)
+        xy = _reduce(embs, method=method, perplexity=perplexity, pca_components=pca_components)
 
         fig, ax = plt.subplots(figsize=(5, 5))
         for cls_id in np.unique(labels):
@@ -661,7 +663,7 @@ def plot_model(model_name: str, dataset_results: dict, output_dir: Path,
         legend.get_frame().set_linewidth(0.5)
 
         fig.tight_layout()
-        out_file = output_dir / f"{method}{pca_tag}_{model_name}_{ds_name}.png"
+        out_file = output_dir / f"{method}{pca_tag}{perp_tag}_{model_name}_{ds_name}.png"
         fig.savefig(out_file, bbox_inches="tight", dpi=300)
         print(f"  [{model_name}] Saved → {out_file}")
         plt.close(fig)
@@ -695,6 +697,8 @@ def main():
                         help="Dimensionality reduction method (default: tsne)")
     parser.add_argument("--pca_components",  type=int, default=50,
                         help="PCA dims before reduction (0 = skip PCA, default: 50)")
+    parser.add_argument("--perplexity",      type=float, default=50.0,
+                        help="t-SNE perplexity (default: 50)")
     parser.add_argument("--batch_size",      type=int, default=64)
     parser.add_argument("--gpu",             type=int, default=0)
     args = parser.parse_args()
@@ -747,7 +751,8 @@ def main():
         if dataset_results:
             plot_model(model_name, dataset_results, output_dir,
                        max_points=args.max_points, method=args.method,
-                       pca_components=args.pca_components)
+                       pca_components=args.pca_components,
+                       perplexity=args.perplexity)
         else:
             print(f"  [{model_name}] No datasets succeeded — skipping plot.")
 
