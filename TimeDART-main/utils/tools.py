@@ -174,6 +174,7 @@ def transfer_weights(weights_path, model, exclude_head=True, device='cpu'):
             if input_param.shape == param.shape:
                 param.copy_(input_param)
             else:
+                print(f'  shape mismatch [{name}]: ckpt={input_param.shape} model={param.shape}')
                 unmatched_layers.append(name)
         else:
             unmatched_layers.append(name)
