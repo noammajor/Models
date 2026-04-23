@@ -2160,7 +2160,8 @@ def run_timedart(skip_train: bool = False,
                                               SyntheticWindowDatasetTimeDart)
 
         monash_dir = cfg.get('monash_data_dir', '/home/shared/datasets/Monash')
-        synth_dir  = cfg.get('synthetic_data_dir', '/home/shared/datasets/synthetic_data_TS')
+        _synth_key = 'synthetic_mix_data_dir' if pretrain_src == 'monash+synthetic' else 'synthetic_data_dir'
+        synth_dir  = cfg.get(_synth_key, cfg.get('synthetic_data_dir', '/home/shared/datasets/synthetic_data_TS'))
         min_len    = cfg.get('monash_min_len', 512)
 
         def _make_pretrain_loader(which):
