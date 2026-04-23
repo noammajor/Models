@@ -485,24 +485,26 @@ def _extract_timedart(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
     """TimeDaRT encoder. Returns (embeddings [N, d], labels [N])."""
     td_dir    = ROOT / "TimeDART-main"
     djepa_dir = ROOT / "Discrete_JEPA"
-    _add_path(str(td_dir), str(td_dir / "models"), str(djepa_dir))
-    # Remove any cached 'layers' / 'models' from other models so TimeDaRT's are used
+
+    # Snapshot sys.modules and sys.path, then inject TimeDART-main first so its
+    # 'models', 'layers', and 'utils' packages take priority over other models'.
     import sys as _sys
+    _snap_path = list(_sys.path)
+
+    # Remove conflicting cached packages so TimeDART's versions win
     for _k in list(_sys.modules.keys()):
-        if _k == "layers" or _k.startswith("layers.") or _k == "models" or _k.startswith("models."):
+        if (_k in ("models", "layers", "utils") or
+                _k.startswith(("models.", "layers.", "utils."))):
             del _sys.modules[_k]
+    # Put TimeDART-main at front of path so its packages are found first
+    _sys.path.insert(0, str(td_dir))
 
-    _td_model_spec = importlib.util.spec_from_file_location(
-        "timedart_model", td_dir / "models" / "TimeDART.py")
-    _td_model_mod  = importlib.util.module_from_spec(_td_model_spec)
-    _td_model_spec.loader.exec_module(_td_model_mod)
-    Model = _td_model_mod.Model
+    from models.TimeDART import Model
+    from utils.tools import transfer_weights
 
-    _td_tools_spec = importlib.util.spec_from_file_location(
-        "timedart_tools", td_dir / "utils" / "tools.py")
-    _td_tools_mod  = importlib.util.module_from_spec(_td_tools_spec)
-    _td_tools_spec.loader.exec_module(_td_tools_mod)
-    transfer_weights = _td_tools_mod.transfer_weights
+    # Restore path (keep TimeDART modules cached — they're needed for the call below)
+    _sys.path[:] = _snap_path
+    _add_path(str(td_dir), str(djepa_dir))
 
     cfg = _load_config(td_dir / "config_timedart.py")
     from types import SimpleNamespace
