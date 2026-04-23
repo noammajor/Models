@@ -485,10 +485,24 @@ def _extract_timedart(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
     """TimeDaRT encoder. Returns (embeddings [N, d], labels [N])."""
     td_dir    = ROOT / "TimeDART-main"
     djepa_dir = ROOT / "Discrete_JEPA"
-    _add_path(str(td_dir), str(djepa_dir))
+    _add_path(str(td_dir), str(td_dir / "models"), str(djepa_dir))
+    # Remove any cached 'layers' / 'models' from other models so TimeDaRT's are used
+    import sys as _sys
+    for _k in list(_sys.modules.keys()):
+        if _k == "layers" or _k.startswith("layers.") or _k == "models" or _k.startswith("models."):
+            del _sys.modules[_k]
 
-    from models.TimeDART import Model
-    from utils.tools import transfer_weights
+    _td_model_spec = importlib.util.spec_from_file_location(
+        "timedart_model", td_dir / "models" / "TimeDART.py")
+    _td_model_mod  = importlib.util.module_from_spec(_td_model_spec)
+    _td_model_spec.loader.exec_module(_td_model_mod)
+    Model = _td_model_mod.Model
+
+    _td_tools_spec = importlib.util.spec_from_file_location(
+        "timedart_tools", td_dir / "utils" / "tools.py")
+    _td_tools_mod  = importlib.util.module_from_spec(_td_tools_spec)
+    _td_tools_spec.loader.exec_module(_td_tools_mod)
+    transfer_weights = _td_tools_mod.transfer_weights
 
     cfg = _load_config(td_dir / "config_timedart.py")
     from types import SimpleNamespace
