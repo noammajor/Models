@@ -205,7 +205,8 @@ def run_dino(skip_train: bool = False,
              lr: float = None,
              pretrain_source: str = None,
              checkpoint: str = None,
-             num_patches: int = None):
+             num_patches: int = None,
+             seed: int = None):
     dino_dir  = Path(__file__).parent / "TSDiNO"
     djepa_dir = Path(__file__).parent / "Discrete_JEPA"
     _add_path(dino_dir)
@@ -247,6 +248,8 @@ def run_dino(skip_train: bool = False,
         dino_cfg['output_dir'] = str(Path(_base).parent / 'classification' / (Path(_base).name + f'_cw{_cw}'))
     if lr is not None:
         dino_cfg['lr'] = lr
+    if seed is not None:
+        dino_cfg['seed'] = seed
     pretrain_source = _resolve_pretrain_source(dino_cfg)
     use_global_data = pretrain_source is not None
 
