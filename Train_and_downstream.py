@@ -1230,7 +1230,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
                  pretrain_only: bool = False, classification_only: bool = False, pred_lens=None,
                  checkpoints=None, random_encoder: bool = False, encoder_layers: int = None,
                  predictor_layers: int = None, lr: float = None, pretrain_source: str = None,
-                 num_patches: int = None):
+                 num_patches: int = None, seed: int = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
     patchtst_dir = Path(__file__).parent / "PatchTST_self_supervised"
@@ -1304,7 +1304,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         "--batch_size",          str(cfg.get("batch_size",          64)),
         "--revin",               str(int(cfg.get("revin",           True))),
         "--pretrained_model_id", str(cfg.get("pretrained_model_id", 1)),
-        "--seed",                str(GLOBAL_SEED),
+        "--seed",                str(seed if seed is not None else GLOBAL_SEED),
     ]
     if monash_dir is not None:
         pretrain_cmd += ["--monash_data_dir",    monash_dir,
@@ -1403,7 +1403,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
                  "--batch_size",       str(_get_forecast_bs(cfg, 256)),
                  "--num_workers",      str(cfg.get("num_workers", 4)),
                  "--lr",               str(cfg.get("finetune_lr", 1e-4)),
-                 "--seed",             "42"],
+                 "--seed",             str(seed if seed is not None else GLOBAL_SEED)],
                 cwd=patchtst_dir, capture_output=True, text=True,
             )
             print(result.stdout)
