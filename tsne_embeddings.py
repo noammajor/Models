@@ -634,8 +634,7 @@ def plot_combined(all_results: dict, output_dir: Path, datasets: list,
     all_results: {model_name: {dataset_name: (embeddings, labels)}}
     Produces one figure per dataset, each with 6 model subplots in a row.
     """
-    models   = [m for m in MODEL_DISPLAY if m in all_results]
-    n_models = len(models)
+    models = [m for m in MODEL_DISPLAY if m in all_results]
 
     pca_tag  = f"_pca{pca_components}" if pca_components > 0 else "_nopca"
     perp_tag = f"_perp{int(perplexity)}"
@@ -650,13 +649,17 @@ def plot_combined(all_results: dict, output_dir: Path, datasets: list,
         "axes.spines.bottom": False,
     })
 
+    n_cols = 3
+    n_rows = 2  # always 2 rows of 3
+
     for ds_name in datasets:
-        fig, axes = plt.subplots(1, n_models,
-                                 figsize=(4 * n_models, 4),
+        fig, axes = plt.subplots(n_rows, n_cols,
+                                 figsize=(5 * n_cols, 5 * n_rows),
                                  squeeze=False)
 
-        for col, model_name in enumerate(models):
-            ax = axes[0][col]
+        for idx, model_name in enumerate(models):
+            row, col = divmod(idx, n_cols)
+            ax = axes[row][col]
             results = all_results.get(model_name, {})
             if ds_name not in results:
                 ax.set_visible(False)
@@ -682,13 +685,23 @@ def plot_combined(all_results: dict, output_dir: Path, datasets: list,
                          fontsize=14, fontweight="bold", pad=8)
             ax.set_xticks([])
             ax.set_yticks([])
+            # border around each subplot so models are clearly separated
+            for spine in ax.spines.values():
+                spine.set_visible(True)
+                spine.set_linewidth(0.6)
+                spine.set_edgecolor("#cccccc")
             if n_cls <= 10:
                 ax.legend(markerscale=1.2, fontsize=7, framealpha=0.8,
                           loc="best", ncol=2 if n_cls > 6 else 1,
                           handletextpad=0.3, borderpad=0.4)
 
-        fig.suptitle(ds_name, fontsize=15, fontweight="bold", y=1.02)
-        fig.tight_layout(pad=1.5)
+        # hide any unused axes (if fewer than 6 models)
+        for idx in range(len(models), n_rows * n_cols):
+            row, col = divmod(idx, n_cols)
+            axes[row][col].set_visible(False)
+
+        fig.suptitle(ds_name, fontsize=16, fontweight="bold", y=1.01)
+        fig.tight_layout(pad=2.0)
         out_file = output_dir / f"{method}{pca_tag}{perp_tag}_combined_{ds_name}.png"
         fig.savefig(out_file, bbox_inches="tight", dpi=300)
         print(f"\n  [combined] Saved → {out_file}")
