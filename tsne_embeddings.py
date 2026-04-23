@@ -632,11 +632,10 @@ def plot_combined(all_results: dict, output_dir: Path, datasets: list,
                   pca_components: int = 50, perplexity: float = 50.0):
     """
     all_results: {model_name: {dataset_name: (embeddings, labels)}}
-    Produces one figure: rows=datasets, cols=models.
+    Produces one figure per dataset, each with 6 model subplots in a row.
     """
     models   = [m for m in MODEL_DISPLAY if m in all_results]
     n_models = len(models)
-    n_ds     = len(datasets)
 
     pca_tag  = f"_pca{pca_components}" if pca_components > 0 else "_nopca"
     perp_tag = f"_perp{int(perplexity)}"
@@ -651,13 +650,13 @@ def plot_combined(all_results: dict, output_dir: Path, datasets: list,
         "axes.spines.bottom": False,
     })
 
-    fig, axes = plt.subplots(n_ds, n_models,
-                             figsize=(4 * n_models, 4 * n_ds),
-                             squeeze=False)
+    for ds_name in datasets:
+        fig, axes = plt.subplots(1, n_models,
+                                 figsize=(4 * n_models, 4),
+                                 squeeze=False)
 
-    for row, ds_name in enumerate(datasets):
         for col, model_name in enumerate(models):
-            ax = axes[row][col]
+            ax = axes[0][col]
             results = all_results.get(model_name, {})
             if ds_name not in results:
                 ax.set_visible(False)
@@ -679,11 +678,8 @@ def plot_combined(all_results: dict, output_dir: Path, datasets: list,
                            color=cmap(int(cls_id) % 20),
                            label=f"Class {int(cls_id)}")
 
-            if row == 0:
-                ax.set_title(MODEL_DISPLAY.get(model_name, model_name),
-                             fontsize=14, fontweight="bold", pad=8)
-            if col == 0:
-                ax.set_ylabel(ds_name, fontsize=12, labelpad=6)
+            ax.set_title(MODEL_DISPLAY.get(model_name, model_name),
+                         fontsize=14, fontweight="bold", pad=8)
             ax.set_xticks([])
             ax.set_yticks([])
             if n_cls <= 10:
@@ -691,12 +687,13 @@ def plot_combined(all_results: dict, output_dir: Path, datasets: list,
                           loc="best", ncol=2 if n_cls > 6 else 1,
                           handletextpad=0.3, borderpad=0.4)
 
-    fig.tight_layout(pad=1.5)
-    ds_tag   = "_".join(datasets)
-    out_file = output_dir / f"{method}{pca_tag}{perp_tag}_combined_{ds_tag}.png"
-    fig.savefig(out_file, bbox_inches="tight", dpi=300)
-    print(f"\n  [combined] Saved → {out_file}")
-    plt.close(fig)
+        fig.suptitle(ds_name, fontsize=15, fontweight="bold", y=1.02)
+        fig.tight_layout(pad=1.5)
+        out_file = output_dir / f"{method}{pca_tag}{perp_tag}_combined_{ds_name}.png"
+        fig.savefig(out_file, bbox_inches="tight", dpi=300)
+        print(f"\n  [combined] Saved → {out_file}")
+        plt.close(fig)
+
     plt.rcParams.update(plt.rcParamsDefault)
 
 
