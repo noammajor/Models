@@ -617,6 +617,89 @@ def _reduce(embeddings: np.ndarray, method: str = "tsne",
         return tsne.fit_transform(embs)
 
 
+MODEL_DISPLAY = {
+    "jepa_simple": "JEPA",
+    "lejepa":      "LE-JEPA",
+    "dino":        "TSDiNO",
+    "patchtst":    "PatchTST",
+    "npt":         "NPT",
+    "timedart":    "TimeDart",
+}
+
+
+def plot_combined(all_results: dict, output_dir: Path, datasets: list,
+                  max_points: int = 500, method: str = "tsne",
+                  pca_components: int = 50, perplexity: float = 50.0):
+    """
+    all_results: {model_name: {dataset_name: (embeddings, labels)}}
+    Produces one figure: rows=datasets, cols=models.
+    """
+    models   = [m for m in MODEL_DISPLAY if m in all_results]
+    n_models = len(models)
+    n_ds     = len(datasets)
+
+    pca_tag  = f"_pca{pca_components}" if pca_components > 0 else "_nopca"
+    perp_tag = f"_perp{int(perplexity)}"
+
+    plt.rcParams.update({
+        "font.family":        "serif",
+        "font.size":          12,
+        "axes.linewidth":     0.8,
+        "axes.spines.top":    False,
+        "axes.spines.right":  False,
+        "axes.spines.left":   False,
+        "axes.spines.bottom": False,
+    })
+
+    fig, axes = plt.subplots(n_ds, n_models,
+                             figsize=(4 * n_models, 4 * n_ds),
+                             squeeze=False)
+
+    for row, ds_name in enumerate(datasets):
+        for col, model_name in enumerate(models):
+            ax = axes[row][col]
+            results = all_results.get(model_name, {})
+            if ds_name not in results:
+                ax.set_visible(False)
+                continue
+
+            embs, labels = results[ds_name]
+            n_cls = len(np.unique(labels))
+            cmap  = plt.get_cmap("tab10" if n_cls <= 10 else "tab20")
+
+            embs, labels = _subsample(embs, labels, max_points)
+            print(f"  [combined] {method.upper()} {model_name}/{ds_name} …")
+            xy = _reduce(embs, method=method, perplexity=perplexity,
+                         pca_components=pca_components)
+
+            for cls_id in np.unique(labels):
+                mask = labels == cls_id
+                ax.scatter(xy[mask, 0], xy[mask, 1],
+                           s=15, alpha=0.75, linewidths=0,
+                           color=cmap(int(cls_id) % 20),
+                           label=f"Class {int(cls_id)}")
+
+            if row == 0:
+                ax.set_title(MODEL_DISPLAY.get(model_name, model_name),
+                             fontsize=14, fontweight="bold", pad=8)
+            if col == 0:
+                ax.set_ylabel(ds_name, fontsize=12, labelpad=6)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            if n_cls <= 10:
+                ax.legend(markerscale=1.2, fontsize=7, framealpha=0.8,
+                          loc="best", ncol=2 if n_cls > 6 else 1,
+                          handletextpad=0.3, borderpad=0.4)
+
+    fig.tight_layout(pad=1.5)
+    ds_tag   = "_".join(datasets)
+    out_file = output_dir / f"{method}{pca_tag}{perp_tag}_combined_{ds_tag}.png"
+    fig.savefig(out_file, bbox_inches="tight", dpi=300)
+    print(f"\n  [combined] Saved → {out_file}")
+    plt.close(fig)
+    plt.rcParams.update(plt.rcParamsDefault)
+
+
 def plot_model(model_name: str, dataset_results: dict, output_dir: Path,
                max_points: int = 500, method: str = "tsne", pca_components: int = 50,
                perplexity: float = 50.0):
@@ -701,6 +784,8 @@ def main():
                         help="t-SNE perplexity (default: 50)")
     parser.add_argument("--batch_size",      type=int, default=64)
     parser.add_argument("--gpu",             type=int, default=0)
+    parser.add_argument("--combined",        action="store_true",
+                        help="Save all models in one figure (rows=datasets, cols=models)")
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -711,6 +796,8 @@ def main():
     print(f"Models:   {args.models}")
     print(f"Datasets: {args.datasets}")
     print(f"Layers: {args.encoder_layers}  Source: {args.pretrain_source}\n")
+
+    all_results = {}  # {model_name: {ds_name: (embs, labels)}}
 
     for model_name in args.models:
         print(f"\n{'='*60}")
@@ -749,12 +836,20 @@ def main():
                 traceback.print_exc()
 
         if dataset_results:
-            plot_model(model_name, dataset_results, output_dir,
-                       max_points=args.max_points, method=args.method,
-                       pca_components=args.pca_components,
-                       perplexity=args.perplexity)
+            all_results[model_name] = dataset_results
+            if not args.combined:
+                plot_model(model_name, dataset_results, output_dir,
+                           max_points=args.max_points, method=args.method,
+                           pca_components=args.pca_components,
+                           perplexity=args.perplexity)
         else:
             print(f"  [{model_name}] No datasets succeeded — skipping plot.")
+
+    if args.combined and all_results:
+        plot_combined(all_results, output_dir, args.datasets,
+                      max_points=args.max_points, method=args.method,
+                      pca_components=args.pca_components,
+                      perplexity=args.perplexity)
 
     print(f"\nDone. Figures saved to {output_dir}/")
 
