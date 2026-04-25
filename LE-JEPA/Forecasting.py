@@ -95,6 +95,10 @@ def forcasting_zeroshot(self, path, linear_probe=True):
         pct_start=0.3, anneal_strategy='cos',
     )
 
+    _val_loader   = getattr(self, "forcast_val", None)
+    best_val_loss = float("inf")
+    best_state    = None
+
     # ── Train head (and optionally encoder) ──────────────────────────────────
     for epoch in range(self.epoch_t):
         forecast_head.train()
@@ -125,8 +129,42 @@ def forcasting_zeroshot(self, path, linear_probe=True):
             scheduler.step()
             total_loss += loss.item()
 
+        # ── val MSE + keep-best ──
+        val_l = None
+        if _val_loader is not None and len(_val_loader) > 0:
+            forecast_head.eval()
+            self.encoder.eval()
+            _vl = 0.0; _vc = 0
+            with torch.no_grad():
+                for ctx_v, tgt_v in _val_loader:
+                    if ctx_v.dim() == 3: ctx_v = ctx_v.unsqueeze(-1)
+                    ctx_v = ctx_v.to(self.device); tgt_v = tgt_v.to(self.device)
+                    Bv, hv, PLv, nv = tgt_v.shape
+                    cn, cm, cs = _instance_norm(ctx_v)
+                    eo = self.encoder(cn)["data_patches"]
+                    ep = eo.reshape(Bv, nv, num_patches, embed_dim).permute(0, 1, 3, 2)
+                    pv = _instance_denorm(forecast_head(ep), cm, cs)
+                    tv_flat = tgt_v.reshape(Bv, hv * PLv, nv)
+                    _vl += F.mse_loss(pv, tv_flat).item() * Bv
+                    _vc += Bv
+            val_l = _vl / max(_vc, 1)
+            if val_l < best_val_loss:
+                best_val_loss = val_l
+                best_state = {
+                    "head":    {k: v.detach().clone() for k, v in forecast_head.state_dict().items()},
+                    "encoder": {k: v.detach().clone() for k, v in self.encoder.state_dict().items()} if not linear_probe else None,
+                }
+
         if epoch % 10 == 0:
-            print(f"  [Forecast] Epoch {epoch} — loss: {total_loss / max(len(self.forcast_train), 1):.4f}")
+            _vmsg = f"  val={val_l:.4f}" if val_l is not None else ""
+            print(f"  [Forecast] Epoch {epoch} — loss: {total_loss / max(len(self.forcast_train), 1):.4f}{_vmsg}")
+
+    # ── Restore best checkpoint for test eval ──
+    if best_state is not None:
+        forecast_head.load_state_dict(best_state["head"])
+        if best_state["encoder"] is not None:
+            self.encoder.load_state_dict(best_state["encoder"])
+        print(f"  [Forecast] Restored best checkpoint  (best val MSE={best_val_loss:.4f})")
 
     # ── Evaluate on test set ──────────────────────────────────────────────────
     forecast_head.eval()

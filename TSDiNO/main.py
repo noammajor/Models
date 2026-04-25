@@ -754,6 +754,10 @@ def test_run(args):
         _DS_CLS = Dataset_Custom
 
     dataset_forecasting_train = _DS_CLS(_root, split='train', size=_size, features='M', data_path=_fname)
+    try:
+        dataset_forecasting_val = _DS_CLS(_root, split='val', size=_size, features='M', data_path=_fname)
+    except Exception:
+        dataset_forecasting_val = None
     dataset_forecasting_test  = _DS_CLS(_root, split='test',  size=_size, features='M', data_path=_fname)
 
     _is_distributed = utils.is_dist_avail_and_initialized()
@@ -773,6 +777,16 @@ def test_run(args):
         pin_memory=True,
         drop_last=False,
     )
+    data_loader_forecasting_val = None
+    if dataset_forecasting_val is not None:
+        data_loader_forecasting_val = torch.utils.data.DataLoader(
+            dataset_forecasting_val,
+            sampler=torch.utils.data.distributed.DistributedSampler(dataset_forecasting_val, shuffle=False) if _is_distributed else torch.utils.data.SequentialSampler(dataset_forecasting_val),
+            batch_size=args.batch_size_forecast,
+            num_workers=args.num_workers,
+            pin_memory=True,
+            drop_last=False,
+        )
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     _forecast_num_patch = _SEQ_LEN // args.patch_len   # 336 // 16 = 21
@@ -859,6 +873,8 @@ def test_run(args):
         print(f"  [DINO forecast] MODE: full fine-tuning — backbone UNFROZEN")
         print(f"  Trainable: {_total:,} / {_total:,} params")
 
+    best_val_loss_fc = float('inf')
+    best_state_fc    = None
     for epoch in range(args.epochs_forecasting):
         model.train()
         for it, batch in enumerate(data_loader_forecasting_train):
@@ -873,9 +889,28 @@ def test_run(args):
             torch.nn.utils.clip_grad_norm_(model.head.parameters(), max_norm=1.0)
             optimizer.step()
             scheduler.step()
-            
-            #if it % 10 == 0:
-                #print(f'Epoch {epoch} iter {it} loss: {loss.item():.6f} lr: {optimizer.param_groups[0]["lr"]:.8f}')
+
+        # ── val MSE + keep-best ──
+        if data_loader_forecasting_val is not None:
+            model.eval()
+            v_sum = 0.0; v_n = 0
+            with torch.no_grad():
+                for v_batch in data_loader_forecasting_val:
+                    v_x, v_y = v_batch
+                    v_x = v_x.to(device, non_blocking=True)
+                    v_y = v_y.to(device, non_blocking=True)
+                    v_out = model(v_x)
+                    v_sum += criterion(v_out, v_y).item() * v_x.size(0)
+                    v_n   += v_x.size(0)
+            val_loss = v_sum / max(v_n, 1)
+            if val_loss < best_val_loss_fc:
+                best_val_loss_fc = val_loss
+                best_state_fc    = {k: v.detach().clone() for k, v in model.state_dict().items()}
+            print(f"  [DINO forecast] epoch {epoch} — val MSE: {val_loss:.6f}  (best: {best_val_loss_fc:.6f})")
+
+    if best_state_fc is not None:
+        model.load_state_dict(best_state_fc)
+        print(f"  [DINO forecast] Restored best checkpoint (best val MSE={best_val_loss_fc:.6f})")
     # Testing
     model.eval()
     os.makedirs("test_results/tests", exist_ok=True)
