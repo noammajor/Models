@@ -1396,6 +1396,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
             result = subprocess.run(
                 [sys.executable, "patchtst_finetune.py",
                  "--dset_finetune",      _forecast_dset,
+                 "--is_finetune",        str(int(not linear_probe)),
                  "--is_linear_probe",    str(int(linear_probe)),
                  "--context_points",  str(cfg.get("context_points", 512)),
                  "--patch_len",       str(cfg.get("patch_len", 16)),
