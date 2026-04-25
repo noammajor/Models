@@ -72,6 +72,13 @@ def _get_forecast_bs(config, default=256):
         return int(env)
     return config.get("batch_size_forecast", default)
 
+def _get_cls_bs(config, key="batch_size", default=64):
+    """Return classification batch size — env var TS_CLS_BS takes priority over config."""
+    env = os.environ.get("TS_CLS_BS")
+    if env is not None:
+        return int(env)
+    return config.get(key, default)
+
 def _get_forecast_lr(config, key="lr_forecasting", default=2e-4):
     """Return forecast LR scaled by TS_FORECAST_LR_SCALE (set by run_layer_forecast.py)."""
     base = config.get(key, config.get("lr_forcasting", default))
@@ -1437,7 +1444,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         from patchtst_classification import classification_zeroshot as ptst_classify
         from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
         cls_dir    = cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
-        cls_bs     = cfg.get("batch_size", 64)
+        cls_bs     = _get_cls_bs(cfg, "batch_size", 64)
         p_s        = cfg.get("patch_len", 16)
         _n_patches = 72                               # classification encoder always uses 72 patches
         _target_T  = _n_patches * p_s
@@ -2348,7 +2355,7 @@ def run_timedart(skip_train: bool = False,
         from timedart_classification import classification_zeroshot as timedart_classify
         from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
         cls_dir    = cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
-        cls_bs     = cfg.get("batch_size_classification", 64)
+        cls_bs     = _get_cls_bs(cfg, "batch_size_classification", 64)
         p_s        = cfg.get("patch_len", 16)
         _n_patches = 72                               # classification encoder always uses 72 patches
         _target_T  = _n_patches * p_s
