@@ -59,7 +59,11 @@ def _load_config(path):
 
 def _get_combined_loader(dataset_name: str, cls_dir: str, patch_size: int,
                          num_patches: int, batch_size: int = 64):
-    """Build a combined train+test DataLoader. Returns (loader, n_classes)."""
+    """Build a combined train+test DataLoader. Returns (loader, n_classes, class_names).
+
+    class_names is the list of raw label strings in cls_id order (cls_id i → class_names[i]),
+    or None if the dataset doesn't expose them.
+    """
     _add_path(ROOT / "Discrete_JEPA")
     from data_loaders.data_puller import make_uea_dataloaders, ClassificationDataPuller
     import torch.utils.data
@@ -92,14 +96,16 @@ def _get_combined_loader(dataset_name: str, cls_dir: str, patch_size: int,
         loader   = torch.utils.data.DataLoader(
             combined, batch_size=batch_size, shuffle=False,
             collate_fn=_patch_collate)
+        class_names = [str(c) for c in getattr(tr_raw.dataset, "class_names", []) or []] or None
     else:
         tr = ClassificationDataPuller(cls_dir, dataset_name, patch_size, which="train")
         te = ClassificationDataPuller(cls_dir, dataset_name, patch_size, which="test")
         n_classes = tr.n_classes
         combined  = torch.utils.data.ConcatDataset([tr, te])
         loader    = torch.utils.data.DataLoader(combined, batch_size=batch_size, shuffle=False)
+        class_names = [str(c) for c in getattr(tr, "class_names", []) or []] or None
 
-    return loader, n_classes
+    return loader, n_classes, class_names
 
 
 # ── checkpoint path resolution ────────────────────────────────────────────────
@@ -637,19 +643,51 @@ MODEL_DISPLAY = {
     "jepa_simple": "JEPA",
     "lejepa":      "LE-JEPA",
     "dino":        "TSDiNO",
-    "patchtst":    "PatchTST",
-    "npt":         "NPT",
-    "timedart":    "TimeDart",
+    "patchtst":    "MAE",
+    "npt":         "NTP",
+    "timedart":    "Diffusion",
+}
+
+# Human-readable class labels keyed by the dataset's RAW label string
+# (the value stored in the .ts/.npy file, before any LabelEncoder/Categorical sort).
+# For SpokenArabicDigits the raw labels are "1".."10" where "1" = digit 0 (Sifr).
+CLASS_NAMES = {
+    "SpokenArabicDigits": {
+        "1":  '0 ("Sifr")',
+        "2":  '1 ("Wahid")',
+        "3":  '2 ("Ithnan")',
+        "4":  '3 ("Thalatha")',
+        "5":  '4 ("Arba\'a")',
+        "6":  '5 ("Khamsa")',
+        "7":  '6 ("Sitta")',
+        "8":  '7 ("Sab\'a")',
+        "9":  '8 ("Thamaniya")',
+        "10": '9 ("Tis\'a")',
+    },
 }
 
 
+def _class_label(ds_name: str, cls_id: int, class_names=None) -> str:
+    """Resolve cls_id → human-readable label via the dataset's class_names list."""
+    mapping = CLASS_NAMES.get(ds_name)
+    if mapping is not None and class_names is not None \
+            and 0 <= int(cls_id) < len(class_names):
+        raw = str(class_names[int(cls_id)])
+        if raw in mapping:
+            return mapping[raw]
+    return f"Class {int(cls_id)}"
+
+
 def plot_combined(all_results: dict, output_dir: Path, datasets: list,
+                  dataset_class_names: dict = None,
                   max_points: int = 500, method: str = "tsne",
                   pca_components: int = 50, perplexity: float = 50.0):
     """
     all_results: {model_name: {dataset_name: (embeddings, labels)}}
+    dataset_class_names: {dataset_name: class_names_list} for label resolution.
     Produces one figure per dataset, each with 6 model subplots in a row.
     """
+    dataset_class_names = dataset_class_names or {}
     models = [m for m in MODEL_DISPLAY if m in all_results]
 
     pca_tag  = f"_pca{pca_components}" if pca_components > 0 else "_nopca"
@@ -673,6 +711,8 @@ def plot_combined(all_results: dict, output_dir: Path, datasets: list,
                                  figsize=(5 * n_cols, 5 * n_rows),
                                  squeeze=False)
 
+        legend_handles, legend_labels = [], []
+
         for idx, model_name in enumerate(models):
             row, col = divmod(idx, n_cols)
             ax = axes[row][col]
@@ -690,12 +730,17 @@ def plot_combined(all_results: dict, output_dir: Path, datasets: list,
             xy = _reduce(embs, method=method, perplexity=perplexity,
                          pca_components=pca_components)
 
+            cnames = dataset_class_names.get(ds_name)
             for cls_id in np.unique(labels):
                 mask = labels == cls_id
-                ax.scatter(xy[mask, 0], xy[mask, 1],
-                           s=15, alpha=0.75, linewidths=0,
-                           color=cmap(int(cls_id) % 20),
-                           label=f"Class {int(cls_id)}")
+                lbl  = _class_label(ds_name, cls_id, cnames)
+                sc = ax.scatter(xy[mask, 0], xy[mask, 1],
+                                s=15, alpha=0.75, linewidths=0,
+                                color=cmap(int(cls_id) % 20),
+                                label=lbl)
+                if lbl not in legend_labels:
+                    legend_handles.append(sc)
+                    legend_labels.append(lbl)
 
             ax.set_title(MODEL_DISPLAY.get(model_name, model_name),
                          fontsize=14, fontweight="bold", pad=8)
@@ -706,10 +751,6 @@ def plot_combined(all_results: dict, output_dir: Path, datasets: list,
                 spine.set_visible(True)
                 spine.set_linewidth(0.6)
                 spine.set_edgecolor("#cccccc")
-            if n_cls <= 10:
-                ax.legend(markerscale=1.2, fontsize=7, framealpha=0.8,
-                          loc="best", ncol=2 if n_cls > 6 else 1,
-                          handletextpad=0.3, borderpad=0.4)
 
         # hide any unused axes (if fewer than 6 models)
         for idx in range(len(models), n_rows * n_cols):
@@ -717,7 +758,25 @@ def plot_combined(all_results: dict, output_dir: Path, datasets: list,
             axes[row][col].set_visible(False)
 
         fig.suptitle(ds_name, fontsize=16, fontweight="bold", y=1.01)
-        fig.tight_layout(pad=2.0)
+        fig.tight_layout(pad=2.0, rect=(0, 0.06, 1, 1))
+
+        # single shared legend for the whole figure
+        if legend_handles:
+            order = np.argsort([
+                int(l.split()[0]) if l.split()[0].lstrip('-').isdigit() else i
+                for i, l in enumerate(legend_labels)
+            ])
+            legend_handles = [legend_handles[i] for i in order]
+            legend_labels  = [legend_labels[i]  for i in order]
+            n_cls_total = len(legend_labels)
+            ncol = min(n_cls_total, 10)
+            fig.legend(legend_handles, legend_labels,
+                       loc="lower center", ncol=ncol,
+                       fontsize=10, framealpha=0.9,
+                       markerscale=1.5, handletextpad=0.4,
+                       columnspacing=1.2, borderpad=0.5,
+                       bbox_to_anchor=(0.5, 0.0))
+
         out_file = output_dir / f"{method}{pca_tag}{perp_tag}_combined_{ds_name}.png"
         fig.savefig(out_file, bbox_inches="tight", dpi=300)
         print(f"\n  [combined] Saved → {out_file}")
@@ -727,6 +786,7 @@ def plot_combined(all_results: dict, output_dir: Path, datasets: list,
 
 
 def plot_model(model_name: str, dataset_results: dict, output_dir: Path,
+               dataset_class_names: dict = None,
                max_points: int = 500, method: str = "tsne", pca_components: int = 50,
                perplexity: float = 50.0):
     """
@@ -755,12 +815,13 @@ def plot_model(model_name: str, dataset_results: dict, output_dir: Path,
         xy = _reduce(embs, method=method, perplexity=perplexity, pca_components=pca_components)
 
         fig, ax = plt.subplots(figsize=(5, 5))
+        cnames = (dataset_class_names or {}).get(ds_name)
         for cls_id in np.unique(labels):
             mask = labels == cls_id
             ax.scatter(xy[mask, 0], xy[mask, 1],
                        s=20, alpha=0.75, linewidths=0,
                        color=cmap(int(cls_id) % 20),
-                       label=f"Class {int(cls_id)}")
+                       label=_class_label(ds_name, cls_id, cnames))
 
         ax.set_title(f"{ds_name}", fontsize=15, fontweight="bold", pad=10)
         ax.set_xlabel(f"{method.upper()} dim 1", fontsize=12)
@@ -809,7 +870,7 @@ def main():
     parser.add_argument("--perplexity",      type=float, default=50.0,
                         help="t-SNE perplexity (default: 50)")
     parser.add_argument("--batch_size",      type=int, default=64)
-    parser.add_argument("--gpu",             type=int, default=0)
+    parser.add_argument("--gpu",             type=int, default=7)
     parser.add_argument("--combined",        action="store_true",
                         help="Save all models in one figure (rows=datasets, cols=models)")
     args = parser.parse_args()
@@ -824,6 +885,7 @@ def main():
     print(f"Layers: {args.encoder_layers}  Source: {args.pretrain_source}\n")
 
     all_results = {}  # {model_name: {ds_name: (embs, labels)}}
+    dataset_class_names = {}  # {ds_name: class_names_list} — same across models
 
     for model_name in args.models:
         print(f"\n{'='*60}")
@@ -839,9 +901,11 @@ def main():
         for ds_name in args.datasets:
             print(f"\n  → Dataset: {ds_name}")
             try:
-                loader, n_classes = _get_combined_loader(
+                loader, n_classes, class_names = _get_combined_loader(
                     ds_name, args.cls_dir, PATCH_SIZE, NUM_PATCHES, args.batch_size)
                 print(f"    {len(loader.dataset)} samples, {n_classes} classes")
+                if class_names is not None:
+                    dataset_class_names[ds_name] = class_names
 
                 # call extractor with correct signature
                 if model_name in ("dino",):
@@ -865,6 +929,7 @@ def main():
             all_results[model_name] = dataset_results
             if not args.combined:
                 plot_model(model_name, dataset_results, output_dir,
+                           dataset_class_names=dataset_class_names,
                            max_points=args.max_points, method=args.method,
                            pca_components=args.pca_components,
                            perplexity=args.perplexity)
@@ -873,6 +938,7 @@ def main():
 
     if args.combined and all_results:
         plot_combined(all_results, output_dir, args.datasets,
+                      dataset_class_names=dataset_class_names,
                       max_points=args.max_points, method=args.method,
                       pca_components=args.pca_components,
                       perplexity=args.perplexity)
