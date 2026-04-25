@@ -1408,7 +1408,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
                  "--dropout",         str(cfg.get("dropout", 0.2)),
                  "--head_dropout",    str(cfg.get("head_dropout", 0.2)),
                  "--target_points",   str(_pl),
-                 "--pretrained_model", pretrained_model_path,
+                 "--pretrained_model", str(pretrained_model_path) if pretrained_model_path is not None else "",
                  "--random_encoder",   str(int(random_encoder)),
                  "--batch_size",       str(_get_forecast_bs(cfg, 256)),
                  "--num_workers",      str(cfg.get("num_workers", 4)),
