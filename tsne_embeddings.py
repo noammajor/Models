@@ -681,7 +681,8 @@ def _class_label(ds_name: str, cls_id: int, class_names=None) -> str:
 def plot_combined(all_results: dict, output_dir: Path, datasets: list,
                   dataset_class_names: dict = None,
                   max_points: int = 500, method: str = "tsne",
-                  pca_components: int = 50, perplexity: float = 50.0):
+                  pca_components: int = 50, perplexity: float = 50.0,
+                  suffix: str = ""):
     """
     all_results: {model_name: {dataset_name: (embeddings, labels)}}
     dataset_class_names: {dataset_name: class_names_list} for label resolution.
@@ -777,7 +778,8 @@ def plot_combined(all_results: dict, output_dir: Path, datasets: list,
                        columnspacing=1.2, borderpad=0.5,
                        bbox_to_anchor=(0.5, 0.0))
 
-        out_file = output_dir / f"{method}{pca_tag}{perp_tag}_combined_{ds_name}.png"
+        suffix_tag = f"_{suffix}" if suffix else ""
+        out_file = output_dir / f"{method}{pca_tag}{perp_tag}_combined_{ds_name}{suffix_tag}.png"
         fig.savefig(out_file, bbox_inches="tight", dpi=300)
         print(f"\n  [combined] Saved → {out_file}")
         plt.close(fig)
@@ -871,6 +873,8 @@ def main():
                         help="t-SNE perplexity (default: 50)")
     parser.add_argument("--batch_size",      type=int, default=64)
     parser.add_argument("--gpu",             type=int, default=7)
+    parser.add_argument("--suffix",          type=str, default="",
+                        help="Optional suffix appended to output filename, e.g. 'final' → ..._SpokenArabicDigits_final.png")
     parser.add_argument("--combined",        action="store_true",
                         help="Save all models in one figure (rows=datasets, cols=models)")
     args = parser.parse_args()
@@ -941,7 +945,8 @@ def main():
                       dataset_class_names=dataset_class_names,
                       max_points=args.max_points, method=args.method,
                       pca_components=args.pca_components,
-                      perplexity=args.perplexity)
+                      perplexity=args.perplexity,
+                      suffix=args.suffix)
 
     print(f"\nDone. Figures saved to {output_dir}/")
 
