@@ -163,7 +163,7 @@ def _unpack_forecast(model: str, result) -> tuple:
             float(mae) if mae is not None else None)
 
 
-def _unpack_classify(model: str, result) -> float | None:
+def _unpack_classify(model: str, result):
     """
     Extract accuracy from a runner's return value.
 
