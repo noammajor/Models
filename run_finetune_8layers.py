@@ -68,6 +68,18 @@ MODEL_GPU = {
     "patchtst_random": 6,
 }
 ALL_MODELS = list(MODEL_GPU.keys())
+
+# Pretrain LR per model — used as encoder LR when fine-tuning (linear_probe=False).
+# Mirrors MODEL_LR in run_seed_analysis.py.
+MODEL_PRETRAIN_LR = {
+    "dino":            5e-4,
+    "jepa_simple":     5e-4,
+    "lejepa":          5e-4,
+    "patchtst":        5e-5,
+    "npt":             5e-5,
+    "timedart":        5e-5,
+    "patchtst_random": 5e-5,
+}
 ALL_TASKS  = ["forecast", "classify", "anomaly"]
 
 
@@ -199,10 +211,12 @@ def run_model_worker(model: str, gpu: int, tasks: list,
                      out_forecast_csv: Path, out_cls_csv: Path, out_anom_csv: Path):
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
+    if model in MODEL_PRETRAIN_LR:
+        os.environ["TS_PRETRAIN_LR"] = str(MODEL_PRETRAIN_LR[model])
 
     print(f"\n{'='*60}")
     print(f"  MODEL: {model.upper()}  layers={ENCODER_LAYERS}  src={pretrain_source}")
-    print(f"  tasks={tasks}")
+    print(f"  tasks={tasks}  encoder_lr={os.environ.get('TS_PRETRAIN_LR', 'N/A')}")
     print(f"{'='*60}")
 
     from Train_and_downstream import run

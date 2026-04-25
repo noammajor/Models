@@ -57,18 +57,23 @@ def forcasting_zeroshot(self, path, linear_probe=True):
         ])
         '''
         
+        head_lr = config.get("lr_forcasting", 1e-4)
+        enc_lr  = float(os.environ.get("TS_PRETRAIN_LR", head_lr))
         if linear_probe:
-            opt_params = list(self.forecast_head_patch.parameters())
+            optimizer = torch.optim.Adam(
+                self.forecast_head_patch.parameters(),
+                lr=head_lr, weight_decay=1e-4,
+            )
+            _max_lrs = head_lr
         else:
-            opt_params = list(self.forecast_head_patch.parameters()) + list(self.encoder_for.parameters())
-        optimizer = torch.optim.Adam(
-            opt_params,
-            lr=config.get("lr_forcasting", 1e-4),
-            weight_decay=1e-4,
-        )
-        print(f"  [JEPA forecast] MODE: {'linear probe — encoder FROZEN' if linear_probe else 'full fine-tune — encoder UNFROZEN'}")
+            optimizer = torch.optim.Adam([
+                {"params": self.forecast_head_patch.parameters(), "lr": head_lr},
+                {"params": self.encoder_for.parameters(),         "lr": enc_lr},
+            ], weight_decay=1e-4)
+            _max_lrs = [head_lr, enc_lr]
+        print(f"  [JEPA forecast] MODE: {'linear probe — encoder FROZEN' if linear_probe else f'full fine-tune — head_lr={head_lr} encoder_lr={enc_lr}'}")
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
-            optimizer, max_lr=config.get("lr_forcasting", 1e-4),
+            optimizer, max_lr=_max_lrs,
             total_steps=self.epoch_t * len(self.forcast_train),
             pct_start=0.3, anneal_strategy='cos',
         )

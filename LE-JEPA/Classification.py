@@ -85,15 +85,26 @@ def classification_zeroshot(self, path, classification_train, classification_val
 
     n_epochs    = config.get("epoch_classification", 20)
     _all_params = list(self.encoder.parameters()) + list(cls_head.parameters())
-    _params     = list(cls_head.parameters()) if linear_probe else _all_params
-    _trainable  = sum(p.numel() for p in _params)
-    _total      = sum(p.numel() for p in _all_params)
+    import os as _os
+    head_lr = config.get("lr_classification", 1e-3)
+    enc_lr  = float(_os.environ.get("TS_PRETRAIN_LR", head_lr))
+    if linear_probe:
+        optimizer = torch.optim.Adam(cls_head.parameters(),
+                                     lr=head_lr, weight_decay=1e-4)
+        _max_lrs   = head_lr
+        _trainable = sum(p.numel() for p in cls_head.parameters())
+    else:
+        optimizer = torch.optim.Adam([
+            {"params": cls_head.parameters(),     "lr": head_lr},
+            {"params": self.encoder.parameters(), "lr": enc_lr},
+        ], weight_decay=1e-4)
+        _max_lrs   = [head_lr, enc_lr]
+        _trainable = sum(p.numel() for p in _all_params)
+        print(f"  [LE-JEPA classify] head_lr={head_lr}  encoder_lr={enc_lr}")
+    _total = sum(p.numel() for p in _all_params)
     print(f"  Trainable: {_trainable:,} / {_total:,} params")
-    optimizer = torch.optim.Adam(_params,
-                                 lr=config.get("lr_classification", 1e-3),
-                                 weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, max_lr=config.get("lr_classification", 1e-3),
+        optimizer, max_lr=_max_lrs,
         total_steps=n_epochs * len(classification_train),
         pct_start=0.3, anneal_strategy='cos',
     )

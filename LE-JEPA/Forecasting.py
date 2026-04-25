@@ -72,17 +72,24 @@ def forcasting_zeroshot(self, path, linear_probe=True):
     ).to(self.device)
 
     _all_params = list(self.encoder.parameters()) + list(forecast_head.parameters())
-    _params_ft  = list(forecast_head.parameters()) if linear_probe else _all_params
-    _trainable  = sum(p.numel() for p in _params_ft)
-    _total      = sum(p.numel() for p in _all_params)
-    print(f"  Trainable: {_trainable:,} / {_total:,} params")
-    optimizer = torch.optim.Adam(
-        _params_ft,
-        lr           = config.get("lr_forcasting", 1e-4),
-        weight_decay = 1e-4,
-    )
+    head_lr     = config.get("lr_forcasting", 1e-4)
+    enc_lr      = float(os.environ.get("TS_PRETRAIN_LR", head_lr))
+    if linear_probe:
+        optimizer = torch.optim.Adam(forecast_head.parameters(),
+                                     lr=head_lr, weight_decay=1e-4)
+        _max_lrs  = head_lr
+        _trainable = sum(p.numel() for p in forecast_head.parameters())
+    else:
+        optimizer = torch.optim.Adam([
+            {"params": forecast_head.parameters(), "lr": head_lr},
+            {"params": self.encoder.parameters(),  "lr": enc_lr},
+        ], weight_decay=1e-4)
+        _max_lrs   = [head_lr, enc_lr]
+        _trainable = sum(p.numel() for p in _all_params)
+    _total = sum(p.numel() for p in _all_params)
+    print(f"  Trainable: {_trainable:,} / {_total:,} params  (head_lr={head_lr}{'' if linear_probe else f', encoder_lr={enc_lr}'})")
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, max_lr=config.get("lr_forcasting", 1e-4),
+        optimizer, max_lr=_max_lrs,
         total_steps=self.epoch_t * len(self.forcast_train),
         pct_start=0.3, anneal_strategy='cos',
     )

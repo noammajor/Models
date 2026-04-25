@@ -90,12 +90,17 @@ def anomaly_zeroshot(self, path, anomaly_train, anomaly_test,
     n_vars     = patches_sample.shape[3]
 
     decoder   = _LinearReconDecoder(embed_dim, patch_size, n_vars).to(self.device)
+    import os as _os
+    head_lr = config.get("lr_anomaly", 1e-3)
+    enc_lr  = float(_os.environ.get("TS_PRETRAIN_LR", head_lr))
     if linear_probe:
-        opt_params = list(decoder.parameters())
+        optimizer = torch.optim.Adam(decoder.parameters(), lr=head_lr)
     else:
-        opt_params = list(decoder.parameters()) + list(self.encoder_for.parameters())
-    optimizer = torch.optim.Adam(opt_params,
-                                 lr=config.get("lr_anomaly", 1e-3))
+        optimizer = torch.optim.Adam([
+            {"params": decoder.parameters(),          "lr": head_lr},
+            {"params": self.encoder_for.parameters(), "lr": enc_lr},
+        ])
+        print(f"  [JEPA anomaly] head_lr={head_lr}  encoder_lr={enc_lr}")
     n_epochs  = config.get("epoch_anomaly", 10)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
 
