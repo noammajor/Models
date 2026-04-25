@@ -69,16 +69,16 @@ MODEL_GPU = {
 }
 ALL_MODELS = list(MODEL_GPU.keys())
 
-# Pretrain LR per model — used as encoder LR when fine-tuning (linear_probe=False).
-# Mirrors MODEL_LR in run_seed_analysis.py.
+# Encoder LR when fine-tuning (linear_probe=False) — set to pretrain_LR / 10 so the
+# encoder is perturbed gently while the head trains at its normal LR.
 MODEL_PRETRAIN_LR = {
-    "dino":            5e-4,
-    "jepa_simple":     5e-4,
-    "lejepa":          5e-4,
-    "patchtst":        5e-5,
-    "npt":             5e-5,
-    "timedart":        5e-5,
-    "patchtst_random": 5e-5,
+    "dino":            5e-5,
+    "jepa_simple":     5e-5,
+    "lejepa":          5e-5,
+    "patchtst":        5e-6,
+    "npt":             5e-6,
+    "timedart":        5e-6,
+    "patchtst_random": 5e-6,
 }
 ALL_TASKS  = ["forecast", "classify", "anomaly"]
 
