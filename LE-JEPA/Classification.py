@@ -28,7 +28,8 @@ def _instance_norm(x, eps=1e-6):
 
 
 def classification_zeroshot(self, path, classification_train, classification_val,
-                             classification_test, n_classes):
+                             classification_test, n_classes,
+                             linear_probe=True):
     """
     Linear-probe classification with frozen LE-JEPA encoder.
 
@@ -49,9 +50,13 @@ def classification_zeroshot(self, path, classification_train, classification_val
     ckpt = torch.load(checkpoint_path, map_location="cpu")
     self.encoder.load_state_dict(ckpt["encoder"])
     self.encoder.to(self.device)
-    self.encoder.eval()
-    for p in self.encoder.parameters():
-        p.requires_grad = False
+    if linear_probe:
+        self.encoder.eval()
+        for p in self.encoder.parameters():
+            p.requires_grad = False
+        print(f"  [LE-JEPA classify] MODE: linear probe — encoder FROZEN")
+    else:
+        print(f"  [LE-JEPA classify] MODE: full fine-tuning — encoder UNFROZEN")
 
     embed_dim = config["encoder_embed_dim"]
     encoder_num_patches = self.encoder.W_pos.shape[0]
@@ -78,8 +83,13 @@ def classification_zeroshot(self, path, classification_train, classification_val
         head_dropout = config.get("head_dropout", 0.1),
     ).to(self.device)
 
-    n_epochs  = config.get("epoch_classification", 20)
-    optimizer = torch.optim.Adam(cls_head.parameters(),
+    n_epochs    = config.get("epoch_classification", 20)
+    _all_params = list(self.encoder.parameters()) + list(cls_head.parameters())
+    _params     = list(cls_head.parameters()) if linear_probe else _all_params
+    _trainable  = sum(p.numel() for p in _params)
+    _total      = sum(p.numel() for p in _all_params)
+    print(f"  Trainable: {_trainable:,} / {_total:,} params")
+    optimizer = torch.optim.Adam(_params,
                                  lr=config.get("lr_classification", 1e-3),
                                  weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
@@ -116,6 +126,8 @@ def classification_zeroshot(self, path, classification_train, classification_val
 
     for epoch in range(n_epochs):
         cls_head.train()
+        if not linear_probe:
+            self.encoder.train()
         correct, total = 0, 0
         for patches, labels, padding_mask in classification_train:
             patches, padding_mask = _to_patches(patches, padding_mask)
@@ -126,7 +138,7 @@ def classification_zeroshot(self, path, classification_train, classification_val
 
             optimizer.zero_grad()
             ctx_norm, _, _ = _instance_norm(patches)
-            with torch.no_grad():
+            with torch.set_grad_enabled(not linear_probe):
                 enc_out = self.encoder(ctx_norm, padding_mask=padding_mask)
                 enc     = enc_out["data_patches"]          # [B*n_v, P, embed_dim]
             enc_p  = enc.reshape(B, n_v_, encoder_num_patches, embed_dim).permute(0, 1, 3, 2)

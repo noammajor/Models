@@ -167,10 +167,11 @@ def transfer_weights(weights_path, model, exclude_head=True, device='cpu'):
     # Print positional encoding size from checkpoint vs model
     for key in ['positional_encoding.position_encoding.pe',
                 'positional_encoding.pe', 'pos_encoding.pe']:
-        if key in new_state_dict:
-            ckpt_shape = new_state_dict[key].shape
-            model_shape = model.state_dict().get(key, None)
-            model_shape = model_shape.shape if model_shape is not None else 'not in model'
+        in_ckpt  = key in new_state_dict
+        in_model = key in model.state_dict()
+        if in_ckpt or in_model:
+            ckpt_shape  = new_state_dict[key].shape      if in_ckpt  else 'not in ckpt'
+            model_shape = model.state_dict()[key].shape  if in_model else 'not in model'
             print(f'  [PE] {key}: ckpt={ckpt_shape}  model={model_shape}')
             break
 

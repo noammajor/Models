@@ -107,7 +107,8 @@ def _encode(model, x, padding_mask=None):
 
 def classification_zeroshot(config, checkpoint_path,
                              classification_train, classification_val,
-                             classification_test, n_classes):
+                             classification_test, n_classes,
+                             linear_probe=True):
     """
     Linear-probe classification with frozen TimeDaRT encoder.
 
@@ -138,9 +139,14 @@ def classification_zeroshot(config, checkpoint_path,
     else:
         print(f"  WARNING: checkpoint not found at {checkpoint_path}, using random init")
 
-    model.eval()
-    for p in model.parameters():
-        p.requires_grad = False
+    if linear_probe:
+        model.eval()
+        for p in model.parameters():
+            p.requires_grad = False
+        print(f"  [TimeDaRT classify] MODE: linear probe — encoder FROZEN")
+    else:
+        model.train()
+        print(f"  [TimeDaRT classify] MODE: full fine-tuning — encoder UNFROZEN")
 
     d_model = config.get("d_model", 256)
     cls_head = ClassificationHead(
@@ -149,8 +155,13 @@ def classification_zeroshot(config, checkpoint_path,
         head_dropout=config.get("head_dropout", 0.1),
     ).to(device)
 
-    n_epochs  = config.get("epoch_classification", 20)
-    optimizer = torch.optim.Adam(cls_head.parameters(),
+    n_epochs    = config.get("epoch_classification", 20)
+    _all_params = list(model.parameters()) + list(cls_head.parameters())
+    _params     = list(cls_head.parameters()) if linear_probe else _all_params
+    _trainable  = sum(p.numel() for p in _params)
+    _total      = sum(p.numel() for p in _all_params)
+    print(f"  Trainable: {_trainable:,} / {_total:,} params")
+    optimizer = torch.optim.Adam(_params,
                                  lr=config.get("lr_classification", 1e-3),
                                  weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
@@ -165,13 +176,15 @@ def classification_zeroshot(config, checkpoint_path,
 
     for epoch in range(n_epochs):
         cls_head.train()
+        if not linear_probe:
+            model.train()
         correct, total = 0, 0
         for patches, labels, padding_mask in classification_train:
             x      = _to_flat(patches).float().to(device)
             labels = labels.to(device)
             padding_mask = padding_mask.to(device)
             optimizer.zero_grad()
-            with torch.no_grad():
+            with torch.set_grad_enabled(not linear_probe):
                 enc = _encode(model, x, padding_mask)  # [B, C, d_model, P]
             logits = cls_head(enc)         # [B, n_classes]
             loss   = F.cross_entropy(logits, labels)

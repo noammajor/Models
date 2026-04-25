@@ -795,7 +795,10 @@ def test_run(args):
         step_size=1
         )
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.head.parameters(), lr=args.lr_forecasting, weight_decay=1e-4)
+    _lp_fore  = getattr(args, 'linear_probe', True)
+    optimizer = torch.optim.Adam(
+        model.head.parameters() if _lp_fore else model.parameters(),
+        lr=args.lr_forecasting, weight_decay=1e-4)
     model = model.to(device)
     if args.path_num != 0:
         if args.path_num == "best":
@@ -836,8 +839,17 @@ def test_run(args):
         total_steps=args.epochs_forecasting * len(data_loader_forecasting_train),
         pct_start=0.3, anneal_strategy='cos',
     )
-    for param in model.backbone.parameters():
-        param.requires_grad = False
+    if _lp_fore:
+        for param in model.backbone.parameters():
+            param.requires_grad = False
+        _trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        _total     = sum(p.numel() for p in model.parameters())
+        print(f"  [DINO forecast] MODE: linear probe — backbone FROZEN")
+        print(f"  Trainable: {_trainable:,} / {_total:,} params")
+    else:
+        _total = sum(p.numel() for p in model.parameters())
+        print(f"  [DINO forecast] MODE: full fine-tuning — backbone UNFROZEN")
+        print(f"  Trainable: {_total:,} / {_total:,} params")
 
     for epoch in range(args.epochs_forecasting):
         model.train()
@@ -1063,12 +1075,20 @@ def train_classification(args, classification_train=None, classification_val=Non
         else:
             print(f"Checkpoint {checkpoint_path} not found, using random initialization")
 
-    # Freeze encoder, train only head
+    # Freeze encoder (linear probe) or fine-tune full model
+    _lp_cls = getattr(args, 'linear_probe', True)
     for name, param in model.named_parameters():
-        if 'head' not in name:
-            param.requires_grad = False
+        if _lp_cls:
+            param.requires_grad = ('head' in name)
         else:
             param.requires_grad = True
+    _trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    _total     = sum(p.numel() for p in model.parameters())
+    if _lp_cls:
+        print(f"  [DINO classify] MODE: linear probe — encoder FROZEN")
+    else:
+        print(f"  [DINO classify] MODE: full fine-tuning — encoder UNFROZEN")
+    print(f"  Trainable: {_trainable:,} / {_total:,} params")
 
     # Count trainable parameters
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

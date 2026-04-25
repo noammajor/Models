@@ -206,7 +206,8 @@ def run_dino(skip_train: bool = False,
              pretrain_source: str = None,
              checkpoint: str = None,
              num_patches: int = None,
-             seed: int = None):
+             seed: int = None,
+             linear_probe: bool = True):
     dino_dir  = Path(__file__).parent / "TSDiNO"
     djepa_dir = Path(__file__).parent / "Discrete_JEPA"
     _add_path(dino_dir)
@@ -325,6 +326,7 @@ def run_dino(skip_train: bool = False,
         if val and not os.path.isabs(val):
             setattr(args, attr, str(dino_dir / val))
 
+    args.linear_probe = linear_probe
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     # ── pretraining ──────────────────────────────────────────────────────────
@@ -911,7 +913,8 @@ def run_jepa_simple(skip_train: bool = False,
                     pretrain_source: str = None,
                     checkpoint: str = None,
                     num_patches: int = None,
-                    random_encoder: bool = False):
+                    random_encoder: bool = False,
+                    linear_probe: bool = True):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -1146,7 +1149,7 @@ def run_jepa_simple(skip_train: bool = False,
             for epoch in ckpts_to_run:
                 print(f"  → checkpoint epoch {epoch}")
                 ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
-                mse = model.forcasting_zeroshot(ckpt_tag)
+                mse = model.forcasting_zeroshot(ckpt_tag, linear_probe=linear_probe)
                 if is_search and mse is not None and mse < best_mse:
                     best_mse  = mse
                     best_ckpt = epoch
@@ -1200,7 +1203,8 @@ def run_jepa_simple(skip_train: bool = False,
         _ckpt_override = os.path.abspath(checkpoint) if checkpoint else None
         cls_acc   = model.classification_zeroshot(ckpt_tag, cls_train, cls_val, cls_test, n_classes,
                                                   checkpoint_path_override=_ckpt_override,
-                                                  random_encoder=random_encoder)
+                                                  random_encoder=random_encoder,
+                                                  linear_probe=linear_probe)
         print(f"\n{'='*60}")
         print(f"  [JEPA simple] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
@@ -1233,7 +1237,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
                  pretrain_only: bool = False, classification_only: bool = False, pred_lens=None,
                  checkpoints=None, random_encoder: bool = False, encoder_layers: int = None,
                  predictor_layers: int = None, lr: float = None, pretrain_source: str = None,
-                 num_patches: int = None, seed: int = None):
+                 num_patches: int = None, seed: int = None, linear_probe: bool = True):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
     patchtst_dir = Path(__file__).parent / "PatchTST_self_supervised"
@@ -1390,7 +1394,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
             result = subprocess.run(
                 [sys.executable, "patchtst_finetune.py",
                  "--dset_finetune",      _forecast_dset,
-                 "--is_linear_probe",    "1",
+                 "--is_linear_probe",    str(int(linear_probe)),
                  "--context_points",  str(cfg.get("context_points", 512)),
                  "--patch_len",       str(cfg.get("patch_len", 16)),
                  "--stride",          str(cfg.get("stride", 16)),
@@ -1467,7 +1471,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
                 batch_size=cls_bs, shuffle=(split == "train"))
             cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
             n_classes = cls_train.dataset.n_classes
-        cls_acc = ptst_classify(cfg, pretrained_model_path, cls_train, cls_val, cls_test, n_classes)
+        cls_acc = ptst_classify(cfg, pretrained_model_path, cls_train, cls_val, cls_test, n_classes,
+                                linear_probe=linear_probe)
         print(f"\n{'='*60}")
         print(f"  [PatchTST] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
@@ -1500,7 +1505,8 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
             pretrain_only: bool = False, classification_only: bool = False,
             pred_lens=None,
             checkpoints=None, encoder_layers: int = None, predictor_layers: int = None,
-            lr: float = None, pretrain_source: str = None, num_patches: int = None):
+            lr: float = None, pretrain_source: str = None, num_patches: int = None,
+            linear_probe: bool = True):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
     npt_dir = Path(__file__).parent / "NPT"
@@ -1591,7 +1597,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         print(f"\n[NPT] Running zero-shot forecasting on {_forecast_dset} …")
         for _pl in pred_lens:
             cfg["horizon_t"] = _pl // cfg["patch_size"]
-            _mse, _mae = zeroshot_forecasting(cfg, _ckpt_path)
+            _mse, _mae = zeroshot_forecasting(cfg, _ckpt_path, linear_probe=linear_probe)
             if _mse is not None:
                 print(f"\n{'='*60}")
                 print(f"  Results on {_forecast_dset}  pred_len={_pl}")
@@ -1646,7 +1652,8 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
                 batch_size=cls_bs, shuffle=(split == "train"))
             cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
             n_classes = cls_train.dataset.n_classes
-        cls_acc = npt_classify(cfg, _ckpt_path, cls_train, cls_val, cls_test, n_classes)
+        cls_acc = npt_classify(cfg, _ckpt_path, cls_train, cls_val, cls_test, n_classes,
+                               linear_probe=linear_probe)
         print(f"\n{'='*60}")
         print(f"  [NPT] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
@@ -1687,7 +1694,8 @@ def run_lejepa(skip_train: bool = False,
                predictor_layers: int = None,
                lr: float = None,
                pretrain_source: str = None,
-               num_patches: int = None):
+               num_patches: int = None,
+               linear_probe: bool = True):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -1917,7 +1925,7 @@ def run_lejepa(skip_train: bool = False,
             for epoch in ckpts_to_run:
                 print(f"  → checkpoint epoch {epoch}")
                 ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
-                mse = model.forcasting_zeroshot(ckpt_tag)
+                mse = model.forcasting_zeroshot(ckpt_tag, linear_probe=linear_probe)
                 if is_search and mse is not None and mse < _best_mse:
                     _best_mse = mse
                     best_ckpt = epoch
@@ -1968,7 +1976,8 @@ def run_lejepa(skip_train: bool = False,
             cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
             n_classes = cls_train.dataset.n_classes
         ckpt_tag  = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
-        cls_acc   = model.classification_zeroshot(ckpt_tag, cls_train, cls_val, cls_test, n_classes)
+        cls_acc   = model.classification_zeroshot(ckpt_tag, cls_train, cls_val, cls_test, n_classes,
+                                                  linear_probe=linear_probe)
         print(f"\n{'='*60}")
         print(f"  [LE-JEPA] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
@@ -2284,7 +2293,14 @@ def run_timedart(skip_train: bool = False,
                 for name, param in exp.model.named_parameters():
                     if 'head' not in name:
                         param.requires_grad = False
-                print("  [TimeDart] Encoder frozen — training head only.")
+                _trainable = sum(p.numel() for p in exp.model.parameters() if p.requires_grad)
+                _total     = sum(p.numel() for p in exp.model.parameters())
+                print(f"  [TimeDart forecast] MODE: linear probe — encoder FROZEN")
+                print(f"  Trainable: {_trainable:,} / {_total:,} params")
+            else:
+                _total = sum(p.numel() for p in exp.model.parameters())
+                print(f"  [TimeDart forecast] MODE: full fine-tuning — encoder UNFROZEN")
+                print(f"  Trainable: {_total:,} / {_total:,} params")
 
             # Inject our loaders directly — bypasses TimeDart's _get_data()
             exp._td_train_loader = _fc_loader('train')
@@ -2367,7 +2383,8 @@ def run_timedart(skip_train: bool = False,
             n_classes = cls_train.dataset.n_classes
 
         _cls_ckpt = cls_ckpt_file if cls_ckpt_file.exists() else ckpt_file
-        cls_acc = timedart_classify(cfg, str(_cls_ckpt), cls_train, cls_val, cls_test, n_classes)
+        cls_acc = timedart_classify(cfg, str(_cls_ckpt), cls_train, cls_val, cls_test, n_classes,
+                                    linear_probe=linear_probe)
         print(f"\n{'='*60}")
         print(f"  [TimeDaRT] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
@@ -2490,7 +2507,8 @@ def run(model: str,
         gpu: int = None,
         num_patches: int = None,
         seed: int = None,
-        pretrain_cls_model: bool = False):
+        pretrain_cls_model: bool = False,
+        linear_probe: bool = True):
     """
     Unified entry point. Each run handles ONE task.
 
@@ -2571,6 +2589,7 @@ def run(model: str,
     if 'num_patches'            in sig.parameters: kwargs['num_patches']            = num_patches
     if 'seed'                   in sig.parameters: kwargs['seed']                   = seed
     if 'pretrain_cls_model'     in sig.parameters: kwargs['pretrain_cls_model']     = pretrain_cls_model
+    if 'linear_probe'           in sig.parameters: kwargs['linear_probe']           = linear_probe
     return runner(**kwargs)
 
 

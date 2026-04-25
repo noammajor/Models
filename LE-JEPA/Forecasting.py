@@ -33,7 +33,7 @@ def _instance_denorm(x, mean, std):
     return x * std.reshape(shape) + mean.reshape(shape)
 
 
-def forcasting_zeroshot(self, path):
+def forcasting_zeroshot(self, path, linear_probe=True):
     """
     Linear-probe forecasting with frozen LE-JEPA encoder.
 
@@ -49,9 +49,13 @@ def forcasting_zeroshot(self, path):
     ckpt = torch.load(checkpoint_path, map_location="cpu")
     self.encoder.load_state_dict(ckpt["encoder"])
     self.encoder.to(self.device)
-    self.encoder.eval()
-    for p in self.encoder.parameters():
-        p.requires_grad = False
+    if linear_probe:
+        self.encoder.eval()
+        for p in self.encoder.parameters():
+            p.requires_grad = False
+        print(f"  [LE-JEPA forecast] MODE: linear probe — encoder FROZEN")
+    else:
+        print(f"  [LE-JEPA forecast] MODE: full fine-tuning — encoder UNFROZEN")
 
     embed_dim   = config["encoder_embed_dim"]
     num_patches = config.get("forecasting_context_patches", config["ratio_patches"])
@@ -67,8 +71,13 @@ def forcasting_zeroshot(self, path):
         forecast_len = h_t * P_L,
     ).to(self.device)
 
+    _all_params = list(self.encoder.parameters()) + list(forecast_head.parameters())
+    _params_ft  = list(forecast_head.parameters()) if linear_probe else _all_params
+    _trainable  = sum(p.numel() for p in _params_ft)
+    _total      = sum(p.numel() for p in _all_params)
+    print(f"  Trainable: {_trainable:,} / {_total:,} params")
     optimizer = torch.optim.Adam(
-        forecast_head.parameters(),
+        _params_ft,
         lr           = config.get("lr_forcasting", 1e-4),
         weight_decay = 1e-4,
     )
@@ -78,9 +87,11 @@ def forcasting_zeroshot(self, path):
         pct_start=0.3, anneal_strategy='cos',
     )
 
-    # ── Train linear head ─────────────────────────────────────────────────────
+    # ── Train head (and optionally encoder) ──────────────────────────────────
     for epoch in range(self.epoch_t):
         forecast_head.train()
+        if not linear_probe:
+            self.encoder.train()
         total_loss = 0.0
         for context_patches, target_patch in self.forcast_train:
             if context_patches.dim() == 3:
@@ -92,7 +103,7 @@ def forcasting_zeroshot(self, path):
 
             optimizer.zero_grad()
             ctx_norm, ctx_mean, ctx_std = _instance_norm(context_patches)
-            with torch.no_grad():
+            with torch.set_grad_enabled(not linear_probe):
                 enc_out = self.encoder(ctx_norm)
                 enc_patches = enc_out["data_patches"]          # [B*n_v, num_patches, D]
 
