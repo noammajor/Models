@@ -91,7 +91,8 @@ def anomaly_zeroshot(self, path, anomaly_train, anomaly_test,
 
     decoder   = _LinearReconDecoder(embed_dim, patch_size, n_vars).to(self.device)
     import os as _os
-    head_lr = config.get("lr_anomaly", 1e-3)
+    _cfg_head_lr = config.get("lr_anomaly", 1e-3)
+    head_lr = float(_os.environ.get("TS_FINETUNE_HEAD_LR", _cfg_head_lr)) if not linear_probe else _cfg_head_lr
     enc_lr  = float(_os.environ.get("TS_PRETRAIN_LR", head_lr))
     if linear_probe:
         optimizer = torch.optim.Adam(decoder.parameters(), lr=head_lr)

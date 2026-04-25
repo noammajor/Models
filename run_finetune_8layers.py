@@ -69,17 +69,21 @@ MODEL_GPU = {
 }
 ALL_MODELS = list(MODEL_GPU.keys())
 
-# Encoder LR when fine-tuning (linear_probe=False) — set to pretrain_LR / 10 so the
-# encoder is perturbed gently while the head trains at its normal LR.
+# Encoder LR when fine-tuning (linear_probe=False) — uniform across models, matching
+# JEPA's setup (5e-5 encoder LR, 4e-4 head LR).
 MODEL_PRETRAIN_LR = {
     "dino":            5e-5,
     "jepa_simple":     5e-5,
     "lejepa":          5e-5,
-    "patchtst":        5e-6,
-    "npt":             5e-6,
-    "timedart":        5e-6,
-    "patchtst_random": 5e-6,
+    "patchtst":        5e-5,
+    "npt":             5e-5,
+    "timedart":        5e-5,
+    "patchtst_random": 5e-5,
 }
+
+# Uniform head LR for all fine-tunes (matches JEPA's lr_forcasting=4e-4).
+FINETUNE_HEAD_LR = 4e-4
+
 ALL_TASKS  = ["forecast", "classify", "anomaly"]
 
 
@@ -213,10 +217,11 @@ def run_model_worker(model: str, gpu: int, tasks: list,
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
     if model in MODEL_PRETRAIN_LR:
         os.environ["TS_PRETRAIN_LR"] = str(MODEL_PRETRAIN_LR[model])
+    os.environ["TS_FINETUNE_HEAD_LR"] = str(FINETUNE_HEAD_LR)
 
     print(f"\n{'='*60}")
     print(f"  MODEL: {model.upper()}  layers={ENCODER_LAYERS}  src={pretrain_source}")
-    print(f"  tasks={tasks}  encoder_lr={os.environ.get('TS_PRETRAIN_LR', 'N/A')}")
+    print(f"  tasks={tasks}  head_lr={FINETUNE_HEAD_LR}  encoder_lr={os.environ.get('TS_PRETRAIN_LR', 'N/A')}")
     print(f"{'='*60}")
 
     from Train_and_downstream import run

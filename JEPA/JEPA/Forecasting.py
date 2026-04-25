@@ -57,7 +57,8 @@ def forcasting_zeroshot(self, path, linear_probe=True):
         ])
         '''
         
-        head_lr = config.get("lr_forcasting", 1e-4)
+        _cfg_head_lr = config.get("lr_forcasting", 1e-4)
+        head_lr = float(os.environ.get("TS_FINETUNE_HEAD_LR", _cfg_head_lr)) if not linear_probe else _cfg_head_lr
         enc_lr  = float(os.environ.get("TS_PRETRAIN_LR", head_lr))
         if linear_probe:
             optimizer = torch.optim.Adam(

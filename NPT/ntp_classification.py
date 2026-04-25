@@ -97,7 +97,8 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
 
     n_epochs   = config.get("epoch_classification", 20)
     _all_params = list(backbone.parameters()) + list(cls_head.parameters())
-    head_lr = config.get("lr_classification", 1e-3)
+    _cfg_head_lr = config.get("lr_classification", 1e-3)
+    head_lr = float(os.environ.get("TS_FINETUNE_HEAD_LR", _cfg_head_lr)) if not linear_probe else _cfg_head_lr
     enc_lr  = float(os.environ.get("TS_PRETRAIN_LR", head_lr))
     if linear_probe:
         optimizer = torch.optim.Adam(cls_head.parameters(),

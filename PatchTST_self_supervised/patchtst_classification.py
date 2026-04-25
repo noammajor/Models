@@ -94,9 +94,10 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
     _total     = sum(p.numel() for p in model.parameters())
     print(f"  Trainable: {_trainable:,} / {_total:,} params")
 
-    n_epochs = config.get("epoch_classification", 20)
-    head_lr  = config.get("lr_classification", 1e-3)
-    enc_lr   = float(os.environ.get("TS_PRETRAIN_LR", head_lr))
+    n_epochs    = config.get("epoch_classification", 20)
+    _cfg_head_lr = config.get("lr_classification", 1e-3)
+    head_lr      = float(os.environ.get("TS_FINETUNE_HEAD_LR", _cfg_head_lr)) if not linear_probe else _cfg_head_lr
+    enc_lr       = float(os.environ.get("TS_PRETRAIN_LR", head_lr))
     if linear_probe:
         optimizer = torch.optim.Adam(
             [p for p in model.parameters() if p.requires_grad],

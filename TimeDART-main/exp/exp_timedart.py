@@ -63,14 +63,14 @@ class Exp_TimeDART(Exp_Basic):
 
     def _select_optimizer(self):
         import os
-        head_lr = self.args.learning_rate
-        enc_lr  = float(os.environ.get("TS_PRETRAIN_LR", head_lr))
-        # Use two param groups (head_lr for head, enc_lr for backbone) only when
-        # fine-tuning (any backbone param is trainable) and TS_PRETRAIN_LR is set.
         backbone_trainable = any(
             p.requires_grad for n, p in self.model.named_parameters() if "head" not in n
         )
+        # Fine-tuning path: head_lr from TS_FINETUNE_HEAD_LR (else config), encoder_lr
+        # from TS_PRETRAIN_LR (else head_lr).
         if backbone_trainable and "TS_PRETRAIN_LR" in os.environ:
+            head_lr = float(os.environ.get("TS_FINETUNE_HEAD_LR", self.args.learning_rate))
+            enc_lr  = float(os.environ.get("TS_PRETRAIN_LR", head_lr))
             head_params = [p for n, p in self.model.named_parameters() if "head" in n and p.requires_grad]
             enc_params  = [p for n, p in self.model.named_parameters() if "head" not in n and p.requires_grad]
             print(f"  [TimeDart optim] head_lr={head_lr}  encoder_lr={enc_lr}")
@@ -78,7 +78,7 @@ class Exp_TimeDART(Exp_Basic):
                 {"params": head_params, "lr": head_lr},
                 {"params": enc_params,  "lr": enc_lr},
             ])
-        return optim.Adam(self.model.parameters(), lr=head_lr)
+        return optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
 
     def _select_criterion(self):
         if self.args.task_name == "finetune" and self.args.downstream_task == "classification":

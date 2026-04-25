@@ -189,7 +189,8 @@ def zeroshot_forecasting(config, checkpoint_path, linear_probe=True):
         print(f"  Trainable: {trainable:,} / {trainable:,} params\n")
 
     # ── train prediction head (and optionally backbone) ───────────────────────
-    lr_head = 1e-4
+    _cfg_head_lr = 1e-4
+    lr_head = float(os.environ.get("TS_FINETUNE_HEAD_LR", _cfg_head_lr)) if not linear_probe else _cfg_head_lr
     enc_lr  = float(os.environ.get("TS_PRETRAIN_LR", lr_head))
     if linear_probe:
         optimizer = torch.optim.Adam(model.head.parameters(),
