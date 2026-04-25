@@ -14,9 +14,13 @@ def _instance_denorm(x, mean, std):
     return x * std.reshape(shape) + mean.reshape(shape)
 
 
-def forcasting_zeroshot(self, path):
+def forcasting_zeroshot(self, path, linear_probe=True):
     """Non-autoregressive forecasting: slides real context forward, no prediction feedback.
-    Runs TWICE: first with random encoder (baseline), then with trained encoder."""
+    Runs TWICE: first with random encoder (baseline), then with trained encoder.
+
+    linear_probe=True : encoder frozen, only forecast head trained.
+    linear_probe=False: encoder unfrozen, head + encoder trained jointly (fine-tune).
+    """
     config    = self.config   # always use instance config, not module-level
     epoch_tag = path
     checkpoint_path = f"{self.path_save}{path}best_model.pt"
@@ -53,11 +57,16 @@ def forcasting_zeroshot(self, path):
         ])
         '''
         
+        if linear_probe:
+            opt_params = list(self.forecast_head_patch.parameters())
+        else:
+            opt_params = list(self.forecast_head_patch.parameters()) + list(self.encoder_for.parameters())
         optimizer = torch.optim.Adam(
-            self.forecast_head_patch.parameters(),
+            opt_params,
             lr=config.get("lr_forcasting", 1e-4),
             weight_decay=1e-4,
         )
+        print(f"  [JEPA forecast] MODE: {'linear probe — encoder FROZEN' if linear_probe else 'full fine-tune — encoder UNFROZEN'}")
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer, max_lr=config.get("lr_forcasting", 1e-4),
             total_steps=self.epoch_t * len(self.forcast_train),
@@ -65,7 +74,10 @@ def forcasting_zeroshot(self, path):
         )
 
         for epoch in range(self.epoch_t):
-            self.encoder_for.eval()
+            if linear_probe:
+                self.encoder_for.eval()
+            else:
+                self.encoder_for.train()
             self.predictor_for.eval()
             self.forecast_head_patch.train()
             total_loss = 0.0
@@ -77,7 +89,7 @@ def forcasting_zeroshot(self, path):
                 B, h_t, P_L, n_v = target_patch.shape  # [B, h, P_L, n_v]
                 optimizer.zero_grad()
                 ctx_norm, ctx_mean, ctx_std = _instance_norm(context_patches)
-                with torch.no_grad():
+                with torch.set_grad_enabled(not linear_probe):
                     encoder_out = self.encoder_for(ctx_norm)
                     encoder_patches  = encoder_out["data_patches"]         # [B*n_v, ctx, embed_dim]
                 # reshape to [B, n_v, embed_dim, num_patch/S]

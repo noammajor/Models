@@ -443,7 +443,8 @@ def run_dino(skip_train: bool = False,
         args.path_num = best_ckpt if best_ckpt is not None else 0
         anom_result = _anom_mod.anomaly_zeroshot(
             args, args.path_num, anom_train, anom_test,
-            anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, dino_cfg))
+            anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, dino_cfg),
+            linear_probe=linear_probe)
 
     return best_ckpt, best_mse, cls_acc, anom_result
 
@@ -1225,7 +1226,8 @@ def run_jepa_simple(skip_train: bool = False,
             batch_size=anom_bs, shuffle=False)
         ckpt_tag   = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
         anom_result = model.anomaly_zeroshot(ckpt_tag, anom_train, anom_test,
-                                             anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, config))
+                                             anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, config),
+                                             linear_probe=linear_probe)
 
     return best_ckpt, best_mse, cls_acc, anom_result
 
@@ -1493,7 +1495,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
             batch_size=anom_bs, shuffle=False)
         anom_result = ptst_anomaly(cfg, pretrained_model_path, anom_train, anom_test,
-                                   anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg))
+                                   anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg),
+                                   linear_probe=linear_probe)
 
     return mse_val, mae_val, cls_acc, anom_result
 
@@ -1674,7 +1677,8 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
             batch_size=anom_bs, shuffle=False)
         anom_result = npt_anomaly(cfg, _ckpt_path, anom_train, anom_test,
-                                  anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg))
+                                  anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg),
+                                  linear_probe=linear_probe)
 
     return mse_trained, cls_acc, anom_result
 
@@ -2405,7 +2409,8 @@ def run_timedart(skip_train: bool = False,
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
             batch_size=anom_bs, shuffle=False)
         anom_result = timedart_anomaly(cfg, str(ckpt_file), anom_train, anom_test,
-                                       anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg))
+                                       anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg),
+                                       linear_probe=linear_probe)
 
     return best_pred, best_mse, best_mae, cls_acc, anom_result
 

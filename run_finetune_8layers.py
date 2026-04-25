@@ -348,6 +348,7 @@ def run_model_worker(model: str, gpu: int, tasks: list,
                         encoder_layers  = ENCODER_LAYERS,
                         pretrain_source = pretrain_source,
                         gpu             = gpu,
+                        linear_probe    = False,
                     )
                     # result last element is the anom dict
                     anom = result[-1] if isinstance(result, tuple) else result

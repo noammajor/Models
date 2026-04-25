@@ -110,7 +110,7 @@ def _encode(model, x):
 
 
 def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
-                     anomaly_ratio: float = 1.0):
+                     anomaly_ratio: float = 1.0, linear_probe: bool = True):
     """
     Reconstruction-based anomaly detection with frozen TimeDaRT encoder.
 
@@ -141,13 +141,23 @@ def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
     else:
         print(f"  WARNING: checkpoint not found at {checkpoint_path}, using random init")
 
-    model.eval()
-    for p in model.parameters():
-        p.requires_grad = False
+    if linear_probe:
+        model.eval()
+        for p in model.parameters():
+            p.requires_grad = False
+        print(f"  [TimeDart anomaly] MODE: linear probe — encoder FROZEN")
+    else:
+        for p in model.parameters():
+            p.requires_grad = True
+        print(f"  [TimeDart anomaly] MODE: full fine-tune — encoder UNFROZEN")
 
     d_model = config.get("d_model", 256)
     decoder = _LinearReconDecoder(d_model, patch_len, n_vars).to(device)
-    optimizer = torch.optim.Adam(decoder.parameters(),
+    if linear_probe:
+        opt_params = list(decoder.parameters())
+    else:
+        opt_params = list(decoder.parameters()) + list(model.parameters())
+    optimizer = torch.optim.Adam(opt_params,
                                  lr=config.get("lr_anomaly", 1e-3))
     n_epochs  = config.get("epoch_anomaly", 10)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
@@ -170,13 +180,15 @@ def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
     print(f"  Training decoder ({n_epochs} epochs, patience={patience}) …")
     for epoch in range(n_epochs):
         decoder.train()
+        if not linear_probe:
+            model.train()
         total_loss = 0.0
         for batch in train_batches:
             patches = batch[0] if isinstance(batch, (list, tuple)) else batch
             patches = patches.to(device)
             B, P, PL, C = patches.shape
             x = _to_flat(patches).float()
-            with torch.no_grad():
+            with torch.set_grad_enabled(not linear_probe):
                 z = _encode(model, x)
             recon  = decoder(z)
             target = patches.reshape(B, P * PL, C)

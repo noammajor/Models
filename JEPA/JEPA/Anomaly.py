@@ -48,7 +48,7 @@ def _adjustment(gt, pred):
 
 
 def anomaly_zeroshot(self, path, anomaly_train, anomaly_test,
-                     anomaly_ratio: float = 1.0):
+                     anomaly_ratio: float = 1.0, linear_probe: bool = True):
     """
     Reconstruction-based anomaly detection with frozen JEPA encoder.
 
@@ -69,9 +69,15 @@ def anomaly_zeroshot(self, path, anomaly_train, anomaly_test,
     ckpt = torch.load(checkpoint_path, map_location="cpu")
     self.encoder_for.load_state_dict(ckpt["target_encoder"])
     self.encoder_for.to(self.device)
-    self.encoder_for.eval()
-    for p in self.encoder_for.parameters():
-        p.requires_grad = False
+    if linear_probe:
+        self.encoder_for.eval()
+        for p in self.encoder_for.parameters():
+            p.requires_grad = False
+        print(f"  [JEPA anomaly] MODE: linear probe — encoder FROZEN")
+    else:
+        for p in self.encoder_for.parameters():
+            p.requires_grad = True
+        print(f"  [JEPA anomaly] MODE: full fine-tune — encoder UNFROZEN")
 
     embed_dim = config["encoder_embed_dim"]
 
@@ -84,7 +90,11 @@ def anomaly_zeroshot(self, path, anomaly_train, anomaly_test,
     n_vars     = patches_sample.shape[3]
 
     decoder   = _LinearReconDecoder(embed_dim, patch_size, n_vars).to(self.device)
-    optimizer = torch.optim.Adam(decoder.parameters(),
+    if linear_probe:
+        opt_params = list(decoder.parameters())
+    else:
+        opt_params = list(decoder.parameters()) + list(self.encoder_for.parameters())
+    optimizer = torch.optim.Adam(opt_params,
                                  lr=config.get("lr_anomaly", 1e-3))
     n_epochs  = config.get("epoch_anomaly", 10)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
@@ -118,13 +128,15 @@ def anomaly_zeroshot(self, path, anomaly_train, anomaly_test,
     for epoch in range(n_epochs):
         # train
         decoder.train()
+        if not linear_probe:
+            self.encoder_for.train()
         total_loss = 0.0
         for batch in train_batches:
             patches = batch[0] if isinstance(batch, (list, tuple)) else batch
             if patches.dim() == 3: patches = patches.unsqueeze(-1)
             raw = patches.to(self.device)
             B, P, PL, C = raw.shape
-            with torch.no_grad():
+            with torch.set_grad_enabled(not linear_probe):
                 z = _encode(raw)
             recon  = decoder(z)
             target = raw.reshape(B, P * PL, C)
