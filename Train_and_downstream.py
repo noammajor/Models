@@ -2002,7 +2002,8 @@ def run_lejepa(skip_train: bool = False,
             batch_size=anom_bs, shuffle=False)
         ckpt_tag    = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
         anom_result = model.anomaly_zeroshot(ckpt_tag, anom_train, anom_test,
-                                             anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, config))
+                                             anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, config),
+                                             linear_probe=linear_probe)
 
     return best_ckpt, best_mse, cls_acc, anom_result
 
