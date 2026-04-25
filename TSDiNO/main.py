@@ -796,9 +796,16 @@ def test_run(args):
         )
     criterion = nn.MSELoss()
     _lp_fore  = getattr(args, 'linear_probe', True)
-    optimizer = torch.optim.Adam(
-        model.head.parameters() if _lp_fore else model.parameters(),
-        lr=args.lr_forecasting, weight_decay=1e-4)
+    _enc_lr   = float(os.environ.get("TS_PRETRAIN_LR", args.lr_forecasting))
+    if _lp_fore:
+        optimizer = torch.optim.Adam(model.head.parameters(),
+                                     lr=args.lr_forecasting, weight_decay=1e-4)
+    else:
+        optimizer = torch.optim.Adam([
+            {"params": model.head.parameters(),     "lr": args.lr_forecasting},
+            {"params": model.backbone.parameters(), "lr": _enc_lr},
+        ], weight_decay=1e-4)
+        print(f"  [DINO forecast] head_lr={args.lr_forecasting}  encoder_lr={_enc_lr}")
     model = model.to(device)
     if args.path_num != 0:
         if args.path_num == "best":
@@ -1097,10 +1104,20 @@ def train_classification(args, classification_train=None, classification_val=Non
 
     # Loss and optimizer
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(
-        [p for p in model.parameters() if p.requires_grad],
-        lr=args.lr_classification
-    )
+    _enc_lr_cls = float(os.environ.get("TS_PRETRAIN_LR", args.lr_classification))
+    if _lp_cls:
+        optimizer = torch.optim.Adam(
+            [p for p in model.parameters() if p.requires_grad],
+            lr=args.lr_classification,
+        )
+    else:
+        head_params = [p for n, p in model.named_parameters() if "head" in n and p.requires_grad]
+        enc_params  = [p for n, p in model.named_parameters() if "head" not in n and p.requires_grad]
+        optimizer = torch.optim.Adam([
+            {"params": head_params, "lr": args.lr_classification},
+            {"params": enc_params,  "lr": _enc_lr_cls},
+        ])
+        print(f"  [DINO classify] head_lr={args.lr_classification}  encoder_lr={_enc_lr_cls}")
 
     # Cosine learning rate scheduler
     lr_schedule = utils.cosine_scheduler(

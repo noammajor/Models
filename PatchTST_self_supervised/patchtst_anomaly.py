@@ -61,7 +61,7 @@ def _adjustment(gt, pred):
 
 
 def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
-                     anomaly_ratio: float = 1.0):
+                     anomaly_ratio: float = 1.0, linear_probe: bool = True):
     """
     Reconstruction-based anomaly detection with frozen PatchTST backbone.
 
@@ -117,14 +117,29 @@ def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
         backbone.load_state_dict(state, strict=False)
     else:
         print("  Random encoder — skipping checkpoint load")
-    backbone.eval()
-    for p in backbone.parameters():
-        p.requires_grad = False
+    if linear_probe:
+        backbone.eval()
+        for p in backbone.parameters():
+            p.requires_grad = False
+        print(f"  [PatchTST anomaly] MODE: linear probe — encoder FROZEN")
+    else:
+        for p in backbone.parameters():
+            p.requires_grad = True
+        print(f"  [PatchTST anomaly] MODE: full fine-tune — encoder UNFROZEN")
 
     d_model = config.get("d_model", 128)
     decoder = _LinearReconDecoder(d_model, patch_len, n_vars).to(device)
-    optimizer = torch.optim.Adam(decoder.parameters(),
-                                 lr=config.get("lr_anomaly", 1e-3))
+    import os as _os
+    head_lr = config.get("lr_anomaly", 1e-3)
+    enc_lr  = float(_os.environ.get("TS_PRETRAIN_LR", head_lr))
+    if linear_probe:
+        optimizer = torch.optim.Adam(decoder.parameters(), lr=head_lr)
+    else:
+        optimizer = torch.optim.Adam([
+            {"params": decoder.parameters(),  "lr": head_lr},
+            {"params": backbone.parameters(), "lr": enc_lr},
+        ])
+        print(f"  [PatchTST anomaly] head_lr={head_lr}  encoder_lr={enc_lr}")
     n_epochs  = config.get("epoch_anomaly", 10)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
 
@@ -148,12 +163,14 @@ def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
     for epoch in range(n_epochs):
         # train
         decoder.train()
+        if not linear_probe:
+            backbone.train()
         total_loss = 0.0
         for batch in train_batches:
             patches = batch[0] if isinstance(batch, (list, tuple)) else batch
             patches = patches.to(device)
             B, P, PL, C = patches.shape
-            with torch.no_grad():
+            with torch.set_grad_enabled(not linear_probe):
                 z = _encode(patches)
             recon  = decoder(z)
             target = patches.reshape(B, P * PL, C)

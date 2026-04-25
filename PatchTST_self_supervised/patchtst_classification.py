@@ -23,7 +23,8 @@ from src.models.patchTST import PatchTST
 
 
 def classification_zeroshot(config, checkpoint_path, classification_train,
-                             classification_val, classification_test, n_classes):
+                             classification_val, classification_test, n_classes,
+                             linear_probe=True):
     """
     Linear-probe classification with frozen PatchTST backbone.
 
@@ -80,18 +81,39 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
     else:
         print("  Random encoder — skipping checkpoint load")
 
-    # Freeze backbone, train only head
-    for name, p in model.named_parameters():
-        p.requires_grad = ("head" in name)
+    # Freeze backbone (linear probe) or fine-tune full model
+    if linear_probe:
+        for name, p in model.named_parameters():
+            p.requires_grad = ("head" in name)
+        print(f"  [PatchTST classify] MODE: linear probe — encoder FROZEN")
+    else:
+        for p in model.parameters():
+            p.requires_grad = True
+        print(f"  [PatchTST classify] MODE: full fine-tuning — encoder UNFROZEN")
+    _trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    _total     = sum(p.numel() for p in model.parameters())
+    print(f"  Trainable: {_trainable:,} / {_total:,} params")
 
-    n_epochs  = config.get("epoch_classification", 20)
-    optimizer = torch.optim.Adam(
-        [p for p in model.parameters() if p.requires_grad],
-        lr=config.get("lr_classification", 1e-3),
-        weight_decay=1e-4,
-    )
+    n_epochs = config.get("epoch_classification", 20)
+    head_lr  = config.get("lr_classification", 1e-3)
+    enc_lr   = float(os.environ.get("TS_PRETRAIN_LR", head_lr))
+    if linear_probe:
+        optimizer = torch.optim.Adam(
+            [p for p in model.parameters() if p.requires_grad],
+            lr=head_lr, weight_decay=1e-4,
+        )
+        _max_lrs = head_lr
+    else:
+        head_params = [p for n, p in model.named_parameters() if "head" in n and p.requires_grad]
+        enc_params  = [p for n, p in model.named_parameters() if "head" not in n and p.requires_grad]
+        optimizer = torch.optim.Adam([
+            {"params": head_params, "lr": head_lr},
+            {"params": enc_params,  "lr": enc_lr},
+        ], weight_decay=1e-4)
+        _max_lrs = [head_lr, enc_lr]
+        print(f"  [PatchTST classify] head_lr={head_lr}  encoder_lr={enc_lr}")
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, max_lr=config.get("lr_classification", 1e-3),
+        optimizer, max_lr=_max_lrs,
         total_steps=n_epochs * len(classification_train),
         pct_start=0.3, anneal_strategy='cos',
     )

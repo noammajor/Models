@@ -133,11 +133,16 @@ def anomaly_zeroshot(args, path_num, anomaly_train, anomaly_test,
     d_model   = args.embed_dim
 
     decoder   = _LinearReconDecoder(d_model, patch_len).to(device)
+    head_lr = 1e-3
+    enc_lr  = float(os.environ.get("TS_PRETRAIN_LR", head_lr))
     if linear_probe:
-        opt_params = list(decoder.parameters())
+        optimizer = torch.optim.Adam(decoder.parameters(), lr=head_lr)
     else:
-        opt_params = list(decoder.parameters()) + list(backbone.parameters())
-    optimizer = torch.optim.Adam(opt_params, lr=1e-3)
+        optimizer = torch.optim.Adam([
+            {"params": decoder.parameters(),  "lr": head_lr},
+            {"params": backbone.parameters(), "lr": enc_lr},
+        ])
+        print(f"  [TSDiNO anomaly] head_lr={head_lr}  encoder_lr={enc_lr}")
     n_epochs  = getattr(args, 'epoch_anomaly', 10)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
 

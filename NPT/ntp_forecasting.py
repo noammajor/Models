@@ -88,7 +88,7 @@ def _get_forecasting_model(config, c_in, forecast_len, device):
 
 # ── main entry point ──────────────────────────────────────────────────────────
 
-def zeroshot_forecasting(config, checkpoint_path):
+def zeroshot_forecasting(config, checkpoint_path, linear_probe=True):
     """
     Zero-shot forecasting: frozen NPT backbone + trained PredictionHead.
 
@@ -175,17 +175,35 @@ def zeroshot_forecasting(config, checkpoint_path):
         print(f"  WARNING: checkpoint not found at {checkpoint_path}, "
               f"using random backbone weights")
 
-    # Freeze backbone
-    for param in model.backbone.parameters():
-        param.requires_grad = False
-    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"  Backbone frozen. Head trainable params: {trainable:,}\n")
+    # Freeze backbone (linear probe) or train full model (fine-tune)
+    if linear_probe:
+        for param in model.backbone.parameters():
+            param.requires_grad = False
+        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        total     = sum(p.numel() for p in model.parameters())
+        print(f"  [NPT forecast] MODE: linear probe — encoder FROZEN")
+        print(f"  Trainable: {trainable:,} / {total:,} params\n")
+    else:
+        trainable = sum(p.numel() for p in model.parameters())
+        print(f"  [NPT forecast] MODE: full fine-tuning — encoder UNFROZEN")
+        print(f"  Trainable: {trainable:,} / {trainable:,} params\n")
 
-    # ── train prediction head ─────────────────────────────────────────────────
+    # ── train prediction head (and optionally backbone) ───────────────────────
     lr_head = 1e-4
-    optimizer = torch.optim.Adam(model.head.parameters(), lr=lr_head, weight_decay=1e-4)
+    enc_lr  = float(os.environ.get("TS_PRETRAIN_LR", lr_head))
+    if linear_probe:
+        optimizer = torch.optim.Adam(model.head.parameters(),
+                                     lr=lr_head, weight_decay=1e-4)
+        _max_lrs  = lr_head
+    else:
+        optimizer = torch.optim.Adam([
+            {"params": model.head.parameters(),     "lr": lr_head},
+            {"params": model.backbone.parameters(), "lr": enc_lr},
+        ], weight_decay=1e-4)
+        _max_lrs = [lr_head, enc_lr]
+        print(f"  [NPT forecast] head_lr={lr_head}  encoder_lr={enc_lr}")
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, max_lr=lr_head,
+        optimizer, max_lr=_max_lrs,
         total_steps=epochs_head * len(train_loader),
         pct_start=0.3, anneal_strategy='cos',
     )
@@ -194,9 +212,11 @@ def zeroshot_forecasting(config, checkpoint_path):
     best_state    = None
 
     for epoch in range(epochs_head):
-        # backbone stays in eval; only head is trained
-        model.backbone.eval()
-        model.head.train()
+        if linear_probe:
+            model.backbone.eval()
+            model.head.train()
+        else:
+            model.train()
 
         train_losses = []
         for context_patches, target_patch in train_loader:

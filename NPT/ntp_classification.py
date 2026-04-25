@@ -45,7 +45,8 @@ def _build_backbone(config, c_in, num_patch, device):
 
 
 def classification_zeroshot(config, checkpoint_path, classification_train,
-                             classification_val, classification_test, n_classes):
+                             classification_val, classification_test, n_classes,
+                             linear_probe=True):
     """
     Linear-probe classification with frozen NPT backbone.
 
@@ -78,9 +79,13 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
     enc_dict.update(filtered)
     backbone.backbone.load_state_dict(enc_dict)
     print(f"  Loaded {len(filtered)}/{len(enc_dict)} encoder parameters from checkpoint")
-    backbone.eval()
-    for p in backbone.parameters():
-        p.requires_grad = False
+    if linear_probe:
+        backbone.eval()
+        for p in backbone.parameters():
+            p.requires_grad = False
+        print(f"  [NPT classify] MODE: linear probe — encoder FROZEN")
+    else:
+        print(f"  [NPT classify] MODE: full fine-tuning — encoder UNFROZEN")
 
     d_model = config["d_model"]
     cls_head = ClassificationHead(
@@ -90,18 +95,35 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
         head_dropout = config.get("head_dropout", 0.1),
     ).to(device)
 
-    n_epochs  = config.get("epoch_classification", 20)
-    optimizer = torch.optim.Adam(cls_head.parameters(),
-                                 lr=config.get("lr_classification", 1e-3),
-                                 weight_decay=1e-4)
+    n_epochs   = config.get("epoch_classification", 20)
+    _all_params = list(backbone.parameters()) + list(cls_head.parameters())
+    head_lr = config.get("lr_classification", 1e-3)
+    enc_lr  = float(os.environ.get("TS_PRETRAIN_LR", head_lr))
+    if linear_probe:
+        optimizer = torch.optim.Adam(cls_head.parameters(),
+                                     lr=head_lr, weight_decay=1e-4)
+        _max_lrs   = head_lr
+        _trainable = sum(p.numel() for p in cls_head.parameters())
+    else:
+        optimizer = torch.optim.Adam([
+            {"params": cls_head.parameters(),  "lr": head_lr},
+            {"params": backbone.parameters(),  "lr": enc_lr},
+        ], weight_decay=1e-4)
+        _max_lrs   = [head_lr, enc_lr]
+        _trainable = sum(p.numel() for p in _all_params)
+        print(f"  [NPT classify] head_lr={head_lr}  encoder_lr={enc_lr}")
+    _total = sum(p.numel() for p in _all_params)
+    print(f"  Trainable: {_trainable:,} / {_total:,} params")
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, max_lr=config.get("lr_classification", 1e-3),
+        optimizer, max_lr=_max_lrs,
         total_steps=n_epochs * len(classification_train),
         pct_start=0.3, anneal_strategy='cos',
     )
 
     for epoch in range(n_epochs):
         cls_head.train()
+        if not linear_probe:
+            backbone.train()
         correct, total = 0, 0
         for patches, labels, padding_mask in classification_train:
             patches      = patches.to(device)       # [B, P, PL, n_vars]
@@ -110,7 +132,7 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
             # PatchTST expects [B, P, n_vars, PL]
             x = patches.permute(0, 1, 3, 2)
             optimizer.zero_grad()
-            with torch.no_grad():
+            with torch.set_grad_enabled(not linear_probe):
                 enc = backbone.backbone(x, padding_mask=padding_mask)    # [B, n_vars, d_model, P]
             logits = cls_head(enc)            # [B, n_classes]
             loss   = F.cross_entropy(logits, labels)
