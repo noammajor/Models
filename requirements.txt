@@ -1,9 +1,31 @@
+# ── Core (all models, all tasks) ─────────────────────────────────────────────
 torch>=2.0.0
 torchvision>=0.15.0
 numpy>=1.24.0
 pandas>=2.0.0
+scipy>=1.10.0
 scikit-learn>=1.2.0
-PyWavelets>=1.4.0
 matplotlib>=3.7.0
 tqdm>=4.64.0
+einops>=0.6.0
+PyWavelets>=1.4.0      # DINO + LE-JEPA wavelet augmentations
+pyarrow>=12.0.0        # synthetic .arrow dataset I/O
+
+# ── Classification dataset loading (UEA .ts files) ───────────────────────────
+sktime>=0.21.0
+
+# ── TimeDART model ───────────────────────────────────────────────────────────
+sympy>=1.12            # MultiWaveletCorrelation layer
+tensorboardX>=2.6      # exp_timedart logging
+transformers>=4.30.0   # TimeDART_v2 (AutoModelForCausalLM)
+
+# ── Synthetic dataset generation (scripts/synthetic_data_generation/) ────────
+gluonts>=0.13.0
+joblib>=1.3.0
+
+# ── GPU monitoring (sweep scripts) ───────────────────────────────────────────
 pynvml>=11.0.0
+
+# ── Visuals/tsne_embeddings.py uses: torch, numpy, matplotlib, scikit-learn ──
+# (TSNE, PCA, normalize) — all already covered above.
+# Optional: pip install umap-learn  # only needed if you pass --method umap

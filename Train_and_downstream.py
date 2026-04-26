@@ -1059,8 +1059,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
             linear_probe: bool = True):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
-    ntp_dir      = Path(__file__).parent / "NTP"   # code lives here
-    npt_save_dir = Path(__file__).parent / "NPT"   # checkpoints live here (legacy on-disk name)
+    ntp_dir      = Path(__file__).parent / "NTP"   # code + checkpoints live here
     _add_path(ntp_dir)
 
     import importlib.util
@@ -1075,7 +1074,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         cfg['pretrained_model_id'] = encoder_layers  # unique checkpoint per layer config
     if num_patches is not None:
         cfg['context_patches'] = num_patches
-        # NPT computes context_patches = ratio_patches - horizon_t, so add horizon_t here
+        # NTP computes context_patches = ratio_patches - horizon_t, so add horizon_t here
         # to ensure the encoder W_pos actually gets num_patches slots (not num_patches - 6)
         cfg['ratio_patches']   = num_patches + cfg.get('horizon_t', 6)
     if lr is not None:
@@ -1106,7 +1105,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         'monash+synthetic': "Monash + Synthetic",
     }.get(_pretrain_dset, _pretrain_dset)
     print("\n" + "="*60)
-    print("  MODEL: NPT (Next-Token-Patch Prediction)")
+    print("  MODEL: NTP (Next-Token-Patch Prediction)")
     if pretrain_only:
         print(f"  pretrain: {_src_label}  [pretrain only]")
     else:
@@ -1117,24 +1116,24 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     from ntp_forecasting import forecasting as ntp_forecasting
 
     # Resolve checkpoint path (used whether we train or skip)
-    _npt_save_dir_override = None
+    _ntp_save_dir_override = None
     if num_patches is not None:
         _cw = num_patches * cfg.get('patch_size', 16)
-        _npt_save_dir_override = str(
-            npt_save_dir / "saved_models" / "classification" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}_cw{_cw}{_SEED_TAG}"
+        _ntp_save_dir_override = str(
+            ntp_dir / "saved_models" / "classification" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}_cw{_cw}{_SEED_TAG}"
         )
     elif _SEED_TAG:
-        _npt_save_dir_override = str(
-            npt_save_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}{_SEED_TAG}"
+        _ntp_save_dir_override = str(
+            ntp_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}{_SEED_TAG}"
         )
     # Save-path priority: programmatic override > config["path_save"] > default.
     # Mirrors the resolution inside pretrain_ntp() so train/eval read from the same dir.
-    if _npt_save_dir_override:
-        _save_dir = Path(_npt_save_dir_override)
+    if _ntp_save_dir_override:
+        _save_dir = Path(_ntp_save_dir_override)
     elif cfg.get("path_save"):
         _save_dir = Path(cfg["path_save"])
     else:
-        _save_dir = npt_save_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}"
+        _save_dir = ntp_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}"
     _base_name = _model_fname(cfg)
     _ckpt_epoch = checkpoints[0] if (checkpoints and checkpoints[0] is not None) else None
     if _ckpt_epoch is not None:
@@ -1143,15 +1142,15 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         _ckpt_path = str(_save_dir / f"{_base_name}.pt")
 
     if not skip_train:
-        print(f"\n[NPT] Starting NTP pretraining on {_pretrain_dset} …")
-        _ckpt_path = pretrain_ntp(cfg, save_dir_override=_npt_save_dir_override)   # returns best-model path
+        print(f"\n[NTP] Starting NTP pretraining on {_pretrain_dset} …")
+        _ckpt_path = pretrain_ntp(cfg, save_dir_override=_ntp_save_dir_override)   # returns best-model path
     else:
-        print("[NPT] Skipping pretraining.")
+        print("[NTP] Skipping pretraining.")
 
     mse_trained = None
     mae_trained = None
     if _forecast_dset:
-        print(f"\n[NPT] Running zero-shot forecasting on {_forecast_dset} …")
+        print(f"\n[NTP] Running zero-shot forecasting on {_forecast_dset} …")
         for _pl in pred_lens:
             cfg["horizon_t"] = _pl // cfg["patch_size"]
             _mse, _mae = ntp_forecasting(cfg, _ckpt_path, linear_probe=linear_probe)
@@ -1159,12 +1158,12 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
                 print(f"\n{'='*60}")
                 print(f"  Results on {_forecast_dset}  pred_len={_pl}")
                 print(f"  {'':20s}  {'MSE':>8}  {'MAE':>8}")
-                print(f"  {'NPT (pretrained)':20s}  {_mse:8.4f}  {_mae:8.4f}")
+                print(f"  {'NTP (pretrained)':20s}  {_mse:8.4f}  {_mae:8.4f}")
                 print(f"{'='*60}")
                 if mse_trained is None or _mse < mse_trained:
                     mse_trained, mae_trained = _mse, _mae
     else:
-        print("[NPT] No forecast_dataset set — skipping forecasting.")
+        print("[NTP] No forecast_dataset set — skipping forecasting.")
 
     # ── classification downstream ─────────────────────────────────────────────
     cls_acc = None
@@ -1177,7 +1176,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         _n_patches = 72                               # classification encoder always uses 72 patches
         _target_T  = _n_patches * p_s
         import torch.nn.functional as _F
-        def _npt_patch_collate(batch, _ps=p_s, _tT=_target_T, _nP=_n_patches):
+        def _ntp_patch_collate(batch, _ps=p_s, _tT=_target_T, _nP=_n_patches):
             xs, ys, orig_lens = zip(*batch)
             orig_lens = torch.stack(orig_lens)                                   # (B,)
             max_t = max(x.shape[0] for x in xs)
@@ -1198,11 +1197,11 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
                 cls_dir, classification_dataset, batch_size=cls_bs)
             cls_train = torch.utils.data.DataLoader(
                 _raw_tr.dataset, batch_size=cls_bs, shuffle=True,
-                collate_fn=_npt_patch_collate)
+                collate_fn=_ntp_patch_collate)
             cls_val   = None
             cls_test  = torch.utils.data.DataLoader(
                 _raw_te.dataset, batch_size=cls_bs, shuffle=False,
-                collate_fn=_npt_patch_collate)
+                collate_fn=_ntp_patch_collate)
         else:
             _mk = lambda split: torch.utils.data.DataLoader(
                 ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
@@ -1212,7 +1211,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         cls_acc = ntp_classify(cfg, _ckpt_path, cls_train, cls_val, cls_test, n_classes,
                                linear_probe=linear_probe)
         print(f"\n{'='*60}")
-        print(f"  [NPT] Classification on {classification_dataset}")
+        print(f"  [NTP] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
         print(f"{'='*60}")
 
@@ -2126,7 +2125,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model", type=str, required=True,
         choices=list(RUNNERS),
-        help="Which model to run: dino | jepa | lejepa | patchtst | npt | random",
+        help="Which model to run: dino | jepa | lejepa | patchtst | ntp | random",
     )
     parser.add_argument(
         "--pretrain_dataset", type=str, default=None,

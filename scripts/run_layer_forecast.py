@@ -111,8 +111,8 @@ def discover_checkpoints(model: str, encoder_layers: int,
                    f"_patches{_cfg['ratio_patches']}"
                    f"_epochs{_cfg['num_epochs']}"
                    f"_model{_cfg['pretrained_model_id']}_epoch")
-        _npt_src = pretrain_source if pretrain_source else "monash"
-        save_dir = ROOT / "NPT" / "saved_models" / _npt_src / "ntp" / f"layers{encoder_layers}"
+        _ntp_src = pretrain_source if pretrain_source else "monash"
+        save_dir = ROOT / "NTP" / "saved_models" / _ntp_src / "ntp" / f"layers{encoder_layers}"
         found = sorted(set(
             int(m.group(1))
             for p in save_dir.glob("*.pt")

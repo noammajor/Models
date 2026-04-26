@@ -1,6 +1,8 @@
-HEY! Thank you for coming to look at our project.
+HEY! 
+Thank you for coming to look at our project.
 small run down on what we have here:
 we have 6 SSL models, who use the same/"sameish" backbones to check the efficency of learning from large datasets.
+
 Our models are as follows:
 1. JEPA
 2. LE-JEPA
@@ -19,9 +21,147 @@ Downstream tasks supported:
 2. Anomoly Detection
 3. Classification
 
-under linear probing and fine tuning
----
+under linear probing and fine tuning.
+if you want to add to this project, feel free to branch and try add a PR.
 
+## Quickstart
+
+```bash
+# 1. install
+pip install -r requirements.txt
+
+# 2. point the code at your data (one-time per machine)
+$EDITOR data_paths.py     # set monash_data_dir, forecasting_data_dir, etc.
+
+# 3. run a single model end-to-end (pretrain + downstream)
+python Train_and_downstream.py --model jepa
+python Train_and_downstream.py --model dino     --task forecast
+python Train_and_downstream.py --model lejepa   --task classify   --classification_dataset Heartbeat
+python Train_and_downstream.py --model patchtst --task anomaly    --anomaly_dataset MSL
+
+# 4. or fan out across encoder depths, datasets, seeds, GPUs (see Scripts below)
+python scripts/run_layer_sweep.py
+python scripts/run_layer_forecast.py --best_only
+python scripts/run_seed_analysis.py --seeds 42
+```
+
+[Train_and_downstream.py](Train_and_downstream.py) is the unified entry point.
+`--model` is the only required flag; everything else falls back to the
+per-model config (see [Config](#config) below). Common overrides:
+`--encoder_layers`, `--lr`, `--pretrain_source`, `--num_patches`,
+`--checkpoint`, `--seed`, `--task`, `--pretrain_only true`.
+
+## Model architecture & learning rates
+
+All 6 models share patch_size=16 and zero-shot forecasting (frozen encoder +
+linear head, no fine-tuning on the target dataset). Defaults below are what
+ships in each per-model config; the sweep scripts override depth and
+sometimes context window.
+
+| Model    | d_model | n_heads | d_ff | n_layers (default) | context (default) | dropout |
+|----------|---------|---------|------|--------------------|-------------------|---------|
+| JEPA     | 256     | 8       | 1024 | 5                  | 32 patches (512)  | 0.0     |
+| LE-JEPA  | 256     | 8       | 1024 | 5                  | 32 patches (512)  | 0.0     |
+| DINO     | 128     | 16      | 512  | 5                  | 21 patches (336)  | 0.1     |
+| PatchTST | 128     | 16      | 512  | 3                  | 21 patches (336)  | 0.2     |
+| NTP      | 128     | 16      | 512  | 3                  | 21 patches (336)  | 0.2     |
+| TimeDART | 256     | 8       | 512  | 3                  | 21 patches (336)  | 0.1     |
+
+Learning rates at the 8-layer sweep depth (see
+[scripts/run_layer_sweep.py](scripts/run_layer_sweep.py) for the full
+per-depth tables):
+
+| Model    | Optimizer | Pretrain LR (8L) | Forecast LR             |
+|----------|-----------|------------------|-------------------------|
+| JEPA     | SGD       | 5e-4             | 4e-4                    |
+| LE-JEPA  | AdamW     | 5e-4             | 2e-4                    |
+| DINO     | AdamW     | 5e-4             | auto `find_lr`          |
+| PatchTST | Adam      | 5e-5             | 4e-4                    |
+| NTP      | Adam      | 5e-5             | 1e-4                    |
+| TimeDART | Adam      | 5e-5             | 1e-4                    |
+
+## Config
+
+Each model is controlled by a single Python `config = {...}` dict. The dict
+is loaded by [Train_and_downstream.py](Train_and_downstream.py), merged with
+the shared [data_paths.py](data_paths.py), and converted into the runner's
+arguments. Editing these dicts is the primary way to change a model's
+behavior; the sweep scripts in [scripts/](scripts/) only override a small,
+well-defined subset (encoder depth, num_patches, GPU, pretrain source, LR
+scaling, etc.) — everything else comes from the config file.
+
+### Where each model's config lives
+
+| Model    | Config file |
+|----------|-------------|
+| DINO     | [TSDiNO/config.py](TSDiNO/config.py) |
+| JEPA     | [JEPA/config_files/config_jepa.py](JEPA/config_files/config_jepa.py) |
+| LE-JEPA  | [LE-JEPA/config_lejepa.py](LE-JEPA/config_lejepa.py) |
+| PatchTST | [PatchTST_self_supervised/config_patchtst.py](PatchTST_self_supervised/config_patchtst.py) |
+| NTP      | [NTP/config_ntp.py](NTP/config_ntp.py) |
+| TimeDART | [TimeDART-main/config_timedart.py](TimeDART-main/config_timedart.py) |
+
+### Shared data paths
+
+[data_paths.py](data_paths.py) holds the absolute locations of the Monash
+pretraining corpus, synthetic `.arrow` files, forecasting CSVs, classification
+sets, and anomaly sets. Edit it once per machine — every model's config gets
+merged on top, so per-model overrides still win if needed.
+
+### Keys you'll most often want to change
+
+These keys appear (under similar names) in every config:
+
+- **Pretraining source** — `pretrain_source`: `"monash" | "synthetic" | "monash+synthetic"`.
+  Also overridable from every sweep script via `--pretrain_source`.
+- **Architecture** — `num_encoder_layers` / `n_layers` / `e_layers`,
+  `encoder_embed_dim` / `d_model` / `embed_dim`, `nhead` / `n_heads`, `d_ff`,
+  `patch_size` / `patch_len`, `ratio_patches` / `num_patches` /
+  `context_points`. The sweep scripts override depth (`--encoder_layers`,
+  `--layers`) and the classification context window (`--num_patches`,
+  `--patch_size`); everything else is taken from the config.
+- **Pretrain optimization** — `num_epochs` / `epochs` / `train_epochs`,
+  `batch_size`, `lr` / `learning_rate` / `lr_adamw`, `weight_decay`,
+  `warmup_ratio`, `clip_grad`, `optimizer` (where applicable).
+- **Forecasting downstream** — `epoch_t` / `epochs_forecasting`,
+  `lr_forcasting` / `lr_forecasting`, `batch_size_forecast`, `horizon_t`,
+  `forecasting_modes` (`"zeroshot"` is what we ship — all 6 models are
+  zero-shot forecasters).
+- **Classification downstream** — `epoch_classification`,
+  `lr_classification`, `lr_classification_encoder` (encoder LR when
+  fine-tuning; `None` falls back to head LR).
+- **Anomaly downstream** — `epoch_anomaly`, `lr_anomaly`,
+  `lr_anomaly_encoder`.
+- **Model-specific knobs** —
+  - JEPA / LE-JEPA: `mask_ratio`, `masking_type`, `num_blocks`,
+    `predictor_*`, `ema_momentum`, VICReg / SIGReg loss weights.
+  - LE-JEPA: `lambda_sigreg`, `sigreg_num_slices`, the augmentation block
+    (`aug_*`, `view{1,2}_dwt_mode`, `dwt_*`).
+  - DINO: `global_crops` / `local_crops` (augmentation views), `dwt_*`
+    parameters, `out_dim`, teacher temperatures, `momentum_teacher`,
+    `use_reconstruction` / `recon_*` (MAE-style auxiliary loss).
+  - PatchTST: `mask_ratio`, `revin`, `model_type`.
+  - NTP: `masking_type` (`"causal"` for next-patch prediction),
+    `context_patches`, `horizon_t`.
+  - TimeDART: `time_steps`, `scheduler`, `mask_ratio`, `lradj`, `pct_start`.
+
+### How CLI flags interact with configs
+
+The sweep-script flags do **not** rewrite the config files — they override
+specific keys at runtime inside
+[Train_and_downstream.py](Train_and_downstream.py) and via environment
+variables (`TS_FORECAST_BS`, `TS_FORECAST_LR_SCALE`, `TS_CLS_BS`). Anything
+not exposed as a flag (e.g. `mask_ratio`, `nhead`, augmentation specs, EMA
+momentum) must be edited in the config file itself.
+
+Typical workflow:
+
+1. Set the dataset paths once in [data_paths.py](data_paths.py).
+2. Tune model-specific behavior in the per-model config (e.g. `mask_ratio`,
+   `lambda_sigreg`, augmentation views).
+3. Use the sweep scripts in [scripts/](scripts/) to fan out across encoder depths, datasets, seeds, GPUs, and pretrain sources without touching the config.
+
+---
 ## Scripts
 
 ### scripts/pretrain_cls_encoder.py
@@ -326,3 +466,54 @@ Examples:
 
 Logs land at `logs/forecasting/seed_analysis/seed{N}/{phase}_{model}_{dataset}.log`.
 Aggregated results: `results/seed_analysis_{forecast,classification,anomaly}.csv`.
+
+---
+## Visuals
+
+### Visuals/tsne_embeddings.py
+
+Visualizes what each frozen backbone has learned by projecting its embeddings
+onto a 2-D plane. For every selected model the script:
+
+1. Loads the **classification pretrained checkpoint** (the one trained with
+   `num_patches=72` → cw=1152, see
+   [scripts/pretrain_cls_encoder.py](scripts/pretrain_cls_encoder.py)).
+2. Encodes all train+test samples of each requested UEA classification
+   dataset.
+3. L2-normalizes the embeddings, optionally runs PCA (default 50 dims),
+   then runs t-SNE (or UMAP via `--method umap`).
+4. Saves a scatter plot colored by class label.
+
+Per-model checkpoint paths are auto-resolved from
+`(model, encoder_layers, pretrain_source)` — same scheme as the rest of the
+repo (e.g. `output_model/classification/JEPA_monash_synthetic_layers8_cw1152/best_model.pt`).
+Missing checkpoints print a warning and the model uses random weights, so
+you'll see noise instead of structure for that subplot.
+
+CLI options:
+- `--datasets D [D ...]`     **required** — UEA classification dataset names
+- `--models`                 one or more of: dino, jepa, lejepa, patchtst, ntp, timedart  (default: all)
+- `--encoder_layers N`       backbone depth (default: 8)
+- `--pretrain_source`        monash | synthetic | monash+synthetic  (default: monash+synthetic)
+- `--cls_dir PATH`           root for classification datasets (default: `/home/shared/datasets/Classification_TS`)
+- `--output_dir PATH`        figure output directory (default: `plots/`)
+- `--max_points N`           stratified subsample per dataset (default: 500)
+- `--method`                 tsne | umap (default: tsne; umap needs `pip install umap-learn`)
+- `--pca_components N`       PCA dims before t-SNE/UMAP — `0` to skip PCA (default: 50)
+- `--perplexity F`           t-SNE perplexity (default: 50)
+- `--batch_size N`           encoder batch size (default: 64)
+- `--gpu N`                  GPU index (default: 7)
+- `--combined`               one figure with all 6 models as subplots (default: one figure per model+dataset)
+- `--suffix STR`             suffix appended to output filenames
+
+Examples:
+
+    python Visuals/tsne_embeddings.py --datasets EthanolConcentration Heartbeat
+    python Visuals/tsne_embeddings.py --datasets JapaneseVowels --models lejepa ntp
+    python Visuals/tsne_embeddings.py --datasets SpokenArabicDigits --combined --suffix final
+    python Visuals/tsne_embeddings.py --datasets Handwriting --method umap --pca_components 0
+    python Visuals/tsne_embeddings.py --datasets FaceDetection PEMS-SF --output_dir plots/
+
+Output filenames encode the reduction settings:
+`{method}{pca_tag}{perp_tag}_{model}_{dataset}.png` (per-model) or
+`{method}{pca_tag}{perp_tag}_combined_{dataset}{suffix}.png` (combined).

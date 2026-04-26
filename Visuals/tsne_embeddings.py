@@ -364,7 +364,7 @@ def _extract_lejepa(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
 
 
 @torch.no_grad()
-def _extract_npt(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
+def _extract_ntp(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
     """NTP (PatchTST causal) encoder. Returns (embeddings [N, d], labels [N])."""
     ntp_dir   = ROOT / "NTP"
     shared_dir = ROOT / "shared"
@@ -591,7 +591,7 @@ _EXTRACTORS = {
     "dino":        _extract_dino,
     "jepa": _extract_jepa,
     "lejepa":      _extract_lejepa,
-    "ntp":         _extract_npt,
+    "ntp":         _extract_ntp,
     "patchtst":    _extract_patchtst,
     "timedart":    _extract_timedart,
 }

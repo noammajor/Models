@@ -30,9 +30,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 # ── path setup ────────────────────────────────────────────────────────────────
-_NTP_DIR     = os.path.dirname(os.path.abspath(__file__))   # code dir
+_NTP_DIR     = os.path.dirname(os.path.abspath(__file__))   # code + checkpoints dir
 _ROOT_DIR    = os.path.dirname(_NTP_DIR)
-_NPT_SAVE_DIR = os.path.join(_ROOT_DIR, "NPT")              # checkpoints dir (legacy on-disk name)
 _SHARED_DIR  = os.path.join(_ROOT_DIR, "shared")
 
 for _p in [_NTP_DIR, _ROOT_DIR, _SHARED_DIR]:
@@ -301,7 +300,7 @@ def forecasting(config, checkpoint_path, linear_probe=True):
     pred_out, target_out = last_batch   # each [1, forecast_len, n_vars]
     pretrain_dset = config.get("pretrain_dataset", "monash")
     save_dir = os.path.join(
-        _NPT_SAVE_DIR, "saved_models", pretrain_dset, "ntp", "output_model")
+        _NTP_DIR, "saved_models", pretrain_dset, "ntp", "output_model")
     os.makedirs(save_dir, exist_ok=True)
 
     n_plot = min(n_v, 3)   # plot up to 3 variables
