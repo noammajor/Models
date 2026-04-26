@@ -162,13 +162,16 @@ def anomaly_cmd(model: str, dataset: str, seed: int, pretrain_source: str) -> li
 def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
                         skip_pretrain: bool, dry_run: bool, log_base: Path,
                         phases: set = None, forecast_datasets: list = None,
-                        classification_datasets: list = None):
+                        classification_datasets: list = None,
+                        anomaly_datasets: list = None):
     if phases is None:
         phases = {"pretrain", "forecast", "classify", "anomaly"}
     if forecast_datasets is None:
         forecast_datasets = FORECAST_DATASETS
     if classification_datasets is None:
         classification_datasets = CLASSIFICATION_DATASETS
+    if anomaly_datasets is None:
+        anomaly_datasets = ANOMALY_DATASETS
 
     def _step(proc):
         if proc:
@@ -202,7 +205,7 @@ def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
 
     if "anomaly" in phases:
         procs = []
-        for dataset in ANOMALY_DATASETS:
+        for dataset in anomaly_datasets:
             proc = _launch(anomaly_cmd(model, dataset, seed, pretrain_source),
                            gpu, log_base / f"seed{seed}" / f"anom_{model}_{dataset}.log",
                            dry_run, f"anom/{model}/{dataset}/seed{seed}")
@@ -218,7 +221,7 @@ def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
 
 def run_seed_analysis(seeds, models, gpu_override, skip_pretrain, dry_run,
                       pretrain_source=PRETRAIN_SOURCE, phases=None, forecast_datasets=None,
-                      classification_datasets=None):
+                      classification_datasets=None, anomaly_datasets=None):
     log_base = ROOT / "logs" / "forecasting" / "seed_analysis"
     if phases is None:
         phases = {"pretrain", "forecast", "classify", "anomaly"}
@@ -234,7 +237,7 @@ def run_seed_analysis(seeds, models, gpu_override, skip_pretrain, dry_run,
             gpu = gpu_override if gpu_override is not None else MODEL_GPU[model]
             t = threading.Thread(
                 target=_run_model_pipeline,
-                args=(model, seed, gpu, pretrain_source, skip_pretrain, dry_run, log_base, phases, forecast_datasets, classification_datasets),
+                args=(model, seed, gpu, pretrain_source, skip_pretrain, dry_run, log_base, phases, forecast_datasets, classification_datasets, anomaly_datasets),
                 name=f"{model}/seed{seed}",
                 daemon=True,
             )
@@ -273,6 +276,9 @@ def main():
     parser.add_argument("--classification_datasets", nargs="+", default=None,
                         choices=CLASSIFICATION_DATASETS, metavar="DATASET",
                         help=f"Classification datasets to run (default: all). E.g. --classification_datasets FaceDetection Heartbeat")
+    parser.add_argument("--anomaly_datasets", nargs="+", default=None,
+                        choices=ANOMALY_DATASETS, metavar="DATASET",
+                        help=f"Anomaly datasets to run (default: all). E.g. --anomaly_datasets PSM SMD")
     parser.add_argument("--gpu_override", type=int, default=None,
                         help="Run all models on this GPU")
     parser.add_argument("--dry_run",      action="store_true",
@@ -291,6 +297,8 @@ def main():
         print(f"  Forecast datasets:{args.forecast_datasets}")
     if args.classification_datasets:
         print(f"  Cls datasets:     {args.classification_datasets}")
+    if args.anomaly_datasets:
+        print(f"  Anom datasets:    {args.anomaly_datasets}")
     if args.skip_pretrain:
         print(f"  [skip_pretrain=True]")
     if args.dry_run:
@@ -306,6 +314,7 @@ def main():
         phases=set(args.phases) if args.phases else None,
         forecast_datasets=args.forecast_datasets,
         classification_datasets=args.classification_datasets,
+        anomaly_datasets=args.anomaly_datasets,
     )
 
 
