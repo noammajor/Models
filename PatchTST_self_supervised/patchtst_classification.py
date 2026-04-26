@@ -97,13 +97,11 @@ def classification(config, checkpoint_path, classification_train,
     print(f"  Trainable: {_trainable:,} / {_total:,} params")
 
     n_epochs    = config.get("epoch_classification", 20)
-    # LR priority: config (user-set) > env var (script default).
+    # LR priority: config (user-set) > script default.
     _cfg_head_lr = config.get("lr_classification")
     _cfg_enc_lr  = config.get("lr_classification_encoder")
-    head_lr = float(_cfg_head_lr if _cfg_head_lr is not None
-                    else os.environ["TS_FINETUNE_HEAD_LR"])
-    enc_lr  = float(_cfg_enc_lr  if _cfg_enc_lr  is not None
-                    else os.environ.get("TS_PRETRAIN_LR", head_lr))
+    head_lr = float(_cfg_head_lr) if _cfg_head_lr is not None else 1e-3
+    enc_lr  = float(_cfg_enc_lr)  if _cfg_enc_lr  is not None else head_lr
     if linear_probe:
         optimizer = torch.optim.Adam(
             [p for p in model.parameters() if p.requires_grad],

@@ -62,15 +62,16 @@ class Exp_TimeDART(Exp_Basic):
         return data_set, data_loader
 
     def _select_optimizer(self):
-        import os
         backbone_trainable = any(
             p.requires_grad for n, p in self.model.named_parameters() if "head" not in n
         )
-        # Fine-tuning path: head_lr from TS_FINETUNE_HEAD_LR (else config), encoder_lr
-        # from TS_PRETRAIN_LR (else head_lr).
-        if backbone_trainable and "TS_PRETRAIN_LR" in os.environ:
-            head_lr = float(os.environ.get("TS_FINETUNE_HEAD_LR", self.args.learning_rate))
-            enc_lr  = float(os.environ.get("TS_PRETRAIN_LR", head_lr))
+        # Fine-tuning path: split head/encoder LR if both are exposed on args.
+        # head_lr defaults to args.learning_rate; encoder_lr defaults to head_lr.
+        head_lr_attr = getattr(self.args, "head_lr", None)
+        enc_lr_attr  = getattr(self.args, "encoder_lr", None)
+        if backbone_trainable and (head_lr_attr is not None or enc_lr_attr is not None):
+            head_lr = float(head_lr_attr if head_lr_attr is not None else self.args.learning_rate)
+            enc_lr  = float(enc_lr_attr  if enc_lr_attr  is not None else head_lr)
             head_params = [p for n, p in self.model.named_parameters() if "head" in n and p.requires_grad]
             enc_params  = [p for n, p in self.model.named_parameters() if "head" not in n and p.requires_grad]
             print(f"  [TimeDart optim] head_lr={head_lr}  encoder_lr={enc_lr}")

@@ -48,13 +48,13 @@ config = {
 
     # ── Classification ────────────────────────────────────────────────────────
     "epoch_classification":      20,
-    "lr_classification":         None,  # head LR; None → env var (TS_FINETUNE_HEAD_LR)
-    "lr_classification_encoder": None,  # encoder LR when fine-tuning; None → env var (TS_PRETRAIN_LR)
+    "lr_classification":         None,  # head LR; None → script default (1e-3)
+    "lr_classification_encoder": None,  # encoder LR when fine-tuning; None → head_lr
 
     # ── Anomaly Detection ─────────────────────────────────────────────────────
     "epoch_anomaly":         10,
-    "lr_anomaly":            None,  # head LR; None → env var (TS_FINETUNE_HEAD_LR)
-    "lr_anomaly_encoder":    None,  # encoder LR when fine-tuning; None → env var (TS_PRETRAIN_LR)
+    "lr_anomaly":            None,  # head LR; None → script default (1e-3)
+    "lr_anomaly_encoder":    None,  # encoder LR when fine-tuning; None → head_lr
 
     # ── Misc ──────────────────────────────────────────────────────────────────
     "pretrained_model_id": 1,
