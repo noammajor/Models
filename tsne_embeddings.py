@@ -642,7 +642,7 @@ def _reduce(embeddings: np.ndarray, method: str = "tsne",
 MODEL_DISPLAY = {
     "jepa_simple": "JEPA",
     "lejepa":      "LE-JEPA",
-    "dino":        "TSDiNO",
+    "dino":        "DINO",
     "patchtst":    "MAE",
     "npt":         "NTP",
     "timedart":    "Diffusion",
