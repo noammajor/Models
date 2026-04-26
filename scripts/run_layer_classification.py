@@ -296,9 +296,10 @@ def main():
     parser.add_argument("--datasets",    nargs="+", default=CLASSIFICATION_DATASETS)
     parser.add_argument("--gpu_override", type=int, default=None,
                         help="Override GPU for all models")
-    parser.add_argument("--num_patches", type=int, default=None,
-                        help="Use classification-encoder checkpoints (e.g. 72 for cw1152). "
-                             "Must match what was used in pretrain_cls_encoder.py.")
+    parser.add_argument("--num_patches", type=int, default=72,
+                        help="Use classification-encoder checkpoints (default: 72 → cw1152). "
+                             "Must match what was used in pretrain_cls_encoder.py. "
+                             "Pass 0 to disable and use the forecast-pretrain checkpoints.")
     parser.add_argument("--pretrain_source", type=str, default=None,
                         choices=["monash", "synthetic", "monash+synthetic"],
                         help="Pretrain source for checkpoint lookup (default: monash)")
@@ -329,10 +330,13 @@ def main():
         )
         return
 
+    # 0 (or negative) disables the classification-encoder lookup; use forecast-pretrain ckpts instead.
+    _num_patches = args.num_patches if args.num_patches and args.num_patches > 0 else None
+
     run_classification_sweep(
         args.models, args.layers, args.datasets,
         args.gpu_override, args.dry_run,
-        num_patches=args.num_patches,
+        num_patches=_num_patches,
         pretrain_source=args.pretrain_source,
         out_csv=Path(args.out_csv) if args.out_csv else None,
         linear_probe=args.linear_probe,
