@@ -174,15 +174,10 @@ config = {
     "path_num": 0,
 
     # ── Local overrides (TEMP: remove after local testing) ────────────────────
-    "classification_data_dir": "/home/shared/datasets/Classification_TS",
 
     # ── Pretraining data source ───────────────────────────────────────────────
     # pretrain_source: "monash" | "synthetic" | "monash+synthetic"
     "pretrain_source":    "monash",
-    "monash_data_dir":    "/home/shared/datasets/Monash",
-    "monash_min_len":     512,
-    "synthetic_data_dir": "/home/shared/datasets/synthetic_data_TS",  # dir containing .arrow files
-    "synthetic_mix_data_dir": "/home/shared/datasets/synthetic_TS_Mix",  # smaller curated set for monash+synthetic
 
     # ── Distributed ───────────────────────────────────────────────────────────
     "dist_url": "env://",

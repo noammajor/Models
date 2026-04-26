@@ -1,8 +1,9 @@
 """
 TSDiNO anomaly detection (reconstruction-based).
 
-Frozen pretrained DINO teacher encoder + linear reconstruction decoder trained
-on normal data only.  Anomaly score = per-timestep reconstruction MSE.
+Pretrained DINO teacher encoder (frozen by default; unfrozen if linear_probe=False)
++ linear reconstruction decoder trained on normal data only.
+Anomaly score = per-timestep reconstruction MSE.
 Threshold = percentile of combined train+test energy.
 """
 
@@ -49,12 +50,13 @@ def _adjustment(gt, pred):
     return gt, pred
 
 
-def anomaly_zeroshot(args, path_num, anomaly_train, anomaly_test,
-                     anomaly_ratio: float = 1.0,
-                     checkpoint_path: str = None,
-                     linear_probe: bool = True):
+def anomaly_detection(args, path_num, anomaly_train, anomaly_test,
+                      anomaly_ratio: float = 1.0,
+                      checkpoint_path: str = None,
+                      linear_probe: bool = True):
     """
-    Reconstruction-based anomaly detection with frozen DINO teacher encoder.
+    Reconstruction-based anomaly detection with DINO teacher encoder
+    (frozen by default; unfrozen if linear_probe=False).
 
     Args:
         args             : argparse Namespace (same config used for training)
@@ -66,6 +68,7 @@ def anomaly_zeroshot(args, path_num, anomaly_train, anomaly_test,
         checkpoint_path  : optional explicit path to a .pth checkpoint file.
                            If provided, path_num and args.output_dir are ignored
                            for checkpoint loading.
+        linear_probe     : if True, freeze backbone and train only decoder. If False, fine-tune backbone + decoder.
     Returns:
         dict with f1, precision, recall, accuracy, threshold
     """
@@ -133,13 +136,11 @@ def anomaly_zeroshot(args, path_num, anomaly_train, anomaly_test,
     d_model   = args.embed_dim
 
     decoder   = _LinearReconDecoder(d_model, patch_len).to(device)
-    # LR priority: config (user-set) > env var (script default).
-    _cfg_head_lr = config.get("lr_anomaly")
-    _cfg_enc_lr  = config.get("lr_anomaly_encoder")
-    head_lr = float(_cfg_head_lr if _cfg_head_lr is not None
-                    else os.environ["TS_FINETUNE_HEAD_LR"])
-    enc_lr  = float(_cfg_enc_lr  if _cfg_enc_lr  is not None
-                    else os.environ.get("TS_PRETRAIN_LR", head_lr))
+    # LR: args value if set, else hardcoded default.
+    _cfg_head_lr = getattr(args, "lr_anomaly", None)
+    _cfg_enc_lr  = getattr(args, "lr_anomaly_encoder", None)
+    head_lr = float(_cfg_head_lr) if _cfg_head_lr is not None else 1e-3
+    enc_lr  = float(_cfg_enc_lr)  if _cfg_enc_lr  is not None else head_lr
     if linear_probe:
         optimizer = torch.optim.Adam(decoder.parameters(), lr=head_lr)
     else:

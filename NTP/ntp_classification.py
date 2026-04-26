@@ -1,9 +1,10 @@
 """
-NTP linear-probe classification.
+NTP classification.
 
-Frozen pretrained NTP (PatchTST) backbone + ClassificationHead trained on the
-classification split. Head: last patch → flatten(n_vars * d_model) → dropout
-→ linear → n_classes. Identical pattern to PatchTST's ClassificationHead.
+Pretrained NTP (PatchTST) backbone (frozen by default; unfrozen if
+linear_probe=False) + ClassificationHead trained on the classification split.
+Head: last patch → flatten(n_vars * d_model) → dropout → linear → n_classes.
+Identical pattern to PatchTST's ClassificationHead.
 """
 
 import os
@@ -44,11 +45,11 @@ def _build_backbone(config, c_in, num_patch, device):
     ).to(device)
 
 
-def classification_zeroshot(config, checkpoint_path, classification_train,
-                             classification_val, classification_test, n_classes,
-                             linear_probe=True):
+def classification(config, checkpoint_path, classification_train,
+                   classification_val, classification_test, n_classes,
+                   linear_probe=True):
     """
-    Linear-probe classification with frozen NTP backbone.
+    Classification with NTP backbone.
 
     Args:
         config                : dict from config_ntp.py
@@ -56,12 +57,13 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
         classification_train/val/test : DataLoaders from ClassificationDataPuller
                                         each batch: (patches [B, P, PL, n_vars], labels [B])
         n_classes             : total number of target classes
+        linear_probe          : if True, freeze backbone and train only head. If False, fine-tune backbone + head.
     Returns:
         test accuracy (float)
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    print(f"\n=== NTP Classification (linear probe) ===")
+    print(f"\n=== NTP Classification ===")
     print(f"Loading checkpoint: {checkpoint_path}")
 
     # Infer n_vars and num_patches from first batch
@@ -97,13 +99,11 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
 
     n_epochs   = config.get("epoch_classification", 20)
     _all_params = list(backbone.parameters()) + list(cls_head.parameters())
-    # LR priority: config (user-set) > env var (script default).
+    # LR: config value if set, else hardcoded default.
     _cfg_head_lr = config.get("lr_classification")
     _cfg_enc_lr  = config.get("lr_classification_encoder")
-    head_lr = float(_cfg_head_lr if _cfg_head_lr is not None
-                    else os.environ["TS_FINETUNE_HEAD_LR"])
-    enc_lr  = float(_cfg_enc_lr  if _cfg_enc_lr  is not None
-                    else os.environ.get("TS_PRETRAIN_LR", head_lr))
+    head_lr = float(_cfg_head_lr) if _cfg_head_lr is not None else 0.001
+    enc_lr  = float(_cfg_enc_lr)  if _cfg_enc_lr  is not None else head_lr
     if linear_probe:
         optimizer = torch.optim.Adam(cls_head.parameters(),
                                      lr=head_lr, weight_decay=1e-4)

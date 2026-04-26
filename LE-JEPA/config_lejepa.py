@@ -68,10 +68,6 @@ config = {
     # ── Pretraining data source ───────────────────────────────────────────────
     # pretrain_source: "monash" | "synthetic" | "monash+synthetic"
     "pretrain_source":    "monash",
-    "monash_data_dir":    "/home/shared/datasets/Monash",
-    "monash_min_len":     512,
-    "synthetic_data_dir": "/home/shared/datasets/synthetic_data_TS",  # dir containing .arrow files
-    "synthetic_mix_data_dir": "/home/shared/datasets/synthetic_TS_Mix",  # smaller curated set for monash+synthetic
 
     # ── Forecasting downstream ────────────────────────────────────────────────
     "epoch_t": 20,
@@ -83,13 +79,5 @@ config = {
     "lr_forcasting": 2e-4,
     "batch_size_forecast": 128,
     "affine_revin": True,
-    "input_variables_forcasting": [
-        ["HUFL", "HULL", "MUFL", "MULL", "LUFL", "LULL", "OT"],
-    ],
-    "val_prec_forcasting": 0.1,
-    "test_prec_forcasting": 0.1,
-    "window_step_forecasting": 1,
-    "timestampcols_forcasting": ["date"],
-    "path_data_forcasting": ["./data/ETTh1.csv"],
     "forecasting_modes": ["zeroshot"],
 }

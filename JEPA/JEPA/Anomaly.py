@@ -91,14 +91,10 @@ def anomaly_detection(self, path, anomaly_train, anomaly_test,
     n_vars     = patches_sample.shape[3]
 
     decoder   = _LinearReconDecoder(embed_dim, patch_size, n_vars).to(self.device)
-    import os as _os
-    # LR priority: config (user-set) > env var (script default).
     _cfg_head_lr = config.get("lr_anomaly")
     _cfg_enc_lr  = config.get("lr_anomaly_encoder")
-    head_lr = float(_cfg_head_lr if _cfg_head_lr is not None
-                    else _os.environ["TS_FINETUNE_HEAD_LR"])
-    enc_lr  = float(_cfg_enc_lr  if _cfg_enc_lr  is not None
-                    else _os.environ.get("TS_PRETRAIN_LR", head_lr))
+    head_lr = float(_cfg_head_lr) if _cfg_head_lr is not None else 0.001
+    enc_lr  = float(_cfg_enc_lr)  if _cfg_enc_lr  is not None else head_lr
     
     if linear_probe:
         optimizer = torch.optim.Adam(decoder.parameters(), lr=head_lr)

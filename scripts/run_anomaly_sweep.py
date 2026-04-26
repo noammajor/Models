@@ -42,12 +42,12 @@ LAYER_CONFIGS = [2, 4, 8, 12, 24]
 
 MODEL_GPU = {
     "dino":            0,
-    "jepa":     1,
+    "jepa":            1,
     "lejepa":          2,
     "patchtst":        3,
     "ntp":             4,
     "timedart":        5,
-    "patchtst_random": 5,
+    "patchtst_random": 6,
 }
 ALL_MODELS = list(MODEL_GPU.keys())
 
@@ -83,11 +83,19 @@ def log_to_file(log_path: Path):
             sys.stdout = orig
 
 
+def _str2bool(v):
+    if isinstance(v, bool):
+        return v
+    return str(v).strip().lower() in ("true", "1", "yes", "y")
+
+
 # ── single worker ─────────────────────────────────────────────────────────────
 
 def run_model_worker(model: str, encoder_layers: int, gpu: int,
                      datasets: list, out_csv: Path,
-                     pretrain_source: str = "monash"):
+                     pretrain_source: str = "monash",
+                     linear_probe: bool = True,
+                     anomaly_ratio: float = None):
     log_base   = ROOT / "logs" / "anomaly_sweep"
     fieldnames = ["model", "encoder_layers", "pretrain_source",
                   "dataset", "f1", "precision", "recall", "accuracy", "timestamp"]
@@ -112,6 +120,12 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
     os.environ.setdefault("TS_FINETUNE_HEAD_LR", "1e-3")
     os.environ.setdefault("TS_PRETRAIN_LR",      "5e-5")
 
+    # Override TSLib per-dataset anomaly ratios for this run if requested.
+    if anomaly_ratio is not None:
+        from Train_and_downstream import _ANOMALY_RATIO
+        for ds in datasets:
+            _ANOMALY_RATIO[ds] = float(anomaly_ratio)
+
     for dataset in datasets:
         key = (model, encoder_layers, pretrain_source, dataset)
         if key in existing:
@@ -132,6 +146,7 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                     anomaly_dataset = dataset,
                     encoder_layers  = encoder_layers,
                     pretrain_source = pretrain_source,
+                    linear_probe    = linear_probe,
                 )
 
                 # result shape varies by model but last element is anom_result dict
@@ -177,7 +192,9 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
 
 def launch_worker(model: str, encoder_layers: int, gpu: int,
                   datasets: list, log_dir: Path, out_csv: Path,
-                  dry_run: bool, pretrain_source: str = "monash"):
+                  dry_run: bool, pretrain_source: str = "monash",
+                  linear_probe: bool = True,
+                  anomaly_ratio: float = None):
     log_path = log_dir / f"{model}_layers{encoder_layers}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -190,7 +207,10 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
         "--datasets",       *datasets,
         "--out_csv",        str(out_csv),
         "--pretrain_source", pretrain_source,
+        "--linear_probe",    str(linear_probe).lower(),
     ]
+    if anomaly_ratio is not None:
+        cmd += ["--anomaly_ratio", str(anomaly_ratio)]
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -212,15 +232,23 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
 
 def run_anomaly_sweep(models: list, layer_configs: list, datasets: list,
                       gpu_override: int, dry_run: bool,
-                      pretrain_source: str = "monash"):
+                      pretrain_source: str = "monash",
+                      out_csv: Path = None,
+                      linear_probe: bool = True,
+                      anomaly_ratio: float = None):
     log_dir = ROOT / "logs" / "anomaly_sweep"
-    out_csv = ROOT / "results" / "anomaly_sweep.csv"
+    if out_csv is None:
+        out_csv = ROOT / "results" / "anomaly_sweep.csv"
 
     print("Anomaly detection sweep")
     print(f"  Models:          {models}")
     print(f"  Layers:          {layer_configs}")
     print(f"  Datasets:        {datasets}")
     print(f"  pretrain_source: {pretrain_source}")
+    print(f"  linear_probe:    {linear_probe}")
+    if anomaly_ratio is not None:
+        print(f"  anomaly_ratio:   {anomaly_ratio}  (overrides TSLib defaults)")
+    print(f"  out_csv:         {out_csv}")
     if dry_run:
         print("  DRY RUN\n")
 
@@ -233,7 +261,9 @@ def run_anomaly_sweep(models: list, layer_configs: list, datasets: list,
         for model in models:
             gpu  = gpu_override if gpu_override is not None else MODEL_GPU[model]
             proc = launch_worker(model, n_layers, gpu, datasets, log_dir, out_csv,
-                                 dry_run, pretrain_source=pretrain_source)
+                                 dry_run, pretrain_source=pretrain_source,
+                                 linear_probe=linear_probe,
+                                 anomaly_ratio=anomaly_ratio)
             if proc is not None:
                 procs.append(proc)
 
@@ -268,6 +298,12 @@ def main():
     parser.add_argument("--pretrain_source", type=str,  default="monash",
                         help="monash | synthetic | monash+synthetic")
     parser.add_argument("--gpu_override",    type=int,  default=None)
+    parser.add_argument("--linear_probe",    type=_str2bool, default=True,
+                        help="True = frozen encoder + decoder only (default); False = fine-tune encoder + decoder")
+    parser.add_argument("--anomaly_ratio",   type=float, default=None,
+                        help="Override TSLib per-dataset anomaly ratio with a single value (e.g. 1.0)")
+    parser.add_argument("--out_csv",         type=str,  default=None,
+                        help="Output CSV path (default: results/anomaly_sweep.csv)")
     parser.add_argument("--dry_run",         action="store_true")
 
     # internal worker mode
@@ -275,7 +311,6 @@ def main():
     parser.add_argument("--model",          type=str,            help=argparse.SUPPRESS)
     parser.add_argument("--encoder_layers", type=int,            help=argparse.SUPPRESS)
     parser.add_argument("--gpu",            type=int,            help=argparse.SUPPRESS)
-    parser.add_argument("--out_csv",        type=str,            help=argparse.SUPPRESS)
 
     args = parser.parse_args()
 
@@ -287,6 +322,8 @@ def main():
             datasets        = args.datasets,
             out_csv         = Path(args.out_csv),
             pretrain_source = args.pretrain_source,
+            linear_probe    = args.linear_probe,
+            anomaly_ratio   = args.anomaly_ratio,
         )
         return
 
@@ -294,6 +331,9 @@ def main():
         args.models, args.layers, args.datasets,
         args.gpu_override, args.dry_run,
         pretrain_source=args.pretrain_source,
+        out_csv=Path(args.out_csv) if args.out_csv else None,
+        linear_probe=args.linear_probe,
+        anomaly_ratio=args.anomaly_ratio,
     )
 
 

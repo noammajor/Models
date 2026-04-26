@@ -1,6 +1,6 @@
 """
 Unified training + forecasting runner for:
-  - dino     (TSDINOA)
+  - dino     (wavelet-based DINO)
   - jepa     (JEPA )
   - lejepa   (LE-JEPA — two-view augmentation, SIGReg loss)
   - patchtst (PatchTST_self_supervised)
@@ -34,6 +34,7 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from dataset_registry import get_dataset_info
+from data_paths import DATA_PATHS
 
 GLOBAL_SEED = 42
 _SEED_TAG   = ''   # set by run() when seed is provided; used by runners to suffix checkpoint paths
@@ -110,12 +111,12 @@ def _config_to_dino_args(cfg):
         # ── task ──────────────────────────────────────────────────────────
         task                        = cfg.get("task", "dino"),
         test_only                   = cfg.get("test_only", False),
-        seed                        = cfg.get("seed", 0),
+        seed                        = cfg.get("seed", GLOBAL_SEED),
         output_dir                  = cfg.get("output_dir", "./checkpoints"),
         saveckp_freq                = cfg.get("saveckp_freq", 10),
 
         # ── data ──────────────────────────────────────────────────────────
-        data_path                   = cfg.get("data_path", "UCI HAR Dataset"),
+        data_path                   = cfg.get("data_path", ""),
         data_path_forecast_training = cfg.get("data_path_forecast_training", ""),
         data_path_forecast_test     = cfg.get("data_path_forecast_test", ""),
         data_path_classification    = cfg.get("data_path_classification", "UCI HAR Dataset"),
@@ -161,7 +162,7 @@ def _config_to_dino_args(cfg):
         freeze_last_layer           = cfg.get("freeze_last_layer", 1),
 
         # ── training schedule ─────────────────────────────────────────────
-        epochs                      = cfg.get("epochs", 100),
+        epochs                      = cfg.get("epochs", 20),
 
         # ── augmentation (derived from crop specs) ────────────────────────
         # local_crops_number  = crop ratio of the first local crop
@@ -186,7 +187,7 @@ def _config_to_dino_args(cfg):
         path_num                            = cfg.get("path_num", 0),
 
         # ── downstream: classification ────────────────────────────────────
-        n_classes                   = cfg.get("n_classes", 6),
+        n_classes                   = cfg.get("n_classes", 10),
         epochs_classification       = cfg.get("epochs_classification", 50),
         lr_classification           = cfg.get("lr_classification", 0.001),
         min_lr_classification       = cfg.get("min_lr_classification", 1e-6),
@@ -227,7 +228,7 @@ def run_dino(skip_train: bool = False,
     _cfg_spec = _ilu.spec_from_file_location("_dino_config", dino_dir / "config.py")
     _cfg_mod  = _ilu.module_from_spec(_cfg_spec)
     _cfg_spec.loader.exec_module(_cfg_mod)
-    dino_cfg  = dict(_cfg_mod.config)
+    dino_cfg  = {**DATA_PATHS, **dict(_cfg_mod.config)}
 
     # Inject under the bare name so that main.py's `from config import config as cfg` resolves
     # to our freshly loaded version, not whatever 'config' may already be cached in sys.modules.
@@ -279,18 +280,18 @@ def run_dino(skip_train: bool = False,
             ds_fore = get_dataset_info(forecast_dataset)
             dino_cfg["c_in"] = ds_fore["c_in"]
         if pretrain_source in ('monash', 'monash+synthetic'):
-            monash_dir = dino_cfg.get('monash_data_dir', '../Monash')
+            monash_dir = dino_cfg['monash_data_dir']
             if not os.path.isabs(monash_dir):
                 dino_cfg['monash_data_dir'] = str((dino_dir / monash_dir).resolve())
         if pretrain_source in ('synthetic', 'monash+synthetic'):
             _synth_key = 'synthetic_mix_data_dir' if pretrain_source == 'monash+synthetic' else 'synthetic_data_dir'
-            synth_dir = dino_cfg.get(_synth_key, dino_cfg.get('synthetic_data_dir', '../Monash'))
+            synth_dir = dino_cfg[_synth_key]
             if not os.path.isabs(synth_dir):
                 synth_dir = str((dino_dir / synth_dir).resolve())
             dino_cfg['synthetic_data_dir'] = synth_dir
         _src_label = {
-            'monash':           f"Monash ({dino_cfg.get('monash_data_dir', '')})",
-            'synthetic':        f"Synthetic ({dino_cfg.get('synthetic_data_dir', '')})",
+            'monash':           f"Monash ({dino_cfg['monash_data_dir']})",
+            'synthetic':        f"Synthetic ({dino_cfg['synthetic_data_dir']})",
             'monash+synthetic': "Monash + Synthetic",
         }.get(pretrain_source, pretrain_source)
         print("\n" + "="*60)
@@ -383,7 +384,7 @@ def run_dino(skip_train: bool = False,
     cls_acc = None
     if classification_dataset is not None:
         from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
-        cls_dir = dino_cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
+        cls_dir = dino_cfg["classification_data_dir"]
         cls_bs  = dino_cfg.get("batch_size_classification", 64)
         p_s        = args.patch_len
         _n_patches = 72                         # classification encoder always uses 72 patches
@@ -432,13 +433,12 @@ def run_dino(skip_train: bool = False,
     # ── anomaly detection downstream ──────────────────────────────────────────
     anom_result = None
     if anomaly_dataset is not None:
-        import importlib.util as _ilu
         _anom_spec = _ilu.spec_from_file_location("tsdino_anomaly", dino_dir / "Anomaly.py")
         _anom_mod  = _ilu.module_from_spec(_anom_spec)
         _anom_spec.loader.exec_module(_anom_mod)
 
         from data_loaders.data_puller import AnomalyDataPuller
-        anom_dir = dino_cfg.get("anomaly_data_dir", "/home/shared/datasets/Anomaly_TS")
+        anom_dir = dino_cfg["anomaly_data_dir"]
         anom_bs  = dino_cfg.get("batch_size_anomaly", 64)
         p_s      = args.patch_len
         anom_train = torch.utils.data.DataLoader(
@@ -449,7 +449,7 @@ def run_dino(skip_train: bool = False,
             batch_size=anom_bs, shuffle=False)
 
         args.path_num = best_ckpt if best_ckpt is not None else 0
-        anom_result = _anom_mod.anomaly_zeroshot(
+        anom_result = _anom_mod.anomaly_detection(
             args, args.path_num, anom_train, anom_test,
             anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, dino_cfg),
             linear_probe=linear_probe)
@@ -464,7 +464,7 @@ def _resolve_jepa_path(p: str, jepa_dir: Path) -> str:
     return str((jepa_dir / p.lstrip('./').lstrip('/')).resolve())
 
 
-# ── JEPA (P2P only, no VQ / semantic tokens) ─────────────────────────────────
+# ── JEPA ──────────────────────────────────
 
 def run_jepa(skip_train: bool = False,
                     pretrain_dataset: str = None,
@@ -497,7 +497,7 @@ def run_jepa(skip_train: bool = False,
         "config_jepa", jepa_dir / "config_files" / "config_jepa.py")
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
-    config = dict(_mod.config)
+    config = {**DATA_PATHS, **dict(_mod.config)}
     if pretrain_source is not None:
         config['pretrain_source'] = pretrain_source
         _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source != 'monash' else ''
@@ -517,16 +517,9 @@ def run_jepa(skip_train: bool = False,
     if lr is not None:
         config['lr'] = lr
 
-    from data_loaders.data_puller import (DataPullerDJepa, ForcastingDataPullerDescrete,
-                                          MonashDataPullerJEPA, SyntheticArrowDataPullerJEPA,
-                                          PatchTSTForcastingAdapter)
+    from data_loaders.data_puller import (DataPullerDJepa, MonashDataPullerJEPA,
+                                          SyntheticArrowDataPullerJEPA, PatchTSTForcastingAdapter)
     from JEPA.Jepa import JEPA
-
-    # Single-dataset pipeline: align splits so test never leaks into training.
-    if pretrain_dataset is not None and pretrain_dataset == forecast_dataset:
-        config['pretrain_source'] = None   # force CSV-only mode
-        config['val_prec']  = config.get('val_prec_forcasting',  0.1)
-        config['test_prec'] = config.get('test_prec_forcasting', 0.1)
 
     pretrain_source = _resolve_pretrain_source(config)
     use_global_data = pretrain_source is not None
@@ -540,18 +533,18 @@ def run_jepa(skip_train: bool = False,
         if not pretrain_only and classification_dataset is None and forecast_dataset is None and anomaly_dataset is None:
             raise ValueError("forecast_dataset must be set when pretraining on global data")
         if pretrain_source in ('monash', 'monash+synthetic'):
-            monash_dir = config.get('monash_data_dir', '../Monash')
+            monash_dir = config['monash_data_dir']
             if not os.path.isabs(monash_dir):
                 config['monash_data_dir'] = str((jepa_dir / monash_dir).resolve())
         if pretrain_source in ('synthetic', 'monash+synthetic'):
             _synth_key = 'synthetic_mix_data_dir' if pretrain_source == 'monash+synthetic' else 'synthetic_data_dir'
-            synth_dir = config.get(_synth_key, config.get('synthetic_data_dir', '../Monash'))
+            synth_dir = config[_synth_key]
             if not os.path.isabs(synth_dir):
                 synth_dir = str((jepa_dir / synth_dir).resolve())
             config['synthetic_data_dir'] = synth_dir
         _src_label = {
-            'monash':           f"Monash ({config.get('monash_data_dir', '')})",
-            'synthetic':        f"Synthetic ({config.get('synthetic_data_dir', '')})",
+            'monash':           f"Monash ({config['monash_data_dir']})",
+            'synthetic':        f"Synthetic ({config['synthetic_data_dir']})",
             'monash+synthetic': "Monash + Synthetic (mix)",
         }.get(pretrain_source, pretrain_source)
         print("\n" + "="*60)
@@ -582,8 +575,6 @@ def run_jepa(skip_train: bool = False,
 
     if not pretrain_only and forecast_dataset is not None:
         config["path_data_forcasting"]       = [_resolve_jepa_path(ds_fore["csv_path"], jepa_dir)]
-        config["timestampcols_forcasting"]   = [ds_fore["timestamp_col"]]
-        config["input_variables_forcasting"] = [ds_fore["columns"]]
 
     # ── data ─────────────────────────────────────────────────────────────────
     if skip_train and use_global_data:
@@ -637,8 +628,8 @@ def run_jepa(skip_train: bool = False,
         num_patches     = len(train_loader.dataset[0][0])
 
     # Use PatchTST-identical data: seq_len=336 (21 patches × 16)
-    _PATCHTST_SEQ_LEN = 336
-    _ctx_patches = _PATCHTST_SEQ_LEN // config["patch_size_forcasting"]   # = 21
+    _JEPA_SEQ_LEN = 336
+    _ctx_patches = _JEPA_SEQ_LEN // config["patch_size_forcasting"]   # = 21
     config["forecasting_context_patches"] = _ctx_patches
     if pretrain_only or forecast_dataset is None:
         train_loader_fc = val_loader_fc = test_loader_fc = None
@@ -649,13 +640,13 @@ def run_jepa(skip_train: bool = False,
         _fc_bs = _get_forecast_bs(config, 256)
         _fc_nw = config.get("num_workers", 4)
         train_loader_fc = torch.utils.data.DataLoader(
-            PatchTSTForcastingAdapter(_csv, 'train', _PATCHTST_SEQ_LEN, _pl0, _p_s),
+            PatchTSTForcastingAdapter(_csv, 'train', _JEPA_SEQ_LEN, _pl0, _p_s),
             batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
         val_loader_fc = torch.utils.data.DataLoader(
-            PatchTSTForcastingAdapter(_csv, 'val',   _PATCHTST_SEQ_LEN, _pl0, _p_s),
+            PatchTSTForcastingAdapter(_csv, 'val',   _JEPA_SEQ_LEN, _pl0, _p_s),
             batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
         test_loader_fc = torch.utils.data.DataLoader(
-            PatchTSTForcastingAdapter(_csv, 'test',  _PATCHTST_SEQ_LEN, _pl0, _p_s),
+            PatchTSTForcastingAdapter(_csv, 'test',  _JEPA_SEQ_LEN, _pl0, _p_s),
             batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
 
     # ── model ─────────────────────────────────────────────────────────────────
@@ -672,7 +663,7 @@ def run_jepa(skip_train: bool = False,
         forcasting_test  = test_loader_fc,
     )
 
-    # ── pretraining ──────���────────────────────────────────────────────────────
+    # ── pretraining ──────────────────────────────────────────────────────────
     if not skip_train:
         print("\n[JEPA] Starting pretraining …")
         model.train_and_evaluate()
@@ -716,7 +707,7 @@ def run_jepa(skip_train: bool = False,
             for epoch in ckpts_to_run:
                 print(f"  → checkpoint epoch {epoch}")
                 ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
-                mse = model.forcasting_zeroshot(ckpt_tag, linear_probe=linear_probe)
+                mse = model.forecasting(ckpt_tag, linear_probe=linear_probe)
                 if is_search and mse is not None and mse < best_mse:
                     best_mse  = mse
                     best_ckpt = epoch
@@ -729,7 +720,7 @@ def run_jepa(skip_train: bool = False,
     cls_acc = None
     if classification_dataset is not None:
         from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
-        cls_dir  = config.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
+        cls_dir  = config["classification_data_dir"]
         cls_bs   = config.get("batch_size", 64)
         p_s      = config["patch_size_forcasting"]
         if list(Path(os.path.join(cls_dir, classification_dataset)).glob("*_TRAIN.ts")):
@@ -781,7 +772,7 @@ def run_jepa(skip_train: bool = False,
     anom_result = None
     if anomaly_dataset is not None:
         from data_loaders.data_puller import AnomalyDataPuller
-        anom_dir = config.get("anomaly_data_dir", "/home/shared/datasets/Anomaly_TS")
+        anom_dir = config["anomaly_data_dir"]
         anom_bs  = config.get("batch_size", 64)
         p_s      = config["patch_size_forcasting"]
         anom_train = torch.utils.data.DataLoader(
@@ -817,7 +808,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         "config_patchtst", patchtst_dir / "config_patchtst.py")
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
-    cfg = dict(_mod.config)
+    cfg = {**DATA_PATHS, **dict(_mod.config)}
     if pretrain_source is not None:
         cfg['pretrain_source'] = pretrain_source
     if encoder_layers is not None:
@@ -836,12 +827,12 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
 
     monash_dir = synth_dir = None
     if _pretrain_dset in ('monash', 'monash+synthetic'):
-        monash_dir = cfg.get("monash_data_dir", "../Monash")
+        monash_dir = cfg["monash_data_dir"]
         if not os.path.isabs(monash_dir):
             monash_dir = str((patchtst_dir / monash_dir).resolve())
     if _pretrain_dset in ('synthetic', 'monash+synthetic'):
         _synth_key = 'synthetic_mix_data_dir' if _pretrain_dset == 'monash+synthetic' else 'synthetic_data_dir'
-        synth_dir = cfg.get(_synth_key, cfg.get("synthetic_data_dir", "../synthetic"))
+        synth_dir = cfg[_synth_key]
         if not os.path.isabs(synth_dir):
             synth_dir = str((patchtst_dir / synth_dir).resolve())
 
@@ -883,12 +874,13 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     ]
     if monash_dir is not None:
         pretrain_cmd += ["--monash_data_dir",    monash_dir,
-                         "--monash_min_len",      str(cfg.get("monash_min_len", 512))]
+                         "--monash_min_len",      str(cfg["monash_min_len"])]
     if synth_dir is not None:
         pretrain_cmd += ["--synthetic_data_dir", synth_dir]
     if lr is not None:
         pretrain_cmd += ["--lr", str(lr)]
-    _ptst_save_dir = None
+    # Save dir: single source of truth for both pretrain write and downstream read.
+    # Three layouts: classification-cw (sweep), seed-tagged, or default.
     if num_patches is not None:
         _cw = num_patches * cfg.get('patch_len', 16)
         _ptst_save_dir = str(
@@ -902,8 +894,13 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
             "masked_patchtst" / cfg.get("model_type", "based_model") /
             f"layers{cfg.get('n_layers', 3)}{_SEED_TAG}"
         )
-    if _ptst_save_dir is not None:
-        pretrain_cmd += ["--save_dir", _ptst_save_dir]
+    else:
+        _ptst_save_dir = str(
+            patchtst_dir / "saved_models" / _pretrain_dset /
+            "masked_patchtst" / cfg.get("model_type", "based_model") /
+            f"layers{cfg.get('n_layers', 3)}"
+        )
+    pretrain_cmd += ["--save_dir", _ptst_save_dir]
 
     # ── pretraining ───────────────────────────────────────────────────────────
     if not skip_train:
@@ -928,23 +925,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
                         f"_epochs-pretrain{n_ep}_mask{m_ratio}_model{m_id}")
     _ckpt_epoch = checkpoints[0] if (checkpoints and checkpoints[0] is not None) else None
     model_fname = f"{model_fname_base}_{_ckpt_epoch}.pth" if _ckpt_epoch is not None else f"{model_fname_base}.pth"
-    if _ptst_save_dir is not None:
-        pretrained_model_path = os.path.join(_ptst_save_dir, model_fname)
-    elif num_patches is not None:
-        _cw = num_patches * cfg.get('patch_len', 16)
-        pretrained_model_path = os.path.join(
-            patchtst_dir, "saved_models", "classification", _pretrain_dset,
-            "masked_patchtst", cfg.get("model_type", "based_model"),
-            f"layers{cfg['n_layers']}_cw{_cw}", model_fname
-        )
-    else:
-        pretrained_model_path = os.path.join(
-            patchtst_dir, "saved_models", _pretrain_dset,
-            "masked_patchtst", cfg.get("model_type", "based_model"),
-            f"layers{cfg['n_layers']}", model_fname
-        )
-    if random_encoder:
-        pretrained_model_path = None
+    pretrained_model_path = None if random_encoder else os.path.join(_ptst_save_dir, model_fname)
 
     if pretrain_only:
         print("\n[PatchTST] Pretrain-only mode — skipping forecasting.")
@@ -999,10 +980,9 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     # ── classification downstream ─────────────────────────────────────────────
     cls_acc = None
     if classification_dataset is not None:
-        sys.path.insert(0, str(patchtst_dir))
-        from patchtst_classification import classification_zeroshot as ptst_classify
+        from patchtst_classification import classification as ptst_classify
         from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
-        cls_dir    = cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
+        cls_dir    = cfg["classification_data_dir"]
         cls_bs     = _get_cls_bs(cfg, "batch_size", 64)
         p_s        = cfg.get("patch_len", 16)
         _n_patches = 72                               # classification encoder always uses 72 patches
@@ -1050,9 +1030,9 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     # ── anomaly detection downstream ──────────────────────────────────────────
     anom_result = None
     if anomaly_dataset is not None:
-        from patchtst_anomaly import anomaly_zeroshot as ptst_anomaly
+        from patchtst_anomaly import anomaly_detection as ptst_anomaly
         from data_loaders.data_puller import AnomalyDataPuller
-        anom_dir = cfg.get("anomaly_data_dir", "/home/shared/datasets/Anomaly_TS")
+        anom_dir = cfg["anomaly_data_dir"]
         anom_bs  = cfg.get("batch_size", 64)
         p_s      = cfg.get("patch_len", 16)
         anom_train = torch.utils.data.DataLoader(
@@ -1086,7 +1066,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     _spec = importlib.util.spec_from_file_location("config_ntp", ntp_dir / "config_ntp.py")
     _mod  = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
-    cfg = dict(_mod.config)
+    cfg = {**DATA_PATHS, **dict(_mod.config)}
     if pretrain_source is not None:
         cfg['pretrain_source'] = pretrain_source
     if encoder_layers is not None:
@@ -1109,19 +1089,19 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     cfg["forecast_dataset"] = _forecast_dset
 
     if _pretrain_dset in ('monash', 'monash+synthetic'):
-        monash_dir = cfg.get("monash_data_dir", "../Monash")
+        monash_dir = cfg["monash_data_dir"]
         if not os.path.isabs(monash_dir):
             cfg["monash_data_dir"] = str((ntp_dir / monash_dir).resolve())
     if _pretrain_dset in ('synthetic', 'monash+synthetic'):
         _synth_key = 'synthetic_mix_data_dir' if _pretrain_dset == 'monash+synthetic' else 'synthetic_data_dir'
-        synth_dir = cfg.get(_synth_key, cfg.get("synthetic_data_dir", "../synthetic"))
+        synth_dir = cfg[_synth_key]
         if not os.path.isabs(synth_dir):
             synth_dir = str((ntp_dir / synth_dir).resolve())
         cfg["synthetic_data_dir"] = synth_dir
 
     _src_label = {
-        'monash':           f"Monash ({cfg.get('monash_data_dir', '')})",
-        'synthetic':        f"Synthetic ({cfg.get('synthetic_data_dir', '')})",
+        'monash':           f"Monash ({cfg['monash_data_dir']})",
+        'synthetic':        f"Synthetic ({cfg['synthetic_data_dir']})",
         'monash+synthetic': "Monash + Synthetic",
     }.get(_pretrain_dset, _pretrain_dset)
     print("\n" + "="*60)
@@ -1133,7 +1113,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     print("="*60)
 
     from ntp_pretrain import pretrain_ntp, _model_fname
-    from ntp_forecasting import zeroshot_forecasting
+    from ntp_forecasting import forecasting as ntp_forecasting
 
     # Resolve checkpoint path (used whether we train or skip)
     _npt_save_dir_override = None
@@ -1146,9 +1126,15 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         _npt_save_dir_override = str(
             ntp_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}{_SEED_TAG}"
         )
-    _save_dir = Path(_npt_save_dir_override) if _npt_save_dir_override else \
-                ntp_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}"
-    _base_name = _model_fname(cfg, _pretrain_dset)
+    # Save-path priority: programmatic override > config["path_save"] > default.
+    # Mirrors the resolution inside pretrain_ntp() so train/eval read from the same dir.
+    if _npt_save_dir_override:
+        _save_dir = Path(_npt_save_dir_override)
+    elif cfg.get("path_save"):
+        _save_dir = Path(cfg["path_save"])
+    else:
+        _save_dir = ntp_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}"
+    _base_name = _model_fname(cfg)
     _ckpt_epoch = checkpoints[0] if (checkpoints and checkpoints[0] is not None) else None
     if _ckpt_epoch is not None:
         _ckpt_path = str(_save_dir / f"{_base_name}_epoch{_ckpt_epoch}.pt")
@@ -1167,7 +1153,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         print(f"\n[NPT] Running zero-shot forecasting on {_forecast_dset} …")
         for _pl in pred_lens:
             cfg["horizon_t"] = _pl // cfg["patch_size"]
-            _mse, _mae = zeroshot_forecasting(cfg, _ckpt_path, linear_probe=linear_probe)
+            _mse, _mae = ntp_forecasting(cfg, _ckpt_path, linear_probe=linear_probe)
             if _mse is not None:
                 print(f"\n{'='*60}")
                 print(f"  Results on {_forecast_dset}  pred_len={_pl}")
@@ -1182,9 +1168,9 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     # ── classification downstream ─────────────────────────────────────────────
     cls_acc = None
     if classification_dataset is not None:
-        from ntp_classification import classification_zeroshot as npt_classify
+        from ntp_classification import classification as ntp_classify
         from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
-        cls_dir    = cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
+        cls_dir    = cfg["classification_data_dir"]
         cls_bs     = cfg.get("batch_size", 64)
         p_s        = cfg["patch_size"]
         _n_patches = 72                               # classification encoder always uses 72 patches
@@ -1222,7 +1208,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
                 batch_size=cls_bs, shuffle=(split == "train"))
             cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
             n_classes = cls_train.dataset.n_classes
-        cls_acc = npt_classify(cfg, _ckpt_path, cls_train, cls_val, cls_test, n_classes,
+        cls_acc = ntp_classify(cfg, _ckpt_path, cls_train, cls_val, cls_test, n_classes,
                                linear_probe=linear_probe)
         print(f"\n{'='*60}")
         print(f"  [NPT] Classification on {classification_dataset}")
@@ -1232,9 +1218,9 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     # ── anomaly detection downstream ──────────────────────────────────────────
     anom_result = None
     if anomaly_dataset is not None:
-        from ntp_anomaly import anomaly_zeroshot as npt_anomaly
+        from ntp_anomaly import anomaly_detection as ntp_anomaly
         from data_loaders.data_puller import AnomalyDataPuller
-        anom_dir = cfg.get("anomaly_data_dir", "/home/shared/datasets/Anomaly_TS")
+        anom_dir = cfg["anomaly_data_dir"]
         anom_bs  = cfg.get("batch_size", 64)
         p_s      = cfg["patch_size"]
         anom_train = torch.utils.data.DataLoader(
@@ -1243,11 +1229,11 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         anom_test  = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
             batch_size=anom_bs, shuffle=False)
-        anom_result = npt_anomaly(cfg, _ckpt_path, anom_train, anom_test,
+        anom_result = ntp_anomaly(cfg, _ckpt_path, anom_train, anom_test,
                                   anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg),
                                   linear_probe=linear_probe)
 
-    return mse_trained, cls_acc, anom_result
+    return mse_trained, mae_trained, cls_acc, anom_result
 
 
 # ── LE-JEPA ───────────────────────────────────────────────────────────────────
@@ -1281,7 +1267,7 @@ def run_lejepa(skip_train: bool = False,
         "config_lejepa", lejepa_dir / "config_lejepa.py")
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
-    config = dict(_mod.config)
+    config = {**DATA_PATHS, **dict(_mod.config)}
     if pretrain_source is not None:
         config['pretrain_source'] = pretrain_source
         _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source != 'monash' else ''
@@ -1296,16 +1282,19 @@ def run_lejepa(skip_train: bool = False,
         _p = Path(config['path_save'].rstrip('/'))
         config['path_save'] = str(_p.parent / 'classification' / (_p.name + f'_cw{_cw}')) + '/'
     if lr is not None:
-        config['lr_sgd'] = lr
+        config['lr_adamw'] = lr
 
     from data_loaders.data_puller import (DataPullerDJepa, MonashDataPullerJEPA,
                                           SyntheticArrowDataPullerJEPA, PatchTSTForcastingAdapter)
-    # Re-pin lejepa_dir to sys.path[0] — data_puller imports may have pushed JEPA/JEPA ahead of it,
-    # causing `from Classification import` in LeJepa.py to grab the wrong Classification.py.
+    # LeJepa.py uses bare imports (`from Encoder import Encoder`, etc.) for modules
+    # whose names collide with JEPA's (Encoder, Training, Forecasting). Force lejepa_dir
+    # to sys.path[0] and evict any cached colliding modules so the resolution order matches.
     _lj = str(lejepa_dir)
     if _lj in sys.path:
         sys.path.remove(_lj)
     sys.path.insert(0, _lj)
+    for _name in ("Encoder", "augmentations", "Training", "Forecasting"):
+        sys.modules.pop(_name, None)
     from LeJepa import LeJEPA
 
     if pretrain_only or classification_only or (anomaly_dataset is not None and forecast_dataset is None):
@@ -1319,12 +1308,6 @@ def run_lejepa(skip_train: bool = False,
         config.pop('forecast_dataset', None)
     config["lr_forcasting"] = _get_forecast_lr(config, "lr_forcasting")
 
-    # Single-dataset mode: align splits so test never leaks into pretraining
-    if pretrain_dataset and pretrain_dataset == forecast_dataset:
-        config['pretrain_source'] = None   # force CSV-only mode
-        config['val_prec']  = config.get('val_prec_forcasting',  0.1)
-        config['test_prec'] = config.get('test_prec_forcasting', 0.1)
-
     pretrain_source = _resolve_pretrain_source(config)
     use_global_data = pretrain_source is not None
 
@@ -1332,18 +1315,18 @@ def run_lejepa(skip_train: bool = False,
         if not pretrain_only and classification_dataset is None and forecast_dataset is None and anomaly_dataset is None:
             raise ValueError("forecast_dataset must be set when pretraining on global data")
         if pretrain_source in ('monash', 'monash+synthetic'):
-            monash_dir = config.get('monash_data_dir', '../Monash')
+            monash_dir = config['monash_data_dir']
             if not os.path.isabs(monash_dir):
                 config['monash_data_dir'] = str((lejepa_dir / monash_dir).resolve())
         if pretrain_source in ('synthetic', 'monash+synthetic'):
             _synth_key = 'synthetic_mix_data_dir' if pretrain_source == 'monash+synthetic' else 'synthetic_data_dir'
-            synth_dir = config.get(_synth_key, config.get('synthetic_data_dir', '../Monash'))
+            synth_dir = config[_synth_key]
             if not os.path.isabs(synth_dir):
                 synth_dir = str((lejepa_dir / synth_dir).resolve())
             config['synthetic_data_dir'] = synth_dir
         _src_label = {
-            'monash':           f"Monash ({config.get('monash_data_dir', '')})",
-            'synthetic':        f"Synthetic ({config.get('synthetic_data_dir', '')})",
+            'monash':           f"Monash ({config['monash_data_dir']})",
+            'synthetic':        f"Synthetic ({config['synthetic_data_dir']})",
             'monash+synthetic': "Monash + Synthetic (mix)",
         }.get(pretrain_source, pretrain_source)
         print("\n" + "="*60)
@@ -1353,7 +1336,6 @@ def run_lejepa(skip_train: bool = False,
         elif classification_only or forecast_dataset is None:
             print(f"  pretrain: {_src_label}   [classify only]")
         else:
-            ds_fore = get_dataset_info(forecast_dataset)
             print(f"  pretrain: {_src_label}   forecast: {forecast_dataset}")
         print("="*60)
     else:
@@ -1379,8 +1361,6 @@ def run_lejepa(skip_train: bool = False,
     if not pretrain_only and forecast_dataset is not None:
         ds_fore = get_dataset_info(forecast_dataset)
         config["path_data_forcasting"]       = [str((lejepa_dir / ds_fore["csv_path"]).resolve())]
-        config["timestampcols_forcasting"]   = [ds_fore["timestamp_col"]]
-        config["input_variables_forcasting"] = [ds_fore["columns"]]
 
     # ── data ──────────────────────────────────────────────────────────────────
     if skip_train and use_global_data:
@@ -1496,7 +1476,7 @@ def run_lejepa(skip_train: bool = False,
             for epoch in ckpts_to_run:
                 print(f"  → checkpoint epoch {epoch}")
                 ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
-                mse = model.forcasting_zeroshot(ckpt_tag, linear_probe=linear_probe)
+                mse = model.forecasting(ckpt_tag, linear_probe=linear_probe)
                 if is_search and mse is not None and mse < _best_mse:
                     _best_mse = mse
                     best_ckpt = epoch
@@ -1511,7 +1491,7 @@ def run_lejepa(skip_train: bool = False,
     if classification_dataset is not None:
         from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
         import torch.nn.functional as _F
-        cls_dir    = config.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
+        cls_dir    = config["classification_data_dir"]
         cls_bs     = config.get("batch_size", 64)
         p_s        = config["patch_size_forcasting"]
         _n_patches = 72                               # classification encoder always uses 72 patches
@@ -1547,8 +1527,8 @@ def run_lejepa(skip_train: bool = False,
             cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
             n_classes = cls_train.dataset.n_classes
         ckpt_tag  = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
-        cls_acc   = model.classification_zeroshot(ckpt_tag, cls_train, cls_val, cls_test, n_classes,
-                                                  linear_probe=linear_probe)
+        cls_acc   = model.classification(ckpt_tag, cls_train, cls_val, cls_test, n_classes,
+                                         linear_probe=linear_probe)
         print(f"\n{'='*60}")
         print(f"  [LE-JEPA] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
@@ -1558,7 +1538,7 @@ def run_lejepa(skip_train: bool = False,
     anom_result = None
     if anomaly_dataset is not None:
         from data_loaders.data_puller import AnomalyDataPuller
-        anom_dir = config.get("anomaly_data_dir", "/home/shared/datasets/Anomaly_TS")
+        anom_dir = config["anomaly_data_dir"]
         anom_bs  = config.get("batch_size", 64)
         p_s      = config["patch_size_forcasting"]
         anom_train = torch.utils.data.DataLoader(
@@ -1568,9 +1548,9 @@ def run_lejepa(skip_train: bool = False,
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
             batch_size=anom_bs, shuffle=False)
         ckpt_tag    = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
-        anom_result = model.anomaly_zeroshot(ckpt_tag, anom_train, anom_test,
-                                             anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, config),
-                                             linear_probe=linear_probe)
+        anom_result = model.anomaly_detection(ckpt_tag, anom_train, anom_test,
+                                              anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, config),
+                                              linear_probe=linear_probe)
 
     return best_ckpt, best_mse, cls_acc, anom_result
 
@@ -1589,6 +1569,41 @@ _TIMEDART_DATASET_MAP = {
 }
 
 
+class _FlatWindowAdapter(torch.utils.data.Dataset):
+    """
+    Wraps PatchTSTForcastingAdapter (which returns patched tensors) and
+    flattens them back to (seq_x, seq_y, zeros_mark, zeros_mark) so that
+    TimeDart's train/valid loops receive the (B, T, C) shape they expect.
+    """
+    def __init__(self, patched_ds):
+        self._ds = patched_ds
+
+    def __len__(self):
+        return len(self._ds)
+
+    def __getitem__(self, idx):
+        ctx, tgt = self._ds[idx]
+        # ctx: [n_patches, patch_size, C]  →  [seq_len, C]
+        # tgt: [h,         patch_size, C]  →  [pred_len, C]
+        seq_x = ctx.reshape(-1, ctx.shape[-1])
+        seq_y = tgt.reshape(-1, tgt.shape[-1])
+        zeros = torch.zeros_like(seq_x)
+        return seq_x, seq_y, zeros, zeros
+
+
+def _patch_timedart_get_data(exp):
+    """Monkey-patch _get_data on a TimeDart Exp instance to return our loaders."""
+    import types
+
+    def _get_data(self, flag):
+        loader = {'train': self._td_train_loader,
+                  'val':   self._td_val_loader,
+                  'test':  self._td_test_loader}[flag]
+        return loader.dataset, loader
+
+    exp._get_data = types.MethodType(_get_data, exp)
+
+
 def run_timedart(skip_train: bool = False,
                  pretrain_dataset: str = None,
                  forecast_dataset: str = None,
@@ -1600,7 +1615,6 @@ def run_timedart(skip_train: bool = False,
                  encoder_layers: int = None,
                  lr: float = None,
                  pretrain_source: str = None,
-                 gpu: int = None,
                  linear_probe: bool = True,
                  pretrain_cls_model: bool = False):
     """
@@ -1627,7 +1641,7 @@ def run_timedart(skip_train: bool = False,
     _spec = _ilu.spec_from_file_location("config_timedart", timedart_dir / "config_timedart.py")
     _mod  = _ilu.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
-    cfg = dict(_mod.config)
+    cfg = {**DATA_PATHS, **dict(_mod.config)}
 
     if pretrain_source is not None:
         cfg['pretrain_source'] = pretrain_source
@@ -1641,9 +1655,7 @@ def run_timedart(skip_train: bool = False,
     ckpt_file     = ckpt_dir / f"monash{_src_tag}" / "ckpt_best.pth"
     cls_ckpt_file = ckpt_dir / f"monash{_src_tag}_cls" / "ckpt_best.pth"
 
-    _explicit_forecast = forecast_dataset   # None means caller didn't request forecasting
-    forecast_dataset   = forecast_dataset or "etth1"
-    pretrain_src       = _resolve_pretrain_source(cfg)
+    pretrain_src = _resolve_pretrain_source(cfg)
 
     # Always use cuda:0 — CUDA_VISIBLE_DEVICES is already set by the caller
     # to select the physical GPU, so the logical index is always 0.
@@ -1652,7 +1664,7 @@ def run_timedart(skip_train: bool = False,
 
     print("\n" + "="*60)
     print(f"  MODEL: TimeDart  (backbone={cfg.get('model','PatchTST')})")
-    print(f"  pretrain: {pretrain_src or pretrain_dataset}   forecast: {forecast_dataset}")
+    print(f"  pretrain: {pretrain_src or pretrain_dataset}   forecast: {forecast_dataset or '(none)'}")
     print(f"  e_layers={cfg['e_layers']}  d_model={cfg['d_model']}  patch_len={cfg['patch_len']}")
     print("="*60)
 
@@ -1661,6 +1673,7 @@ def run_timedart(skip_train: bool = False,
     stride    = cfg['stride']
 
     # Shared args namespace used for both pretrain and finetune
+    # (only fields actually consumed by Exp_TimeDART / TimeDART model are included)
     base_args = SimpleNamespace(
         model              = cfg.get('model', 'PatchTST'),
         downstream_task    = "forecast",
@@ -1680,22 +1693,12 @@ def run_timedart(skip_train: bool = False,
         d_model            = cfg['d_model'],
         n_heads            = cfg['n_heads'],
         e_layers           = cfg['e_layers'],
-        d_layers           = 1,
         d_ff               = cfg['d_ff'],
         dropout            = cfg['dropout'],
         head_dropout       = cfg.get('head_dropout', 0.1),
-        fc_dropout         = 0.0,
         embed              = "timeF",
-        activation         = "gelu",
-        output_attention   = False,
-        individual         = 0,
         factor             = 1,
-        distil             = True,
-        moving_avg         = 25,
-        top_k              = 5,
-        num_kernels        = 3,
         enc_in             = 1,
-        dec_in             = 1,
         c_out              = 1,
         use_norm           = 1,
         time_steps         = cfg['time_steps'],
@@ -1705,24 +1708,12 @@ def run_timedart(skip_train: bool = False,
         pct_start          = cfg.get('pct_start', 0.3),
         lradj              = cfg.get('lradj', 'decay'),
         features           = cfg.get('features', 'M'),
-        target             = "OT",
-        freq               = "h",
-        seasonal_patterns  = "Monthly",
         num_classes        = 6,
         num_workers        = cfg.get('num_workers', 4),
         train_epochs       = cfg.get('train_epochs', 20),
         batch_size         = cfg.get('batch_size', 128),
         learning_rate      = cfg['learning_rate'],
         patience           = cfg.get('patience', 3),
-        accumulation_steps = 4,
-        select_channels    = 1.0,
-        use_amp            = False,
-        lm                 = 3,
-        positive_nums      = 3,
-        rbtp               = 1,
-        temperature        = 0.2,
-        masked_rule        = "geometric",
-        mask_rate          = 0.5,
         load_checkpoints   = None,
         pretrain_checkpoints = str(ckpt_dir),
         checkpoints        = str(Path(__file__).parent / "outputs" / "timedart_finetune"),
@@ -1731,8 +1722,6 @@ def run_timedart(skip_train: bool = False,
         root_path          = "/tmp",
         data_path          = "ETTh1.csv",
         task_name          = "pretrain",
-        llm_path           = "Qwen/Qwen2.5-0.5B",
-        backbone           = "Qwen2.5-0.5B",
     )
 
     # ── pretraining ────────────────────────────────────────────────────────────
@@ -1740,10 +1729,10 @@ def run_timedart(skip_train: bool = False,
         from data_loaders.data_puller import (MonashWindowDatasetTimeDart,
                                               SyntheticWindowDatasetTimeDart)
 
-        monash_dir = cfg.get('monash_data_dir', '/home/shared/datasets/Monash')
+        monash_dir = cfg['monash_data_dir']
         _synth_key = 'synthetic_mix_data_dir' if pretrain_src == 'monash+synthetic' else 'synthetic_data_dir'
-        synth_dir  = cfg.get(_synth_key, cfg.get('synthetic_data_dir', '/home/shared/datasets/synthetic_data_TS'))
-        min_len    = cfg.get('monash_min_len', 512)
+        synth_dir  = cfg[_synth_key]
+        min_len    = cfg['monash_min_len']
 
         def _make_pretrain_loader(which):
             datasets = []
@@ -1813,8 +1802,7 @@ def run_timedart(skip_train: bool = False,
     if not ckpt_file.exists():
         print(f"[TimeDart] WARNING: checkpoint not found at {ckpt_file}")
 
-    if _explicit_forecast is None and (classification_dataset is not None or anomaly_dataset is not None):
-        # Anomaly-only or classification-only call — skip forecasting
+    if forecast_dataset is None:
         best_pred, best_mse, best_mae = None, float('inf'), float('inf')
     else:
         from data_loaders.data_puller import PatchTSTForcastingAdapter
@@ -1911,9 +1899,9 @@ def run_timedart(skip_train: bool = False,
     # ── classification downstream ─────────────────────────────────────────────
     cls_acc = None
     if classification_dataset is not None:
-        from timedart_classification import classification_zeroshot as timedart_classify
+        from timedart_classification import classification as timedart_classify
         from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
-        cls_dir    = cfg.get("classification_data_dir", "/home/shared/datasets/Classification_TS")
+        cls_dir    = cfg["classification_data_dir"]
         cls_bs     = _get_cls_bs(cfg, "batch_size_classification", 64)
         p_s        = cfg.get("patch_len", 16)
         _n_patches = 72                               # classification encoder always uses 72 patches
@@ -1958,16 +1946,16 @@ def run_timedart(skip_train: bool = False,
         cls_acc = timedart_classify(cfg, str(_cls_ckpt), cls_train, cls_val, cls_test, n_classes,
                                     linear_probe=linear_probe)
         print(f"\n{'='*60}")
-        print(f"  [TimeDaRT] Classification on {classification_dataset}")
+        print(f"  [TimeDart] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
         print(f"{'='*60}")
 
     # ── anomaly detection downstream ──────────────────────────────────────────
     anom_result = None
     if anomaly_dataset is not None:
-        from timedart_anomaly import anomaly_zeroshot as timedart_anomaly
+        from timedart_anomaly import anomaly_detection as timedart_anomaly
         from data_loaders.data_puller import AnomalyDataPuller
-        anom_dir = cfg.get("anomaly_data_dir", "/home/shared/datasets/Anomaly_TS")
+        anom_dir = cfg["anomaly_data_dir"]
         anom_bs  = cfg.get("batch_size", 64)
         p_s      = cfg.get("patch_len", 16)
         anom_train = torch.utils.data.DataLoader(
@@ -1983,39 +1971,6 @@ def run_timedart(skip_train: bool = False,
     return best_pred, best_mse, best_mae, cls_acc, anom_result
 
 
-class _FlatWindowAdapter(torch.utils.data.Dataset):
-    """
-    Wraps PatchTSTForcastingAdapter (which returns patched tensors) and
-    flattens them back to (seq_x, seq_y, zeros_mark, zeros_mark) so that
-    TimeDart's train/valid loops receive the (B, T, C) shape they expect.
-    """
-    def __init__(self, patched_ds):
-        self._ds = patched_ds
-
-    def __len__(self):
-        return len(self._ds)
-
-    def __getitem__(self, idx):
-        ctx, tgt = self._ds[idx]
-        # ctx: [n_patches, patch_size, C]  →  [seq_len, C]
-        # tgt: [h,         patch_size, C]  →  [pred_len, C]
-        seq_x = ctx.reshape(-1, ctx.shape[-1])
-        seq_y = tgt.reshape(-1, tgt.shape[-1])
-        zeros = torch.zeros_like(seq_x)
-        return seq_x, seq_y, zeros, zeros
-
-
-def _patch_timedart_get_data(exp):
-    """Monkey-patch _get_data on a TimeDart Exp instance to return our loaders."""
-    import types
-
-    def _get_data(self, flag):
-        loader = {'train': self._td_train_loader,
-                  'val':   self._td_val_loader,
-                  'test':  self._td_test_loader}[flag]
-        return loader.dataset, loader
-
-    exp._get_data = types.MethodType(_get_data, exp)
 
 
 # ── Random baseline ───────────────────────────────────────────────────────────
@@ -2030,7 +1985,7 @@ def run_random(skip_train: bool = False, pretrain_dataset: str = None, forecast_
     _spec = importlib.util.spec_from_file_location("config_ntp", ntp_dir / "config_ntp.py")
     _mod  = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
-    cfg = dict(_mod.config)
+    cfg = {**DATA_PATHS, **dict(_mod.config)}
 
     _forecast_dset = forecast_dataset or cfg.get("forecast_dataset", "ettm1")
     cfg["forecast_dataset"] = _forecast_dset

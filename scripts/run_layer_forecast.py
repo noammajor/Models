@@ -2,7 +2,7 @@
 """
 run_layer_forecast.py — Forecasting evaluation across layer-sweep checkpoints.
 
-For each encoder layer config [2, 6, 12, 24], all models are evaluated in
+For each encoder layer config [2, 4, 8, 12, 24], all models are evaluated in
 parallel (one per GPU) on all datasets using the tournament checkpoint search:
   pred96 (all ckpts) → top3 → pred192 → top2 → pred336 → best → pred720
 
@@ -13,8 +13,10 @@ Results saved per model to:
 
 Usage:
     python run_layer_forecast.py                        # all models, all layers
-    python run_layer_forecast.py --layers 6 12
+    python run_layer_forecast.py --layers 4 12
     python run_layer_forecast.py --models dino lejepa
+    python run_layer_forecast.py --linear_probe false   # fine-tune mode
+    python run_layer_forecast.py --pred_lens 96 192     # only --best_only mode
     python run_layer_forecast.py --dry_run
 """
 
@@ -27,42 +29,26 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-import numpy 
-
 ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(ROOT))
- # noqa: ensure numpy is in sys.modules before lazy imports
+
+from Train_and_downstream import run
+
+
+def _str2bool(v):
+    if isinstance(v, bool):
+        return v
+    return str(v).strip().lower() in ("true", "1", "yes", "y")
+
 
 LAYER_CONFIGS = [2, 4, 8, 12, 24]
 DATASETS      = ["etth1", "etth2", "ettm1", "ettm2", "weather", "electricity", "traffic"]
 PRED_LENS     = [96, 192, 336, 720]
 
-# Per-dataset forecast LR scale (multiplied against each model's base lr_forecasting)
-DATASET_FORECAST_LR_SCALE = {
-    "etth1":       1.0,
-    "etth2":       1.0,
-    "ettm1":       1.0,
-    "ettm2":       1.0,
-    "weather":     1.0,
-    "electricity": 1.0,
-    "traffic":     1.0,
-}
-
-# Per-dataset forecast batch sizes (applied to all models via TS_FORECAST_BS env var)
-DATASET_FORECAST_BS = {
-    "etth1":       256,
-    "etth2":       256,
-    "ettm1":       256,
-    "ettm2":       256,
-    "weather":     128,
-    "electricity":  32,
-    "traffic":      16,
-}
-
 # Model → GPU assignment (match run_layer_sweep.py)
 MODEL_GPU = {
     "dino":            0,
-    "jepa":     1,
+    "jepa":            1,
     "lejepa":          2,
     "patchtst":        3,
     "ntp":             4,
@@ -208,7 +194,9 @@ def log_to_file(log_path: Path):
 
 def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     gpu: int, log_dir: Path, encoder_layers: int,
-                    pretrain_source: str = None) -> float:
+                    pretrain_source: str = None,
+                    linear_probe: bool = True):
+    """Returns (mse, mae) tuple — mae may be None for models that don't expose it."""
     ckpt_tag = str(ckpt) if ckpt is not None else "best"
     log_path = log_dir / f"pred{pred_len}_ckpt{ckpt_tag}.log"
 
@@ -216,8 +204,6 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
 
     with log_to_file(log_path):
         try:
-            from Train_and_downstream import run
-
             if model in ("jepa", "lejepa", "dino"):
                 result = run(
                     model=model,
@@ -226,42 +212,26 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     pred_lens=[pred_len],
                     checkpoints=[ckpt],
                     encoder_layers=encoder_layers,
+                    linear_probe=linear_probe,
                 )
-                return result[1] if result else None
+                return (result[1], None) if result else None
 
-            elif model == "ntp":
-                result = run(
-                    model="ntp",
+            elif model in ("ntp", "patchtst", "patchtst_random"):
+                kwargs = dict(
+                    model=model,
                     skip_train=True,
                     forecast_dataset=dataset,
                     pred_len=pred_len,
-                    checkpoints=[ckpt] if ckpt is not None else None,
                     encoder_layers=encoder_layers,
                     pretrain_source=pretrain_source,
+                    linear_probe=linear_probe,
                 )
-                return result[0] if isinstance(result, tuple) else result
-
-            elif model == "patchtst":
-                result = run(
-                    model="patchtst",
-                    skip_train=True,
-                    forecast_dataset=dataset,
-                    pred_len=pred_len,
-                    checkpoints=[ckpt] if ckpt is not None else None,
-                    encoder_layers=encoder_layers,
-                    pretrain_source=pretrain_source,
-                )
-                return result[0] if isinstance(result, tuple) else result
-
-            elif model == "patchtst_random":
-                result = run(
-                    model="patchtst_random",
-                    skip_train=True,
-                    forecast_dataset=dataset,
-                    pred_len=pred_len,
-                    encoder_layers=encoder_layers,
-                )
-                return result[0] if isinstance(result, tuple) else result
+                if model != "patchtst_random":
+                    kwargs["checkpoints"] = [ckpt] if ckpt is not None else None
+                result = run(**kwargs)
+                if isinstance(result, tuple) and len(result) >= 2:
+                    return (result[0], result[1])  # (mse, mae)
+                return (result, None) if result is not None else None
 
             elif model == "timedart":
                 result = run(
@@ -272,8 +242,11 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     encoder_layers=encoder_layers,
                     gpu=gpu,
                     pretrain_source=pretrain_source,
+                    linear_probe=linear_probe,
                 )
-                return result[1] if isinstance(result, tuple) else result
+                if isinstance(result, tuple) and len(result) >= 3:
+                    return (result[1], result[2])
+                return (result[1], None) if isinstance(result, tuple) else None
 
         except Exception as e:
             print(f"[ERROR] {model}/{dataset}/pred{pred_len}/ckpt{ckpt_tag}: {e}")
@@ -285,7 +258,8 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
 
 def checkpoint_search(model: str, dataset: str, all_checkpoints: list,
                       gpu: int, log_base: Path, encoder_layers: int,
-                      pretrain_source: str = None) -> dict:
+                      pretrain_source: str = None,
+                      linear_probe: bool = True) -> dict:
     log_dir = log_base / f"layers{encoder_layers}" / model / dataset
     results = {}
 
@@ -293,56 +267,64 @@ def checkpoint_search(model: str, dataset: str, all_checkpoints: list,
         print(f"  [WARN] No checkpoints found for {model} layers={encoder_layers}")
         return results
 
+    def _eval(pl, ck):
+        return eval_checkpoint(model, dataset, pl, ck, gpu, log_dir, encoder_layers,
+                               pretrain_source, linear_probe=linear_probe)
+
+    def _mse(val):
+        """Extract MSE from a (mse, mae) tuple or scalar — for ranking."""
+        return val[0] if isinstance(val, tuple) else val
+
     print(f"\n  [Search] pred_len=96 — {len(all_checkpoints)} checkpoints: {all_checkpoints}")
     mses_96 = {}
     for ckpt in all_checkpoints:
-        mse = eval_checkpoint(model, dataset, 96, ckpt, gpu, log_dir, encoder_layers, pretrain_source)
-        if mse is not None:
-            mses_96[ckpt] = mse
-            print(f"    ckpt {ckpt}: MSE={mse:.4f}")
+        val = _eval(96, ckpt)
+        if val is not None and _mse(val) is not None:
+            mses_96[ckpt] = val
+            print(f"    ckpt {ckpt}: MSE={_mse(val):.4f}")
 
     if not mses_96:
         return results
 
-    top3 = sorted(mses_96, key=mses_96.get)[:3]
+    top3 = sorted(mses_96, key=lambda c: _mse(mses_96[c]))[:3]
     results[96] = mses_96[top3[0]]
-    print(f"  → Top-3: {top3}  (best MSE={results[96]:.4f})")
+    print(f"  → Top-3: {top3}  (best MSE={_mse(results[96]):.4f})")
 
     print(f"\n  [Search] pred_len=192 — top-3: {top3}")
     mses_192 = {}
     for ckpt in top3:
-        mse = eval_checkpoint(model, dataset, 192, ckpt, gpu, log_dir, encoder_layers, pretrain_source)
-        if mse is not None:
-            mses_192[ckpt] = mse
-            print(f"    ckpt {ckpt}: MSE={mse:.4f}")
+        val = _eval(192, ckpt)
+        if val is not None and _mse(val) is not None:
+            mses_192[ckpt] = val
+            print(f"    ckpt {ckpt}: MSE={_mse(val):.4f}")
 
     if not mses_192:
         return results
 
-    top2 = sorted(mses_192, key=mses_192.get)[:2]
+    top2 = sorted(mses_192, key=lambda c: _mse(mses_192[c]))[:2]
     results[192] = mses_192[top2[0]]
-    print(f"  → Top-2: {top2}  (best MSE={results[192]:.4f})")
+    print(f"  → Top-2: {top2}  (best MSE={_mse(results[192]):.4f})")
 
     print(f"\n  [Search] pred_len=336 — top-2: {top2}")
     mses_336 = {}
     for ckpt in top2:
-        mse = eval_checkpoint(model, dataset, 336, ckpt, gpu, log_dir, encoder_layers, pretrain_source)
-        if mse is not None:
-            mses_336[ckpt] = mse
-            print(f"    ckpt {ckpt}: MSE={mse:.4f}")
+        val = _eval(336, ckpt)
+        if val is not None and _mse(val) is not None:
+            mses_336[ckpt] = val
+            print(f"    ckpt {ckpt}: MSE={_mse(val):.4f}")
 
     if not mses_336:
         return results
 
-    best = min(mses_336, key=mses_336.get)
+    best = min(mses_336, key=lambda c: _mse(mses_336[c]))
     results[336] = mses_336[best]
-    print(f"  → Best: ckpt {best}  (MSE={results[336]:.4f})")
+    print(f"  → Best: ckpt {best}  (MSE={_mse(results[336]):.4f})")
 
     print(f"\n  [Search] pred_len=720 — best ckpt: {best}")
-    mse = eval_checkpoint(model, dataset, 720, best, gpu, log_dir, encoder_layers, pretrain_source)
-    if mse is not None:
-        results[720] = mse
-        print(f"    MSE={mse:.4f}")
+    val = _eval(720, best)
+    if val is not None and _mse(val) is not None:
+        results[720] = val
+        print(f"    MSE={_mse(val):.4f}")
 
     return results
 
@@ -351,46 +333,39 @@ def checkpoint_search(model: str, dataset: str, all_checkpoints: list,
 
 def eval_best(model: str, dataset: str, pred_len: int,
               gpu: int, log_dir: Path, encoder_layers: int,
-              pretrain_source: str = None) -> float:
-    """Evaluate all pred_lens using only the best checkpoint (no tournament)."""
+              pretrain_source: str = None,
+              linear_probe: bool = True):
+    """Evaluate using only the best checkpoint. Returns (mse, mae) tuple."""
     log_path = log_dir / f"pred{pred_len}_ckptbest.log"
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
-    if dataset in DATASET_FORECAST_BS:
-        os.environ["TS_FORECAST_BS"] = str(DATASET_FORECAST_BS[dataset])
-    else:
-        os.environ.pop("TS_FORECAST_BS", None)
-    if dataset in DATASET_FORECAST_LR_SCALE:
-        os.environ["TS_FORECAST_LR_SCALE"] = str(DATASET_FORECAST_LR_SCALE[dataset])
-    else:
-        os.environ.pop("TS_FORECAST_LR_SCALE", None)
     with log_to_file(log_path):
         try:
-            from Train_and_downstream import run
             if model in ("jepa", "lejepa", "dino"):
                 result = run(model=model, skip_train=True, forecast_dataset=dataset,
                              pred_lens=[pred_len], checkpoints=["best"],
                              encoder_layers=encoder_layers,
-                             pretrain_source=pretrain_source)
-                return result[1] if result else None
-            elif model == "ntp":
-                result = run(model="ntp", skip_train=True, forecast_dataset=dataset,
-                             pred_len=pred_len, checkpoints=None,
-                             encoder_layers=encoder_layers,
-                             pretrain_source=pretrain_source)
-                return result[0] if isinstance(result, tuple) else result
-            elif model == "patchtst":
-                result = run(model="patchtst", skip_train=True, forecast_dataset=dataset,
-                             pred_len=pred_len, checkpoints=None,
-                             encoder_layers=encoder_layers,
-                             pretrain_source=pretrain_source)
-                return result[0] if isinstance(result, tuple) else result
+                             pretrain_source=pretrain_source,
+                             linear_probe=linear_probe)
+                return (result[1], None) if result else None
+            elif model in ("ntp", "patchtst", "patchtst_random"):
+                kwargs = dict(model=model, skip_train=True, forecast_dataset=dataset,
+                              pred_len=pred_len, encoder_layers=encoder_layers,
+                              pretrain_source=pretrain_source,
+                              linear_probe=linear_probe)
+                if model != "patchtst_random":
+                    kwargs["checkpoints"] = None
+                result = run(**kwargs)
+                if isinstance(result, tuple) and len(result) >= 2:
+                    return (result[0], result[1])
+                return (result, None) if result is not None else None
             elif model == "timedart":
                 result = run(model="timedart", skip_train=True, forecast_dataset=dataset,
                              pred_lens=[pred_len], encoder_layers=encoder_layers, gpu=gpu,
-                             pretrain_source=pretrain_source)
+                             pretrain_source=pretrain_source,
+                             linear_probe=linear_probe)
                 if isinstance(result, tuple) and len(result) >= 3:
-                    return (result[1], result[2])  # (mse, mae)
-                return result[1] if isinstance(result, tuple) else result
+                    return (result[1], result[2])
+                return (result[1], None) if isinstance(result, tuple) else None
         except Exception as e:
             print(f"[ERROR] {model}/{dataset}/pred{pred_len}/best: {e}")
             import traceback; traceback.print_exc()
@@ -399,8 +374,12 @@ def eval_best(model: str, dataset: str, pred_len: int,
 
 def run_model_worker(model: str, encoder_layers: int, gpu: int,
                      datasets: list, out_csv: Path, best_only: bool = False,
-                     pretrain_source: str = None):
+                     pretrain_source: str = None,
+                     linear_probe: bool = True,
+                     pred_lens: list = None):
     """Run full forecasting for one model at one layer config. Called in subprocess."""
+    if pred_lens is None:
+        pred_lens = PRED_LENS
     src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
     log_base = ROOT / "logs" / f"layer_forecast{src_tag}"
     fieldnames = ["model", "encoder_layers", "dataset", "pred_len", "mse", "mae", "timestamp"]
@@ -424,7 +403,7 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
     for dataset in datasets:
-        already_done = [(model, encoder_layers, dataset, pl) in existing for pl in PRED_LENS]
+        already_done = [(model, encoder_layers, dataset, pl) in existing for pl in pred_lens]
         if all(already_done):
             print(f"\n  {model}/layers{encoder_layers}/{dataset} — already complete, skipping.")
             continue
@@ -435,13 +414,15 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
             if best_only:
                 log_dir = log_base / f"layers{encoder_layers}" / model / dataset
                 mses = {}
-                for pl in PRED_LENS:
-                    mse = eval_best(model, dataset, pl, gpu, log_dir, encoder_layers, pretrain_source)
-                    if mse is not None:
-                        mses[pl] = mse
+                for pl in pred_lens:
+                    val = eval_best(model, dataset, pl, gpu, log_dir, encoder_layers,
+                                    pretrain_source, linear_probe=linear_probe)
+                    if val is not None:
+                        mses[pl] = val
             else:
                 mses = checkpoint_search(model, dataset, all_checkpoints,
-                                         gpu, log_base, encoder_layers, pretrain_source)
+                                         gpu, log_base, encoder_layers, pretrain_source,
+                                         linear_probe=linear_probe)
         except Exception as e:
             print(f"  [ERROR] {model}/layers{encoder_layers}/{dataset}: {e}")
             import traceback; traceback.print_exc()
@@ -480,9 +461,12 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
 
 def launch_worker(model: str, encoder_layers: int, gpu: int,
                   datasets: list, log_dir: Path, dry_run: bool,
-                  best_only: bool = False, pretrain_source: str = None):
+                  best_only: bool = False, pretrain_source: str = None,
+                  linear_probe: bool = True,
+                  pred_lens: list = None, out_csv_override: Path = None):
     src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
-    out_csv = ROOT / "results" / f"layer_forecast_{model}{src_tag}_layers{encoder_layers}.csv"
+    out_csv = out_csv_override if out_csv_override is not None else \
+              ROOT / "results" / f"layer_forecast_{model}{src_tag}_layers{encoder_layers}.csv"
     log_path = log_dir / f"{model}{src_tag}_layers{encoder_layers}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -494,11 +478,14 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
         "--gpu",            str(gpu),
         "--datasets",       *datasets,
         "--out_csv",        str(out_csv),
+        "--linear_probe",   str(linear_probe).lower(),
     ]
     if best_only:
         cmd.append("--best_only")
     if pretrain_source is not None:
         cmd += ["--pretrain_source", pretrain_source]
+    if pred_lens is not None:
+        cmd += ["--pred_lens", *[str(p) for p in pred_lens]]
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -520,7 +507,9 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
 
 def run_forecast_sweep(models: list, layer_configs: list,
                        datasets: list, dry_run: bool, gpu_override: int = None,
-                       best_only: bool = False, pretrain_source: str = None):
+                       best_only: bool = False, pretrain_source: str = None,
+                       linear_probe: bool = True,
+                       pred_lens: list = None, out_csv_override: Path = None):
     log_dir = ROOT / "logs" / "layer_forecast"
 
     # patchtst_random runs once (no layer sweep)
@@ -536,7 +525,9 @@ def run_forecast_sweep(models: list, layer_configs: list,
         for model in layered_models + random_models:
             gpu  = gpu_override if gpu_override is not None else MODEL_GPU[model]
             proc = launch_worker(model, n_layers, gpu, datasets, log_dir, dry_run,
-                                 best_only=best_only, pretrain_source=pretrain_source)
+                                 best_only=best_only, pretrain_source=pretrain_source,
+                                 linear_probe=linear_probe,
+                                 pred_lens=pred_lens, out_csv_override=out_csv_override)
             if proc is not None:
                 procs.append(proc)
 
@@ -576,14 +567,20 @@ def main():
                         help="Skip tournament — evaluate only the best checkpoint for all pred_lens")
     parser.add_argument("--pretrain_source", type=str, default=None,
                         choices=["monash", "synthetic", "monash+synthetic"],
-                        help="Pretrain data source for TimeDart checkpoint lookup (default: monash)")
+                        help="Pretrain data source for checkpoint lookup (default: monash)")
+    parser.add_argument("--linear_probe", type=_str2bool, default=True,
+                        help="True (head only; default) or False (fine-tune backbone + head)")
+    parser.add_argument("--pred_lens", nargs="+", type=int, default=None,
+                        help=f"Forecast horizons (default: {PRED_LENS}). "
+                             "Only takes effect with --best_only; tournament search uses fixed [96,192,336,720].")
+    parser.add_argument("--out_csv", type=str, default=None,
+                        help="Output CSV path (default: results/layer_forecast_{model}{src_tag}_layers{N}.csv per model)")
 
     # internal worker mode
     parser.add_argument("--_worker",        action="store_true",  help=argparse.SUPPRESS)
     parser.add_argument("--model",          type=str,             help=argparse.SUPPRESS)
     parser.add_argument("--encoder_layers", type=int,             help=argparse.SUPPRESS)
     parser.add_argument("--gpu",            type=int,             help=argparse.SUPPRESS)
-    parser.add_argument("--out_csv",        type=str,             help=argparse.SUPPRESS)
 
     args = parser.parse_args()
 
@@ -596,21 +593,29 @@ def main():
             out_csv=Path(args.out_csv),
             best_only=args.best_only,
             pretrain_source=args.pretrain_source,
+            linear_probe=args.linear_probe,
+            pred_lens=args.pred_lens,
         )
         return
 
     print(f"Layer forecast sweep")
-    print(f"  Models:   {args.models}")
-    print(f"  Layers:   {args.layers}")
-    print(f"  Datasets: {args.datasets}")
+    print(f"  Models:       {args.models}")
+    print(f"  Layers:       {args.layers}")
+    print(f"  Datasets:     {args.datasets}")
+    print(f"  linear_probe: {args.linear_probe}")
     if args.pretrain_source:
-        print(f"  Pretrain source: {args.pretrain_source}")
+        print(f"  Pretrain src: {args.pretrain_source}")
+    if args.pred_lens:
+        print(f"  pred_lens:    {args.pred_lens}")
     if args.dry_run:
         print("  DRY RUN\n")
 
     run_forecast_sweep(args.models, args.layers, args.datasets, args.dry_run,
                        gpu_override=args.gpu_override, best_only=args.best_only,
-                       pretrain_source=args.pretrain_source)
+                       pretrain_source=args.pretrain_source,
+                       linear_probe=args.linear_probe,
+                       pred_lens=args.pred_lens,
+                       out_csv_override=Path(args.out_csv) if args.out_csv else None)
 
 
 if __name__ == "__main__":

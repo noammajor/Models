@@ -1,14 +1,16 @@
 """Central dataset registry.
 
 Add a new entry to DATASETS to support a new CSV dataset.
-All paths resolve relative to  shared/forecasting_data/  so they work in
-Colab (after drive mount) and locally without editing path strings anywhere else.
+The forecasting CSV root comes from data_paths.DATA_PATHS["forecasting_data_dir"]
+— edit that file once when moving between machines.
 """
 
 import os
 from pathlib import Path
 
-_DATA_DIR = Path("/home/shared/datasets/forecasting_data")
+from data_paths import DATA_PATHS
+
+_DATA_DIR = Path(DATA_PATHS["forecasting_data_dir"])
 
 # JEPA groups variables into chunks of this many columns.
 # Every group must be the same size; the last group is padded by repeating

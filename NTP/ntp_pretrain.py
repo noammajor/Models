@@ -24,11 +24,11 @@ import torch
 from torch import nn
 
 # ── path setup ────────────────────────────────────────────────────────────────
-_NPT_DIR    = os.path.dirname(os.path.abspath(__file__))
-_ROOT_DIR   = os.path.dirname(_NPT_DIR)
+_NTP_DIR    = os.path.dirname(os.path.abspath(__file__))
+_ROOT_DIR   = os.path.dirname(_NTP_DIR)
 _SHARED_DIR  = os.path.join(_ROOT_DIR, 'shared')
 
-for _p in [_NPT_DIR, _ROOT_DIR, _SHARED_DIR]:
+for _p in [_NTP_DIR, _ROOT_DIR, _SHARED_DIR]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -80,7 +80,7 @@ def get_model(config, c_in, device):
 
 # ── save path ────────────────────────────────────────────────────────────────
 
-def _model_fname(config, dset):
+def _model_fname(config):
     return (
         f"ntp_pretrained"
         f"_patch{config['patch_size']}"
@@ -128,12 +128,12 @@ def pretrain_ntp(config, save_dir_override: str = None):
         if pretrain_dset in ('monash', 'monash+synthetic'):
             monash_dir = config['monash_data_dir']
             if not os.path.isabs(monash_dir):
-                monash_dir = os.path.normpath(os.path.join(_NPT_DIR, monash_dir))
+                monash_dir = os.path.normpath(os.path.join(_NTP_DIR, monash_dir))
             _cfg['monash_data_dir'] = monash_dir
         if pretrain_dset in ('synthetic', 'monash+synthetic'):
             synth_dir = config['synthetic_data_dir']
             if not os.path.isabs(synth_dir):
-                synth_dir = os.path.normpath(os.path.join(_NPT_DIR, synth_dir))
+                synth_dir = os.path.normpath(os.path.join(_NTP_DIR, synth_dir))
             _cfg['synthetic_data_dir'] = synth_dir
 
         if pretrain_dset in ('monash', 'monash+synthetic'):
@@ -151,7 +151,6 @@ def pretrain_ntp(config, save_dir_override: str = None):
         c_in = 1
     else:
         from dataset_registry import get_dataset_info
-        sys.path.insert(0, _ROOT_DIR)
         ds = get_dataset_info(pretrain_dset)
         n_groups = len(ds['jepa_groups'])
         _cfg = dict(config,
@@ -186,10 +185,11 @@ def pretrain_ntp(config, save_dir_override: str = None):
         optimizer, T_max=config['num_epochs'], eta_min=config['lr'] * 0.1)
     loss_fn = nn.MSELoss()
 
-    save_dir  = save_dir_override if save_dir_override is not None else \
-                os.path.join(_NPT_DIR, 'saved_models', pretrain_dset, 'ntp', f"layers{config['n_layers']}")
+    # Save-path priority: function arg > config["path_save"] > default.
+    save_dir = save_dir_override or config.get("path_save") or \
+               os.path.join(_NTP_DIR, 'saved_models', pretrain_dset, 'ntp', f"layers{config['n_layers']}")
     os.makedirs(save_dir, exist_ok=True)
-    save_name = _model_fname(config, pretrain_dset)
+    save_name = _model_fname(config)
 
     best_val_loss = float('inf')
     records = []
@@ -255,7 +255,7 @@ def pretrain_ntp(config, save_dir_override: str = None):
 if __name__ == '__main__':
     import importlib.util
     _spec = importlib.util.spec_from_file_location(
-        'config_ntp', os.path.join(_NPT_DIR, 'config_ntp.py'))
+        'config_ntp', os.path.join(_NTP_DIR, 'config_ntp.py'))
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     pretrain_ntp(dict(_mod.config))

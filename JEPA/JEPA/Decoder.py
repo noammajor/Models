@@ -84,13 +84,13 @@ class PredictionHead(nn.Module):
         if self.individual:
             x_out = []
             for i in range(self.n_vars):
-                z = self.flattens[i](x[:, i, :, :])   # [bs x d_model * num_patch]
-                z = self.linears[i](z)                  # [bs x forecast_len]
+                z = self.flattens[i](x[:, i, :, :])
+                z = self.linears[i](z)
                 z = self.dropouts[i](z)
                 x_out.append(z)
-            x = torch.stack(x_out, dim=1)              # [bs x nvars x forecast_len]
+            x = torch.stack(x_out, dim=1)
         else:
-            x = self.flatten(x)                        # [bs x nvars x (d_model * num_patch)]
+            x = self.flatten(x)
             x = self.dropout(x)
-            x = self.linear(x)                         # [bs x nvars x forecast_len]
-        return x.transpose(2, 1)                       # [bs x forecast_len x nvars]
+            x = self.linear(x)
+        return x.transpose(2, 1) 

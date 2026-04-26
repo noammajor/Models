@@ -1,15 +1,16 @@
 """
-Zero-shot forecasting for NTP (Next-Token Patch Prediction).
+Forecasting for NTP (Next-Token Patch Prediction).
 
 Pipeline
 --------
-1. Load the pretrained NTP backbone (PatchTSTEncoder, frozen).
+1. Load the pretrained NTP backbone (PatchTSTEncoder; frozen by default,
+   unfrozen if linear_probe=False).
 2. Attach a PredictionHead trained on (context_patches → forecast).
-3. Train only the head on the forecasting dataset's train split.
+3. Train the head (and optionally the backbone) on the forecasting dataset's train split.
 4. Evaluate MSE / MAE on the test split and save plots.
 
-Data format (ForcastingDataPullerDescrete)
-------------------------------------------
+Data format (PatchTSTForcastingAdapter)
+---------------------------------------
   context_patches : [B x context_size x patch_size x n_vars]
   target_patch    : [B x horizon_t   x patch_size x n_vars]
 
@@ -38,7 +39,7 @@ for _p in [_NTP_DIR, _ROOT_DIR, _SHARED_DIR]:
         sys.path.insert(0, _p)
 
 from models.patchTST import PatchTST
-from data_loaders.data_puller import ForcastingDataPullerDescrete, PatchTSTForcastingAdapter
+from data_loaders.data_puller import PatchTSTForcastingAdapter
 
 
 def _instance_norm(x, eps=1e-6):
@@ -88,18 +89,19 @@ def _get_forecasting_model(config, c_in, forecast_len, device):
 
 # ── main entry point ──────────────────────────────────────────────────────────
 
-def zeroshot_forecasting(config, checkpoint_path, linear_probe=True):
+def forecasting(config, checkpoint_path, linear_probe=True):
     """
-    Zero-shot forecasting: frozen NTP backbone + trained PredictionHead.
+    Forecasting with NTP backbone + trained PredictionHead.
 
     Parameters
     ----------
     config          : dict from config_ntp.py (with forecasting keys added)
     checkpoint_path : path to the pretrained .pth file
+    linear_probe    : if True, freeze backbone and train only head. If False, fine-tune backbone + head.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\n{'='*60}")
-    print("  NTP — Zero-Shot Forecasting")
+    print("  NTP — Forecasting")
     print(f"  checkpoint : {checkpoint_path}")
     print(f"  device     : {device}")
     print(f"{'='*60}")
@@ -111,7 +113,6 @@ def zeroshot_forecasting(config, checkpoint_path, linear_probe=True):
     ds_fore = get_dataset_info(forecast_dset)
     n_vars  = ds_fore["c_in"]
 
-    # Build a config compatible with ForcastingDataPullerDescrete
     patch_size   = config["patch_size"]
     horizon_t    = config.get("horizon_t", 4)
     forecast_len = horizon_t * patch_size
@@ -119,18 +120,9 @@ def zeroshot_forecasting(config, checkpoint_path, linear_probe=True):
     # context_patches is fixed regardless of pred_len so the backbone always
     # has the same num_patch as the pretrained checkpoint (W_pos shape is stable)
     context_patches = config.get("context_patches", config["ratio_patches"] - horizon_t)
-    fore_cfg = dict(config)
-    fore_cfg["ratio_patches"]               = context_patches  # data loader uses this as context size
-    fore_cfg["patch_size_forcasting"]       = patch_size
-    fore_cfg["horizon_t"]                   = horizon_t
-    fore_cfg["val_prec_forcasting"]         = config.get("val_prec_forcasting",  config.get("val_prec",  0.1))
-    fore_cfg["test_prec_forcasting"]        = config.get("test_prec_forcasting", config.get("test_prec", 0.1))
-    fore_cfg["window_step_forecasting"]     = config.get("window_step_forecasting", 1)
-    fore_cfg["path_data_forcasting"]        = [ds_fore["csv_path"]]
-    fore_cfg["timestampcols_forcasting"]    = [ds_fore["timestamp_col"]]
-    fore_cfg["input_variables_forcasting"]  = [ds_fore["columns"]]
+    # Override num_patch on the model config (ratio_patches → context size).
+    fore_cfg = dict(config, ratio_patches=context_patches)
 
-    lr_head        = config.get("lr_forcasting",     1e-4)
     epochs_head    = config.get("epochs_forecasting", 20)
     batch_size     = config["batch_size"]
 
@@ -138,12 +130,12 @@ def zeroshot_forecasting(config, checkpoint_path, linear_probe=True):
     print(f"  context={context_patches} patches × {patch_size} = "
           f"{context_patches * patch_size} steps")
     print(f"  horizon={horizon_t} patches × {patch_size} = {forecast_len} steps")
-    print(f"  head lr={lr_head}  epochs={epochs_head}\n")
+    print(f"  epochs={epochs_head}\n")
 
     # ── data loaders (PatchTST-identical splits/normalization) ───────────────
     _seq_len  = context_patches * patch_size   # = 21 * 16 = 336
     _pred_len = horizon_t * patch_size
-    _csv_path = fore_cfg["path_data_forcasting"][0]
+    _csv_path = ds_fore["csv_path"]
 
     train_fc = PatchTSTForcastingAdapter(_csv_path, 'train', _seq_len, _pred_len, patch_size)
     val_fc   = PatchTSTForcastingAdapter(_csv_path, 'val',   _seq_len, _pred_len, patch_size)
@@ -189,17 +181,16 @@ def zeroshot_forecasting(config, checkpoint_path, linear_probe=True):
         print(f"  Trainable: {trainable:,} / {trainable:,} params\n")
 
     # ── train prediction head (and optionally backbone) ───────────────────────
-    # LR priority: config (user-set) > env var (script default).
+    # LR: config value if set, else hardcoded default.
     _cfg_head_lr = config.get("lr_forcasting")
     _cfg_enc_lr  = config.get("lr_forcasting_encoder")
-    lr_head = float(_cfg_head_lr if _cfg_head_lr is not None
-                    else os.environ["TS_FINETUNE_HEAD_LR"])
-    enc_lr  = float(_cfg_enc_lr  if _cfg_enc_lr  is not None
-                    else os.environ.get("TS_PRETRAIN_LR", lr_head))
+    lr_head = float(_cfg_head_lr) if _cfg_head_lr is not None else 0.0001
+    enc_lr  = float(_cfg_enc_lr)  if _cfg_enc_lr  is not None else lr_head
     if linear_probe:
         optimizer = torch.optim.Adam(model.head.parameters(),
                                      lr=lr_head, weight_decay=1e-4)
         _max_lrs  = lr_head
+        print(f"  [NTP forecast] head_lr={lr_head}")
     else:
         optimizer = torch.optim.Adam([
             {"params": model.head.parameters(),     "lr": lr_head},
@@ -301,7 +292,7 @@ def zeroshot_forecasting(config, checkpoint_path, linear_probe=True):
     mse = F.mse_loss(all_preds, all_targets).item()
     mae = F.l1_loss(all_preds,  all_targets).item()
     last_batch = (all_preds[-1:], all_targets[-1:])
-    print(f"\n  [NTP Zero-Shot — {forecast_dset}]")
+    print(f"\n  [NTP Forecast — {forecast_dset}]")
     print(f"  MSE : {mse:.4f}")
     print(f"  MAE : {mae:.4f}")
 
@@ -320,7 +311,7 @@ def zeroshot_forecasting(config, checkpoint_path, linear_probe=True):
         plt.figure(figsize=(15, 5))
         plt.plot(gt,   label="Ground Truth", color="black", alpha=0.7, linewidth=2)
         plt.plot(pred, label="NTP Forecast", color="blue",  linestyle="--", alpha=0.9)
-        plt.title(f"NTP Zero-Shot — {forecast_dset} — Variable {var_idx} "
+        plt.title(f"NTP Forecast — {forecast_dset} — Variable {var_idx} "
                   f"({forecast_len} steps)")
         plt.xlabel("Time Steps")
         plt.ylabel("Value")

@@ -1,8 +1,9 @@
 """
 PatchTST anomaly detection (reconstruction-based).
 
-Frozen pretrained PatchTST backbone + linear reconstruction decoder trained on
-normal data only. Anomaly score = per-timestep reconstruction MSE.
+Pretrained PatchTST backbone (frozen by default; unfrozen if linear_probe=False)
++ linear reconstruction decoder trained on normal data only.
+Anomaly score = per-timestep reconstruction MSE.
 Threshold = percentile of combined train+test energy.
 """
 
@@ -60,10 +61,11 @@ def _adjustment(gt, pred):
     return gt, pred
 
 
-def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
-                     anomaly_ratio: float = 1.0, linear_probe: bool = True):
+def anomaly_detection(config, checkpoint_path, anomaly_train, anomaly_test,
+                      anomaly_ratio: float = 1.0, linear_probe: bool = True):
     """
-    Reconstruction-based anomaly detection with frozen PatchTST backbone.
+    Reconstruction-based anomaly detection with PatchTST backbone
+    (frozen by default; unfrozen if linear_probe=False).
 
     Args:
         config         : dict from config_patchtst.py
@@ -71,6 +73,7 @@ def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
         anomaly_train  : DataLoader — batches of patches [B, P, patch_size, n_vars]
         anomaly_test   : DataLoader — batches of (patches, labels [B, T])
         anomaly_ratio  : top-X% of combined energy flagged as anomaly
+        linear_probe   : if True, freeze backbone and train only decoder. If False, fine-tune backbone + decoder.
     Returns:
         dict with f1, precision, recall, accuracy, threshold
     """

@@ -2,26 +2,27 @@
 """
 run_layer_sweep.py — Pretrain all models across multiple layer depths.
 
-For each encoder layer config [2, 6, 12, 24], all models are launched in
+For each encoder layer config [2, 4, 8, 12, 24], all models are launched in
 parallel (one per GPU). The script waits for all to finish before moving
 to the next layer config.
 
 Predictor layers (JEPA models) are always half the encoder layers:
     encoder  2  →  predictor  1
-    encoder  6  →  predictor  3
+    encoder  4  →  predictor  2
+    encoder  8  →  predictor  4
     encoder 12  →  predictor  6
     encoder 24  →  predictor 12
 
 Checkpoints are saved under layer-suffixed paths, e.g.:
-    output_model/JEPA_layers6/
-    output_model/LE-JEPA_layers6/
-    checkpoints_layers6/
+    output_model/JEPA_layers8/
+    output_model/LE-JEPA_layers8/
+    checkpoints_layers8/
 
 Usage:
     python run_layer_sweep.py                          # all models, all layer configs
-    python run_layer_sweep.py --layers 6 12            # specific layer counts
+    python run_layer_sweep.py --layers 8 12            # specific layer counts
     python run_layer_sweep.py --models dino lejepa     # specific models
-    python run_layer_sweep.py --layers 6 --dry_run     # print commands only
+    python run_layer_sweep.py --layers 8 --dry_run     # print commands only
 """
 
 import argparse
@@ -55,8 +56,8 @@ DINO_LAYER_LR = {
     24: 1e-4,
 }
 
-# NTP and PatchTST use Adam — lower LR, scale down aggressively with depth.
-NPT_PATCHTST_LAYER_LR = {
+# NTP, PatchTST, and TimeDart use Adam — lower LR, scale down aggressively with depth.
+NTP_PATCHTST_TIMEDART_LAYER_LR = {
     2:  3e-4,
     4:  1e-4,
     8:  5e-5,
@@ -67,7 +68,7 @@ NPT_PATCHTST_LAYER_LR = {
 # Model → GPU assignment (change to fit your server)
 MODEL_GPU = {
     "dino":       0,
-    "jepa":1,
+    "jepa":       1,
     "lejepa":     2,
     "patchtst":   3,
     "ntp":        4,
@@ -84,19 +85,20 @@ def predictor_layers_for(encoder_layers: int) -> int:
 def launch_model(model: str, encoder_layers: int, gpu: int,
                  log_dir: Path, dry_run: bool, pretrain_source: str = None):
     pred_layers = predictor_layers_for(encoder_layers)
+    # For unlisted depths, fall back to the 8-layer LR (mid-range default).
     if model == "dino":
-        lr = DINO_LAYER_LR[encoder_layers]
+        lr = DINO_LAYER_LR.get(encoder_layers, DINO_LAYER_LR[8])
     elif model in ("ntp", "patchtst", "timedart"):
-        lr = NPT_PATCHTST_LAYER_LR[encoder_layers]
+        lr = NTP_PATCHTST_TIMEDART_LAYER_LR.get(encoder_layers,
+                                                NTP_PATCHTST_TIMEDART_LAYER_LR[8])
     else:
-        lr = LAYER_LR[encoder_layers]
+        lr = LAYER_LR.get(encoder_layers, LAYER_LR[8])
     src_tag   = f"_{pretrain_source}" if pretrain_source and pretrain_source != "monash" else ""
     log_path  = log_dir / f"{model}{src_tag}_layers{encoder_layers}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    _python = str(Path(sys.executable).parent / "python")
     cmd = [
-        _python,
+        sys.executable,
         str(ROOT / "Train_and_downstream.py"),
         "--model",            model,
         "--pretrain_only",    "true",
@@ -173,16 +175,12 @@ def main():
                         help="Print commands without running them")
     parser.add_argument("--pretrain_source", type=str, default=None,
                         choices=["monash", "synthetic", "monash+synthetic"],
-                        help="Override pretrain data source (dino only). Checkpoints saved to a separate folder.")
-    parser.add_argument("--dino_gpu", type=int, default=None,
-                        help="Override GPU for DINO (default: 0)")
+                        help="Override pretrain data source. Checkpoints saved to a separate folder.")
     parser.add_argument("--gpu_override", type=int, default=None,
                         help="Override GPU for all models in this run")
     args = parser.parse_args()
 
     gpu_overrides = {}
-    if args.dino_gpu is not None:
-        gpu_overrides["dino"] = args.dino_gpu
     if args.gpu_override is not None:
         for m in (args.models or ALL_MODELS):
             gpu_overrides[m] = args.gpu_override

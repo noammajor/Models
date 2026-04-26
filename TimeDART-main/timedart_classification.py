@@ -1,10 +1,11 @@
 """
-TimeDaRT linear-probe classification.
+TimeDaRT classification.
 
-Frozen pretrained TimeDaRT (Model) backbone + ClassificationHead.
+Pretrained TimeDaRT (Model) backbone (frozen by default; unfrozen if
+linear_probe=False) + ClassificationHead.
 Identical pattern to JEPA / LE-JEPA / NTP / PatchTST:
   - Channel-independent PatchEmbedding (same as pretrain)
-  - CausalTransformer encoder (frozen, weights loaded from checkpoint)
+  - CausalTransformer encoder
   - ClassificationHead: last patch → flatten(n_vars * d_model) → dropout → linear → n_classes
 """
 
@@ -105,12 +106,12 @@ def _encode(model, x, padding_mask=None):
     return x.permute(0, 1, 3, 2)            # [B, C, d_model, P]
 
 
-def classification_zeroshot(config, checkpoint_path,
-                             classification_train, classification_val,
-                             classification_test, n_classes,
-                             linear_probe=True):
+def classification(config, checkpoint_path,
+                   classification_train, classification_val,
+                   classification_test, n_classes,
+                   linear_probe=True):
     """
-    Linear-probe classification with frozen TimeDaRT encoder.
+    Classification with TimeDaRT encoder.
 
     Args:
         config               : dict from config_timedart.py
@@ -119,12 +120,13 @@ def classification_zeroshot(config, checkpoint_path,
                                each batch: (patches [B, P, PL, n_vars], labels [B],
                                             padding_mask [B, P])
         n_classes            : total number of target classes
+        linear_probe         : if True, freeze backbone and train only head. If False, fine-tune backbone + head.
     Returns:
         test accuracy (float)
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    print(f"\n=== TimeDaRT Classification (linear probe) ===")
+    print(f"\n=== TimeDaRT Classification ===")
     print(f"Loading checkpoint: {checkpoint_path}")
 
     sample_patches, _, _ = next(iter(classification_train))

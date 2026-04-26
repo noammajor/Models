@@ -31,16 +31,15 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(ROOT))
 
-ENCODER_LAYERS   = 8
-PREDICTOR_LAYERS = 4       # half of encoder layers
-NUM_PATCHES      = 72      # 72 × 16 = 1152 timesteps
-PATCH_SIZE       = 16
-CONTEXT_WINDOW   = NUM_PATCHES * PATCH_SIZE   # 1152
+DEFAULT_ENCODER_LAYERS   = 8
+DEFAULT_PREDICTOR_LAYERS = 4       # half of encoder layers
+DEFAULT_NUM_PATCHES      = 72      # 72 × 16 = 1152 timesteps
+DEFAULT_PATCH_SIZE       = 16
 
 # Per-model LR (same as run_layer_sweep.py for 8-layer configs)
 MODEL_LR = {
     "dino":        5e-4,
-    "jepa": 5e-4,
+    "jepa":        5e-4,
     "lejepa":      5e-4,
     "patchtst":    5e-5,
     "ntp":         5e-5,
@@ -49,7 +48,7 @@ MODEL_LR = {
 
 MODEL_GPU = {
     "dino":        0,
-    "jepa": 1,
+    "jepa":        1,
     "lejepa":      2,
     "patchtst":    3,
     "ntp":         4,
@@ -60,9 +59,12 @@ ALL_MODELS = list(MODEL_GPU.keys())
 
 
 def launch_model(model: str, gpu: int, pretrain_source: str,
-                 log_dir: Path, dry_run: bool):
+                 log_dir: Path, dry_run: bool,
+                 encoder_layers: int, predictor_layers: int,
+                 num_patches: int, patch_size: int):
     lr = MODEL_LR[model]
-    log_path = log_dir / f"{model}_layers{ENCODER_LAYERS}_{pretrain_source}_cw{CONTEXT_WINDOW}.log"
+    cw = num_patches * patch_size
+    log_path = log_dir / f"{model}_layers{encoder_layers}_{pretrain_source}_cw{cw}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
@@ -70,9 +72,9 @@ def launch_model(model: str, gpu: int, pretrain_source: str,
         str(ROOT / "Train_and_downstream.py"),
         "--model",            model,
         "--pretrain_only",    "true",
-        "--encoder_layers",   str(ENCODER_LAYERS),
-        "--predictor_layers", str(PREDICTOR_LAYERS),
-        "--num_patches",      str(NUM_PATCHES),
+        "--encoder_layers",   str(encoder_layers),
+        "--predictor_layers", str(predictor_layers),
+        "--num_patches",      str(num_patches),
         "--lr",               str(lr),
         "--pretrain_source",  pretrain_source,
     ]
@@ -80,8 +82,8 @@ def launch_model(model: str, gpu: int, pretrain_source: str,
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
-    print(f"  [{model:12s}] GPU={gpu}  layers={ENCODER_LAYERS}  "
-          f"num_patches={NUM_PATCHES}  cw={CONTEXT_WINDOW}  lr={lr}"
+    print(f"  [{model:12s}] GPU={gpu}  layers={encoder_layers}  "
+          f"num_patches={num_patches}  cw={cw}  lr={lr}"
           f"  log={log_path.relative_to(ROOT)}")
 
     if dry_run:
@@ -98,10 +100,7 @@ def launch_model(model: str, gpu: int, pretrain_source: str,
 
 def main():
     parser = argparse.ArgumentParser(
-        description=(
-            f"Pre-train {ENCODER_LAYERS}-layer encoders (all models) "
-            f"with {CONTEXT_WINDOW}-timestep context for classification"
-        )
+        description="Pre-train encoders with a long context window for classification"
     )
     parser.add_argument("--models", nargs="+", default=ALL_MODELS,
                         choices=ALL_MODELS, metavar="MODEL",
@@ -109,21 +108,30 @@ def main():
     parser.add_argument("--pretrain_source", type=str, default="monash",
                         choices=["monash", "synthetic", "monash+synthetic"],
                         help="Pre-training data source (default: monash)")
+    parser.add_argument("--encoder_layers",   type=int, default=DEFAULT_ENCODER_LAYERS,
+                        help=f"Encoder depth (default: {DEFAULT_ENCODER_LAYERS})")
+    parser.add_argument("--predictor_layers", type=int, default=DEFAULT_PREDICTOR_LAYERS,
+                        help=f"Predictor depth (default: {DEFAULT_PREDICTOR_LAYERS})")
+    parser.add_argument("--num_patches",      type=int, default=DEFAULT_NUM_PATCHES,
+                        help=f"Number of patches in the context window (default: {DEFAULT_NUM_PATCHES})")
+    parser.add_argument("--patch_size",       type=int, default=DEFAULT_PATCH_SIZE,
+                        help=f"Patch size (default: {DEFAULT_PATCH_SIZE}). Used for log naming + cw display; "
+                             "actual patch size is set by each model's config file.")
     parser.add_argument("--gpu_override", type=int, default=None,
-                        help="Run all models on this single GPU (serial). "
-                             "Default: each model on its own GPU (parallel).")
+                        help="Run the task on this GPU (overrides per-model assignment).")
     parser.add_argument("--dry_run", action="store_true",
                         help="Print commands without running them")
     args = parser.parse_args()
 
+    cw = args.num_patches * args.patch_size
     log_dir = ROOT / "logs" / "cls_encoder_pretrain"
 
     print("=" * 60)
     print(f"  Classification encoder pre-training")
-    print(f"  encoder_layers  : {ENCODER_LAYERS}")
-    print(f"  predictor_layers: {PREDICTOR_LAYERS}")
-    print(f"  num_patches     : {NUM_PATCHES}  (context = {CONTEXT_WINDOW} timesteps)")
-    print(f"  patch_size      : {PATCH_SIZE}")
+    print(f"  encoder_layers  : {args.encoder_layers}")
+    print(f"  predictor_layers: {args.predictor_layers}")
+    print(f"  num_patches     : {args.num_patches}  (context = {cw} timesteps)")
+    print(f"  patch_size      : {args.patch_size}")
     print(f"  models          : {args.models}")
     print(f"  pretrain_source : {args.pretrain_source}")
     if args.dry_run:
@@ -133,7 +141,11 @@ def main():
     procs = []
     for model in args.models:
         gpu = args.gpu_override if args.gpu_override is not None else MODEL_GPU[model]
-        proc = launch_model(model, gpu, args.pretrain_source, log_dir, args.dry_run)
+        proc = launch_model(model, gpu, args.pretrain_source, log_dir, args.dry_run,
+                            encoder_layers=args.encoder_layers,
+                            predictor_layers=args.predictor_layers,
+                            num_patches=args.num_patches,
+                            patch_size=args.patch_size)
         if proc is not None:
             procs.append(proc)
 

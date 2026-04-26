@@ -36,7 +36,6 @@ sys.path.insert(0, str(ROOT))
 SEEDS            = [2003, 123, 456, 789, 1337]
 ENCODER_LAYERS   = 8
 PRETRAIN_SOURCE  = "monash"
-LR               = 5e-4   # LAYER_LR[8] from run_layer_sweep.py
 CLS_NUM_PATCHES  = 72     # 72 × 16 = 1152 ts — covers longest UEA dataset (SelfRegulationSCP2)
 
 FORECAST_DATASETS     = ["etth1", "etth2", "ettm1", "ettm2", "weather", "electricity", "traffic"]
@@ -47,10 +46,10 @@ CLASSIFICATION_DATASETS = [
 ]
 ANOMALY_DATASETS = ["SMD", "MSL", "SMAP", "SWaT", "PSM"]
 
-# Per-model LR overrides (from run_layer_sweep.py LAYER_LR / NPT_PATCHTST_LAYER_LR)
+# Per-model LR overrides (from run_layer_sweep.py LAYER_LR / NTP_PATCHTST_TIMEDART_LAYER_LR)
 MODEL_LR = {
     "dino":        5e-4,
-    "jepa": 5e-4,
+    "jepa":        5e-4,
     "lejepa":      5e-4,
     "patchtst":    5e-5,
     "ntp":         5e-5,
@@ -59,7 +58,7 @@ MODEL_LR = {
 
 MODEL_GPU = {
     "dino":        0,
-    "jepa": 1,
+    "jepa":        1,
     "lejepa":      2,
     "patchtst":    3,
     "ntp":         4,
@@ -67,8 +66,6 @@ MODEL_GPU = {
 }
 
 ALL_MODELS = list(MODEL_GPU.keys())
-
-_python = str(Path(sys.executable).parent / "python")
 
 
 # ── subprocess launcher ───────────────────────────────────────────────────────
@@ -96,7 +93,7 @@ def pretrain_cls_cmd(model: str, seed: int, pretrain_source: str) -> list:
     pred_layers = max(1, ENCODER_LAYERS // 2)
     lr = MODEL_LR[model]
     return [
-        _python, str(ROOT / "Train_and_downstream.py"),
+        sys.executable, str(ROOT / "Train_and_downstream.py"),
         "--model",            model,
         "--pretrain_only",    "true",
         "--encoder_layers",   str(ENCODER_LAYERS),
@@ -108,11 +105,11 @@ def pretrain_cls_cmd(model: str, seed: int, pretrain_source: str) -> list:
     ]
 
 
-def pretrain_cmd(model: str, seed: int, gpu: int, pretrain_source: str) -> list:
+def pretrain_cmd(model: str, seed: int, pretrain_source: str) -> list:
     pred_layers = max(1, ENCODER_LAYERS // 2)
     lr = MODEL_LR[model]
     return [
-        _python, str(ROOT / "Train_and_downstream.py"),
+        sys.executable, str(ROOT / "Train_and_downstream.py"),
         "--model",            model,
         "--pretrain_only",    "true",
         "--encoder_layers",   str(ENCODER_LAYERS),
@@ -123,9 +120,9 @@ def pretrain_cmd(model: str, seed: int, gpu: int, pretrain_source: str) -> list:
     ]
 
 
-def forecast_cmd(model: str, dataset: str, seed: int, gpu: int, pretrain_source: str) -> list:
+def forecast_cmd(model: str, dataset: str, seed: int, pretrain_source: str) -> list:
     return [
-        _python, str(ROOT / "Train_and_downstream.py"),
+        sys.executable, str(ROOT / "Train_and_downstream.py"),
         "--model",           model,
         "--task",            "forecast",
         "--forecast_dataset", dataset,
@@ -135,9 +132,9 @@ def forecast_cmd(model: str, dataset: str, seed: int, gpu: int, pretrain_source:
     ]
 
 
-def classify_cmd(model: str, dataset: str, seed: int, gpu: int, pretrain_source: str) -> list:
+def classify_cmd(model: str, dataset: str, seed: int, pretrain_source: str) -> list:
     return [
-        _python, str(ROOT / "Train_and_downstream.py"),
+        sys.executable, str(ROOT / "Train_and_downstream.py"),
         "--model",                    model,
         "--task",                     "classify",
         "--classification_dataset",   dataset,
@@ -148,9 +145,9 @@ def classify_cmd(model: str, dataset: str, seed: int, gpu: int, pretrain_source:
     ]
 
 
-def anomaly_cmd(model: str, dataset: str, seed: int, gpu: int, pretrain_source: str) -> list:
+def anomaly_cmd(model: str, dataset: str, seed: int, pretrain_source: str) -> list:
     return [
-        _python, str(ROOT / "Train_and_downstream.py"),
+        sys.executable, str(ROOT / "Train_and_downstream.py"),
         "--model",           model,
         "--task",            "anomaly",
         "--anomaly_dataset", dataset,
@@ -182,7 +179,7 @@ def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
 
     if "pretrain" in phases and not skip_pretrain:
         # 1a — standard pretrain (forecasting/anomaly context)
-        _step(_launch(pretrain_cmd(model, seed, gpu, pretrain_source),
+        _step(_launch(pretrain_cmd(model, seed, pretrain_source),
                       gpu, log_base / f"seed{seed}" / f"pretrain_{model}.log",
                       dry_run, f"pretrain/{model}/seed{seed}"))
 
@@ -193,20 +190,20 @@ def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
 
     if "forecast" in phases:
         for dataset in forecast_datasets:
-            _step(_launch(forecast_cmd(model, dataset, seed, gpu, pretrain_source),
+            _step(_launch(forecast_cmd(model, dataset, seed, pretrain_source),
                           gpu, log_base / f"seed{seed}" / f"forecast_{model}_{dataset}.log",
                           dry_run, f"forecast/{model}/{dataset}/seed{seed}"))
 
     if "classify" in phases:
         for dataset in classification_datasets:
-            _step(_launch(classify_cmd(model, dataset, seed, gpu, pretrain_source),
+            _step(_launch(classify_cmd(model, dataset, seed, pretrain_source),
                           gpu, log_base / f"seed{seed}" / f"cls_{model}_{dataset}.log",
                           dry_run, f"cls/{model}/{dataset}/seed{seed}"))
 
     if "anomaly" in phases:
         procs = []
         for dataset in ANOMALY_DATASETS:
-            proc = _launch(anomaly_cmd(model, dataset, seed, gpu, pretrain_source),
+            proc = _launch(anomaly_cmd(model, dataset, seed, pretrain_source),
                            gpu, log_base / f"seed{seed}" / f"anom_{model}_{dataset}.log",
                            dry_run, f"anom/{model}/{dataset}/seed{seed}")
             if proc:

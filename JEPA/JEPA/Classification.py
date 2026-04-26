@@ -106,10 +106,10 @@ def classification(self, path, classification_train, classification_val,
 
     n_epochs    = config.get("epoch_classification", 20)
     _all_params = list(self.encoder_for.parameters()) + list(cls_head.parameters())
-    import os as _os
-    _cfg_head_lr = config.get("lr_classification", 1e-3)
-    head_lr = float(_os.environ.get("TS_FINETUNE_HEAD_LR", _cfg_head_lr)) if not linear_probe else _cfg_head_lr
-    enc_lr  = float(_os.environ.get("TS_PRETRAIN_LR", head_lr))
+    _cfg_head_lr = config.get("lr_classification")
+    _cfg_enc_lr  = config.get("lr_classification_encoder")
+    head_lr = float(_cfg_head_lr) if _cfg_head_lr is not None else 1e-3
+    enc_lr  = float(_cfg_enc_lr)  if _cfg_enc_lr  is not None else head_lr
     if linear_probe:
         optimizer = torch.optim.Adam(cls_head.parameters(),
                                      lr=head_lr, weight_decay=1e-4)

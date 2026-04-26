@@ -1,3 +1,4 @@
+# Configuration dictionary for NTP pretraining and downstream tasks.
 config = {
     # ── Datasets ──────────────────────────────────────────────────────────────
     "pretrain_dataset":  "monash",
@@ -6,10 +7,7 @@ config = {
     # ── Pretraining data source ───────────────────────────────────────────────
     # pretrain_source: "monash" | "synthetic" | "monash+synthetic"
     "pretrain_source":    "monash",
-    "monash_data_dir":    "/home/shared/datasets/Monash",
-    "monash_min_len":     512,
-    "synthetic_data_dir": "/home/shared/datasets/synthetic_data_TS",  # dir containing .arrow files
-    "synthetic_mix_data_dir": "/home/shared/datasets/synthetic_TS_Mix",  # smaller curated set for monash+synthetic
+    #put in your paths for the datasets here if different from the defaults
 
     # ── Patching (JEPA-style data loader) ─────────────────────────────────────
     # patch_size  = length of each patch (≡ patch_len in PatchTST)
@@ -40,16 +38,29 @@ config = {
     "revin":         True,
     "num_workers":   4,
 
-    # ── Zero-Shot Forecasting ─────────────────────────────────────────────────
+    # ── Forecasting ───────────────────────────────────────────────────────────
     # horizon_t          = number of future patches to forecast
     # patch_size_forcasting is automatically set to patch_size at runtime
     "horizon_t":              6,     # 6 patches × 16 = 96-step horizon
-    "val_prec_forcasting":    0.1,
-    "test_prec_forcasting":   0.1,
-    "window_step_forecasting": 1,    # stride between forecasting windows
-    "lr_forcasting":          1e-4,
+    "lr_forcasting":          1e-4,  # head LR for forecasting
+    "lr_forcasting_encoder":  None,  # encoder LR when fine-tuning (linear_probe=False); None → env var
     "epochs_forecasting":     20,
+
+    # ── Classification ────────────────────────────────────────────────────────
+    "epoch_classification":      20,
+    "lr_classification":         None,  # head LR; None → env var (TS_FINETUNE_HEAD_LR)
+    "lr_classification_encoder": None,  # encoder LR when fine-tuning; None → env var (TS_PRETRAIN_LR)
+
+    # ── Anomaly Detection ─────────────────────────────────────────────────────
+    "epoch_anomaly":         10,
+    "lr_anomaly":            None,  # head LR; None → env var (TS_FINETUNE_HEAD_LR)
+    "lr_anomaly_encoder":    None,  # encoder LR when fine-tuning; None → env var (TS_PRETRAIN_LR)
 
     # ── Misc ──────────────────────────────────────────────────────────────────
     "pretrained_model_id": 1,
+
+    # ── Save path ─────────────────────────────────────────────────────────────
+    # If None, defaults to: NTP/saved_models/{pretrain_source}/ntp/layers{n_layers}/
+    # Set to a directory string to override.
+    "path_save":      None,
 }

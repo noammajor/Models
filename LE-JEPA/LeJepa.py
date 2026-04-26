@@ -13,7 +13,7 @@ from Training import (
     save_model,
     train_and_evaluate,
 )
-from Forecasting import forcasting_zeroshot
+from Forecasting import forecasting
 
 # Load Classification explicitly from LE-JEPA's own directory to avoid
 # picking up JEPA/JEPA/Classification.py when JEPA/JEPA is on sys.path.
@@ -21,13 +21,13 @@ _cls_path = Path(__file__).parent / "Classification.py"
 _cls_spec = importlib.util.spec_from_file_location("lejepa_classification", _cls_path)
 _cls_mod  = importlib.util.module_from_spec(_cls_spec)
 _cls_spec.loader.exec_module(_cls_mod)
-classification_zeroshot = _cls_mod.classification_zeroshot
+classification = _cls_mod.classification
 
 _anom_path = Path(__file__).parent / "Anomaly.py"
 _anom_spec = importlib.util.spec_from_file_location("lejepa_anomaly", _anom_path)
 _anom_mod  = importlib.util.module_from_spec(_anom_spec)
 _anom_spec.loader.exec_module(_anom_mod)
-anomaly_zeroshot = _anom_mod.anomaly_zeroshot
+anomaly_detection = _anom_mod.anomaly_detection
 
 
 class LeJEPA(nn.Module):
@@ -122,7 +122,7 @@ class LeJEPA(nn.Module):
         self.path_save    = config["path_save"]
         self.best_encoder = None
 
-        # Forecasting attributes — set by run_lejepa before calling forcasting_zeroshot
+        # Forecasting attributes — set by run_lejepa before calling forecasting
         self.forcast_train = None
         self.forcast_val   = None
         self.forcast_test  = None
@@ -134,6 +134,6 @@ LeJEPA.compute_lejepa_loss = compute_lejepa_loss
 LeJEPA.evaluate            = evaluate
 LeJEPA.save_model          = save_model
 LeJEPA.train_and_evaluate  = train_and_evaluate
-LeJEPA.forcasting_zeroshot     = forcasting_zeroshot
-LeJEPA.classification_zeroshot = classification_zeroshot
-LeJEPA.anomaly_zeroshot        = anomaly_zeroshot
+LeJEPA.forecasting             = forecasting
+LeJEPA.classification          = classification
+LeJEPA.anomaly_detection       = anomaly_detection

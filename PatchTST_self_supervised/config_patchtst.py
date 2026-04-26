@@ -6,10 +6,7 @@ config = {
     # ── Pretraining data source ───────────────────────────────────────────────
     # pretrain_source: "monash" | "synthetic" | "monash+synthetic"
     "pretrain_source":    "monash",
-    "monash_data_dir":    "/home/shared/datasets/Monash",
-    "monash_min_len":     512,
-    "synthetic_data_dir": "/home/shared/datasets/synthetic_data_TS",  # dir containing .arrow files
-    "synthetic_mix_data_dir": "/home/shared/datasets/synthetic_TS_Mix",  # smaller curated set for monash+synthetic
+    # add your paths for the datasets here if different from the defaults
 
     # ── Patching ──────────────────────────────────────────────────────────────
     "context_points":  336,
@@ -32,7 +29,17 @@ config = {
     "batch_size":          128,
     "num_workers":         4,
     "batch_size_forecast": 32,
-    "finetune_lr":         4e-4,
+    "finetune_lr":         4e-4,    # forecasting fine-tune LR (subprocess flag)
     "pretrained_model_id": 1,
     "model_type":          "based_model",
+
+    # ── Classification ────────────────────────────────────────────────────────
+    "epoch_classification":      20,
+    "lr_classification":         None,  # head LR; None → 1e-3 default
+    "lr_classification_encoder": None,  # encoder LR when fine-tuning; None → head_lr
+
+    # ── Anomaly Detection ─────────────────────────────────────────────────────
+    "epoch_anomaly":         10,
+    "lr_anomaly":            None,  # head LR; None → 1e-3 default
+    "lr_anomaly_encoder":    None,  # encoder LR when fine-tuning; None → head_lr
 }

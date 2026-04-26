@@ -9,7 +9,7 @@ from JEPA.Predictors import JEPAPredictor as Predictor
 from JEPA.Decoder import LinearDecoder
 
 from JEPA.Forecasting import (
-    forcasting_zeroshot,
+    forecasting,
 )
 from JEPA.Classification import (
     classification,
@@ -128,9 +128,6 @@ class JEPA(nn.Module):
         self.forcast_val = forcasting_val
         self.forcast_test = forcasting_test
         self.epoch_t = config["epoch_t"]
-        self.Context_t = config["context_t"]
-        self.Patches_to_forcast = config["patches_to_forcast"]
-        self.patches_size_forecasting = config["patches_size_forecasting"]
 
         self.encoder_for = Encoder(
             num_patches=config["ratio_patches"],
@@ -157,7 +154,7 @@ class JEPA(nn.Module):
 JEPA._calculate_vicreg_loss       = _calculate_vicreg_loss
 
 # Bind forecasting methods from Forecasting.py as methods on the class
-JEPA.forcasting_zeroshot      = forcasting_zeroshot
+JEPA.forecasting              = forecasting
 
 # Bind classification methods from Classification.py as methods on the class
 JEPA.classification  = classification

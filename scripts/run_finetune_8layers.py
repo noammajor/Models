@@ -34,10 +34,10 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(ROOT))
 
-ENCODER_LAYERS = 8
+DEFAULT_ENCODER_LAYERS = 8
+DEFAULT_PRED_LENS      = [96, 192, 336, 720]
 
 FORECAST_DATASETS = ["etth1", "etth2", "ettm1", "ettm2", "weather"]
-PRED_LENS         = [96, 192, 336, 720]
 
 CLASSIFICATION_DATASETS = [
     "JapaneseVowels", "SpokenArabicDigits", "FaceDetection",
@@ -48,19 +48,10 @@ CLASSIFICATION_DATASETS = [
 
 ANOMALY_DATASETS = ["SMD", "MSL", "SMAP", "SWaT", "PSM"]
 
-# Per-dataset forecast batch sizes (same as run_layer_forecast.py)
-DATASET_FORECAST_BS = {
-    "etth1":       256,
-    "etth2":       256,
-    "ettm1":       256,
-    "ettm2":       256,
-    "weather":     128,
-}
-
 # Model → GPU assignment
 MODEL_GPU = {
     "dino":            0,
-    "jepa":     1,
+    "jepa":            1,
     "lejepa":          2,
     "patchtst":        3,
     "ntp":             4,
@@ -69,22 +60,36 @@ MODEL_GPU = {
 }
 ALL_MODELS = list(MODEL_GPU.keys())
 
-# Encoder LR when fine-tuning (linear_probe=False) — uniform across models, matching
-# JEPA's setup (5e-5 encoder LR, 4e-4 head LR).
-MODEL_PRETRAIN_LR = {
-    "dino":            5e-5,
-    "jepa":     5e-5,
-    "lejepa":          5e-5,
-    "patchtst":        5e-5,
-    "ntp":             5e-5,
-    "timedart":        5e-5,
-    "patchtst_random": 5e-5,
-}
-
-# Uniform head LR for all fine-tunes (matches JEPA's lr_forcasting=4e-4).
-FINETUNE_HEAD_LR = 4e-4
-
 ALL_TASKS  = ["forecast", "classify", "anomaly"]
+
+
+def _checkpoint_exists(model: str, encoder_layers: int, pretrain_source: str) -> bool:
+    """Return True if a pretrained checkpoint exists for this (model, layers, src)."""
+    src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source != "monash" else ""
+
+    if model == "patchtst_random":
+        return True   # random baseline — no checkpoint required
+    if model == "dino":
+        d = ROOT / f"checkpoints{src_tag}_layers{encoder_layers}"
+        return d.exists() and any(d.glob("checkpoint*.pth"))
+    if model == "jepa":
+        d = ROOT / "output_model" / f"JEPA{src_tag}_layers{encoder_layers}"
+        return d.exists() and any(d.glob("*best_model.pt"))
+    if model == "lejepa":
+        d = ROOT / "output_model" / f"LE-JEPA{src_tag}_layers{encoder_layers}"
+        return d.exists() and any(d.glob("*best_model.pt"))
+    if model == "ntp":
+        d = ROOT / "NTP" / "saved_models" / pretrain_source / "ntp" / f"layers{encoder_layers}"
+        return d.exists() and any(d.glob("ntp_pretrained_*.pt"))
+    if model == "patchtst":
+        d = (ROOT / "PatchTST_self_supervised" / "saved_models" /
+             pretrain_source / "masked_patchtst" / "based_model" / f"layers{encoder_layers}")
+        return d.exists() and any(d.glob("patchtst_pretrained_*.pth"))
+    if model == "timedart":
+        f = (ROOT / f"outputs/timedart_pretrain{src_tag}_layers{encoder_layers}" /
+             f"monash{src_tag}" / "ckpt_best.pth")
+        return f.exists()
+    return False
 
 
 # ── logging ───────────────────────────────────────────────────────────────────
@@ -151,7 +156,7 @@ def _unpack_forecast(model: str, result) -> tuple:
     Runner return layouts (when task="forecast", cls/anom are None):
       dino / jepa / patchtst : (ckpt,  mse,  cls_acc, anom)
       lejepa                        : (mse,   mae,  cls_acc, anom)
-      ntp                           : (mse,   cls_acc, anom)
+      ntp                           : (mse,   mae,  cls_acc, anom)
       timedart                      : (pred,  mse,  mae, cls_acc, anom)
     """
     if result is None:
@@ -161,12 +166,9 @@ def _unpack_forecast(model: str, result) -> tuple:
     if not isinstance(result, tuple) or len(result) == 0:
         return None, None
 
-    if model == "lejepa":
+    if model in ("lejepa", "ntp"):
         mse = result[0]
         mae = result[1] if len(result) > 1 else None
-    elif model == "ntp":
-        mse = result[0]
-        mae = None
     elif model == "timedart":
         mse = result[1] if len(result) > 1 else None
         mae = result[2] if len(result) > 2 else None
@@ -186,7 +188,7 @@ def _unpack_classify(model: str, result):
     Runner return layouts (when task="classify", mse/anom are None):
       dino / jepa / patchtst : (ckpt,  None, cls_acc, None)
       lejepa                        : (None,  None, cls_acc, None)
-      ntp                           : (None,  cls_acc, None)
+      ntp                           : (None,  None, cls_acc, None)
       timedart                      : (pred,  None, None, cls_acc, None)
     """
     if result is None:
@@ -198,10 +200,8 @@ def _unpack_classify(model: str, result):
 
     if model == "timedart":
         acc = result[3] if len(result) > 3 else None
-    elif model == "ntp":
-        acc = result[1] if len(result) > 1 else None
     else:
-        # dino, jepa, patchtst, lejepa: (*, *, cls_acc, anom)
+        # dino, jepa, patchtst, lejepa, ntp: (*, *, cls_acc, anom)
         acc = result[2] if len(result) > 2 else None
 
     return float(acc) if acc is not None else None
@@ -212,17 +212,29 @@ def _unpack_classify(model: str, result):
 def run_model_worker(model: str, gpu: int, tasks: list,
                      forecast_datasets: list, classification_datasets: list,
                      anomaly_datasets: list, pretrain_source: str,
-                     out_forecast_csv: Path, out_cls_csv: Path, out_anom_csv: Path):
+                     out_forecast_csv: Path, out_cls_csv: Path, out_anom_csv: Path,
+                     encoder_layers: int, pred_lens: list,
+                     checkpoint: str = None):
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
-    if model in MODEL_PRETRAIN_LR:
-        os.environ["TS_PRETRAIN_LR"] = str(MODEL_PRETRAIN_LR[model])
-    os.environ["TS_FINETUNE_HEAD_LR"] = str(FINETUNE_HEAD_LR)
 
     print(f"\n{'='*60}")
-    print(f"  MODEL: {model.upper()}  layers={ENCODER_LAYERS}  src={pretrain_source}")
-    print(f"  tasks={tasks}  head_lr={FINETUNE_HEAD_LR}  encoder_lr={os.environ.get('TS_PRETRAIN_LR', 'N/A')}")
+    print(f"  MODEL: {model.upper()}  layers={encoder_layers}  src={pretrain_source}")
+    print(f"  tasks={tasks}")
+    if checkpoint:
+        print(f"  checkpoint (override): {checkpoint}")
     print(f"{'='*60}")
+
+    if checkpoint:
+        if not Path(checkpoint).exists():
+            print(f"  [SKIP] User-supplied checkpoint not found: {checkpoint}")
+            return
+    else:
+        if not _checkpoint_exists(model, encoder_layers, pretrain_source):
+            print(f"  [SKIP] No pretrained checkpoint found for "
+                  f"{model}/layers{encoder_layers}/{pretrain_source}.")
+            print(f"         Pretrain first, or pass --checkpoint PATH, then re-run.")
+            return
 
     from Train_and_downstream import run
 
@@ -239,20 +251,15 @@ def run_model_worker(model: str, gpu: int, tasks: list,
         }
 
         for dataset in forecast_datasets:
-            for pred_len in PRED_LENS:
-                key = (model, str(ENCODER_LAYERS), pretrain_source, dataset, pred_len)
+            for pred_len in pred_lens:
+                key = (model, str(encoder_layers), pretrain_source, dataset, pred_len)
                 if key in fc_existing:
                     print(f"\n  [forecast] {model}/{dataset}/pl{pred_len} — already done, skipping.")
                     continue
 
                 print(f"\n--- [forecast] {model} / {dataset} / pred_len={pred_len} ---")
-                log_path = (ROOT / "logs" / "finetune_8layers" / "forecast"
+                log_path = (ROOT / "logs" / f"finetune_layers{encoder_layers}" / "forecast"
                             / pretrain_source / model / f"{dataset}_pl{pred_len}.log")
-
-                if dataset in DATASET_FORECAST_BS:
-                    os.environ["TS_FORECAST_BS"] = str(DATASET_FORECAST_BS[dataset])
-                else:
-                    os.environ.pop("TS_FORECAST_BS", None)
 
                 mse = mae = None
                 with log_to_file(log_path):
@@ -262,9 +269,10 @@ def run_model_worker(model: str, gpu: int, tasks: list,
                             task            = "forecast",
                             forecast_dataset= dataset,
                             pred_lens       = [pred_len],
-                            encoder_layers  = ENCODER_LAYERS,
+                            encoder_layers  = encoder_layers,
                             pretrain_source = pretrain_source,
                             gpu             = gpu,
+                            checkpoint      = checkpoint,
                             linear_probe    = False,
                         )
                         mse, mae = _unpack_forecast(model, result)
@@ -275,7 +283,7 @@ def run_model_worker(model: str, gpu: int, tasks: list,
                 ts = datetime.now().isoformat(timespec="seconds")
                 fc_rows.append({
                     "model":          model,
-                    "encoder_layers": ENCODER_LAYERS,
+                    "encoder_layers": str(encoder_layers),
                     "pretrain_source": pretrain_source,
                     "dataset":        dataset,
                     "pred_len":       pred_len,
@@ -298,13 +306,13 @@ def run_model_worker(model: str, gpu: int, tasks: list,
         }
 
         for dataset in classification_datasets:
-            key = (model, str(ENCODER_LAYERS), pretrain_source, dataset)
+            key = (model, str(encoder_layers), pretrain_source, dataset)
             if key in cls_existing:
                 print(f"\n  [classify] {model}/{dataset} — already done, skipping.")
                 continue
 
             print(f"\n--- [classify] {model} / {dataset} ---")
-            log_path = (ROOT / "logs" / "finetune_8layers" / "classify"
+            log_path = (ROOT / "logs" / f"finetune_layers{encoder_layers}" / "classify"
                         / pretrain_source / model / f"{dataset}.log")
 
             acc = None
@@ -314,9 +322,10 @@ def run_model_worker(model: str, gpu: int, tasks: list,
                         model                  = model,
                         task                   = "classify",
                         classification_dataset = dataset,
-                        encoder_layers         = ENCODER_LAYERS,
+                        encoder_layers         = encoder_layers,
                         pretrain_source        = pretrain_source,
                         gpu                    = gpu,
+                        checkpoint             = checkpoint,
                         linear_probe           = False,
                     )
                     acc = _unpack_classify(model, result)
@@ -327,7 +336,7 @@ def run_model_worker(model: str, gpu: int, tasks: list,
             ts = datetime.now().isoformat(timespec="seconds")
             cls_rows.append({
                 "model":          model,
-                "encoder_layers": ENCODER_LAYERS,
+                "encoder_layers": str(encoder_layers),
                 "pretrain_source": pretrain_source,
                 "dataset":        dataset,
                 "accuracy":       f"{acc:.6f}" if acc is not None else "N/A",
@@ -348,13 +357,13 @@ def run_model_worker(model: str, gpu: int, tasks: list,
         }
 
         for dataset in anomaly_datasets:
-            key = (model, str(ENCODER_LAYERS), pretrain_source, dataset)
+            key = (model, str(encoder_layers), pretrain_source, dataset)
             if key in anom_existing:
                 print(f"\n  [anomaly] {model}/{dataset} — already done, skipping.")
                 continue
 
             print(f"\n--- [anomaly] {model} / {dataset} ---")
-            log_path = (ROOT / "logs" / "finetune_8layers" / "anomaly"
+            log_path = (ROOT / "logs" / f"finetune_layers{encoder_layers}" / "anomaly"
                         / pretrain_source / model / f"{dataset}.log")
 
             f1 = prec = rec = acc = None
@@ -364,9 +373,10 @@ def run_model_worker(model: str, gpu: int, tasks: list,
                         model           = model,
                         task            = "anomaly",
                         anomaly_dataset = dataset,
-                        encoder_layers  = ENCODER_LAYERS,
+                        encoder_layers  = encoder_layers,
                         pretrain_source = pretrain_source,
                         gpu             = gpu,
+                        checkpoint      = checkpoint,
                         linear_probe    = False,
                     )
                     # result last element is the anom dict
@@ -384,7 +394,7 @@ def run_model_worker(model: str, gpu: int, tasks: list,
             ts = datetime.now().isoformat(timespec="seconds")
             anom_rows.append({
                 "model":          model,
-                "encoder_layers": ENCODER_LAYERS,
+                "encoder_layers": str(encoder_layers),
                 "pretrain_source": pretrain_source,
                 "dataset":        dataset,
                 "f1":             _fmt(f1),
@@ -405,7 +415,9 @@ def launch_worker(model: str, gpu: int, tasks: list,
                   forecast_datasets: list, classification_datasets: list,
                   anomaly_datasets: list, pretrain_source: str,
                   out_forecast_csv: Path, out_cls_csv: Path, out_anom_csv: Path,
-                  log_dir: Path, dry_run: bool):
+                  log_dir: Path, dry_run: bool,
+                  encoder_layers: int, pred_lens: list,
+                  checkpoint: str = None):
     log_path = log_dir / f"{model}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -419,10 +431,14 @@ def launch_worker(model: str, gpu: int, tasks: list,
         "--classification_datasets", *classification_datasets,
         "--anomaly_datasets",        *anomaly_datasets,
         "--pretrain_source", pretrain_source,
+        "--encoder_layers",  str(encoder_layers),
+        "--pred_lens",       *[str(p) for p in pred_lens],
         "--out_forecast_csv",  str(out_forecast_csv),
         "--out_cls_csv",       str(out_cls_csv),
         "--out_anom_csv",      str(out_anom_csv),
     ]
+    if checkpoint:
+        cmd += ["--checkpoint", checkpoint]
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -444,20 +460,24 @@ def launch_worker(model: str, gpu: int, tasks: list,
 def run_finetune_sweep(models: list, tasks: list,
                        forecast_datasets: list, classification_datasets: list,
                        anomaly_datasets: list, pretrain_source: str,
-                       gpu_override: int, dry_run: bool):
+                       gpu_override: int, dry_run: bool,
+                       encoder_layers: int, pred_lens: list,
+                       checkpoint: str = None):
     src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source != "monash" else ""
-    log_dir = ROOT / "logs" / "finetune_8layers"
+    log_dir = ROOT / "logs" / f"finetune_layers{encoder_layers}"
 
-    out_forecast_csv = ROOT / "results" / f"finetune_8layers_forecast{src_tag}.csv"
-    out_cls_csv      = ROOT / "results" / f"finetune_8layers_classification{src_tag}.csv"
-    out_anom_csv     = ROOT / "results" / f"finetune_8layers_anomaly{src_tag}.csv"
+    out_forecast_csv = ROOT / "results" / f"finetune_layers{encoder_layers}_forecast{src_tag}.csv"
+    out_cls_csv      = ROOT / "results" / f"finetune_layers{encoder_layers}_classification{src_tag}.csv"
+    out_anom_csv     = ROOT / "results" / f"finetune_layers{encoder_layers}_anomaly{src_tag}.csv"
 
-    print(f"\nFine-tuning sweep — {ENCODER_LAYERS}-layer backbones")
+    print(f"\nFine-tuning sweep — {encoder_layers}-layer backbones")
     print(f"  Models:       {models}")
     print(f"  Tasks:        {tasks}")
     print(f"  Pretrain src: {pretrain_source}")
+    if checkpoint:
+        print(f"  Checkpoint:   {checkpoint}  (overrides auto-discovery)")
     if "forecast" in tasks:
-        print(f"  Forecast:     {forecast_datasets}  pred_lens={PRED_LENS}")
+        print(f"  Forecast:     {forecast_datasets}  pred_lens={pred_lens}")
     if "classify" in tasks:
         print(f"  Classify:     {classification_datasets}")
     if "anomaly" in tasks:
@@ -477,8 +497,11 @@ def run_finetune_sweep(models: list, tasks: list,
             out_forecast_csv=out_forecast_csv,
             out_cls_csv=out_cls_csv,
             out_anom_csv=out_anom_csv,
+            checkpoint=checkpoint,
             log_dir=log_dir,
             dry_run=dry_run,
+            encoder_layers=encoder_layers,
+            pred_lens=pred_lens,
         )
         if proc is not None:
             procs.append(proc)
@@ -514,7 +537,7 @@ def run_finetune_sweep(models: list, tasks: list,
 
 def main():
     parser = argparse.ArgumentParser(
-        description=f"Fine-tuning sweep using {ENCODER_LAYERS}-layer pretrained backbones"
+        description="Fine-tuning sweep using N-layer pretrained backbones"
     )
     parser.add_argument("--models",   nargs="+", default=ALL_MODELS, choices=ALL_MODELS,
                         metavar="MODEL", help=f"Models to run. Default: all. Choices: {ALL_MODELS}")
@@ -524,6 +547,13 @@ def main():
     parser.add_argument("--pretrain_source", type=str, default="monash",
                         choices=["monash", "synthetic", "monash+synthetic"],
                         help="Pretrain data source (default: monash)")
+    parser.add_argument("--encoder_layers", type=int, default=DEFAULT_ENCODER_LAYERS,
+                        help=f"Encoder depth of pretrained backbone (default: {DEFAULT_ENCODER_LAYERS})")
+    parser.add_argument("--pred_lens", nargs="+", type=int, default=DEFAULT_PRED_LENS,
+                        help=f"Forecast horizons (default: {DEFAULT_PRED_LENS})")
+    parser.add_argument("--checkpoint", type=str, default=None,
+                        help="Path to a specific pretrained backbone checkpoint, "
+                             "overriding auto-discovery. Only valid with a single --models entry.")
     parser.add_argument("--gpu_override", type=int, default=None,
                         help="Override GPU for all models")
     parser.add_argument("--dry_run",  action="store_true",
@@ -542,6 +572,10 @@ def main():
 
     args = parser.parse_args()
 
+    if args.checkpoint and not args._worker and len(args.models) != 1:
+        parser.error("--checkpoint requires a single --models entry "
+                     f"(got {len(args.models)}: {args.models})")
+
     if args._worker:
         run_model_worker(
             model                   = args.model,
@@ -554,6 +588,9 @@ def main():
             out_forecast_csv        = Path(args.out_forecast_csv),
             out_cls_csv             = Path(args.out_cls_csv),
             out_anom_csv            = Path(args.out_anom_csv),
+            encoder_layers          = args.encoder_layers,
+            pred_lens               = args.pred_lens,
+            checkpoint              = args.checkpoint,
         )
         return
 
@@ -566,6 +603,9 @@ def main():
         pretrain_source         = args.pretrain_source,
         gpu_override            = args.gpu_override,
         dry_run                 = args.dry_run,
+        encoder_layers          = args.encoder_layers,
+        pred_lens               = args.pred_lens,
+        checkpoint              = args.checkpoint,
     )
 
 

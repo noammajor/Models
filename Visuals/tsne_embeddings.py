@@ -141,7 +141,7 @@ def _ckpt_path(model: str, encoder_layers: int, seed: int, pretrain_source: str)
         spec2 = importlib.util.spec_from_file_location("ntp_pretrain", ntp_dir / "ntp_pretrain.py")
         mod2  = importlib.util.module_from_spec(spec2)
         spec2.loader.exec_module(mod2)
-        fname = mod2._model_fname(cfg, src)
+        fname = mod2._model_fname(cfg)
         return (ntp_dir / "saved_models" / "classification" / src / "ntp" /
                 f"layers{encoder_layers}_cw{CW}{_seed_tag}" / f"{fname}.pt")
 

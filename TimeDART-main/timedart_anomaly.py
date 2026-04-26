@@ -1,8 +1,9 @@
 """
 TimeDaRT anomaly detection (reconstruction-based).
 
-Frozen pretrained TimeDaRT encoder + linear reconstruction decoder trained on
-normal data only. Anomaly score = per-timestep reconstruction MSE.
+Pretrained TimeDaRT encoder (frozen by default; unfrozen if linear_probe=False)
++ linear reconstruction decoder trained on normal data only.
+Anomaly score = per-timestep reconstruction MSE.
 Threshold = percentile of combined train+test energy.
 """
 
@@ -109,10 +110,11 @@ def _encode(model, x):
     return x.permute(0, 1, 3, 2)        # [B, C, d_model, P]
 
 
-def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
-                     anomaly_ratio: float = 1.0, linear_probe: bool = True):
+def anomaly_detection(config, checkpoint_path, anomaly_train, anomaly_test,
+                      anomaly_ratio: float = 1.0, linear_probe: bool = True):
     """
-    Reconstruction-based anomaly detection with frozen TimeDaRT encoder.
+    Reconstruction-based anomaly detection with TimeDaRT encoder
+    (frozen by default; unfrozen if linear_probe=False).
 
     Args:
         config         : dict from config_timedart.py
@@ -120,6 +122,7 @@ def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
         anomaly_train  : DataLoader — batches of patches [B, P, patch_size, n_vars]
         anomaly_test   : DataLoader — batches of (patches, labels [B, T])
         anomaly_ratio  : top-X% of combined energy flagged as anomaly
+        linear_probe   : if True, freeze backbone and train only decoder. If False, fine-tune backbone + decoder.
     Returns:
         dict with f1, precision, recall, accuracy, threshold
     """

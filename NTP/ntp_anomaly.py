@@ -58,10 +58,11 @@ def _adjustment(gt, pred):
     return gt, pred
 
 
-def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
-                     anomaly_ratio: float = 1.0, linear_probe: bool = True):
+def anomaly_detection(config, checkpoint_path, anomaly_train, anomaly_test,
+                      anomaly_ratio: float = 1.0, linear_probe: bool = True):
     """
-    Reconstruction-based anomaly detection with frozen NTP backbone.
+    Reconstruction-based anomaly detection with NTP backbone
+    (frozen by default; unfrozen if linear_probe=False).
 
     Args:
         config         : dict from config_ntp.py
@@ -69,6 +70,7 @@ def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
         anomaly_train  : DataLoader — batches of patches [B, P, patch_size, n_vars]
         anomaly_test   : DataLoader — batches of (patches, labels [B, T])
         anomaly_ratio  : top-X% of combined energy flagged as anomaly
+        linear_probe   : if True, freeze backbone and train only decoder. If False, fine-tune backbone + decoder.
     Returns:
         dict with f1, precision, recall, accuracy, threshold
     """
@@ -124,13 +126,11 @@ def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
 
     d_model  = config.get("d_model", 128)
     decoder  = _LinearReconDecoder(d_model, patch_len, n_vars).to(device)
-    # LR priority: config (user-set) > env var (script default).
+    # LR: config value if set, else hardcoded default.
     _cfg_head_lr = config.get("lr_anomaly")
     _cfg_enc_lr  = config.get("lr_anomaly_encoder")
-    head_lr = float(_cfg_head_lr if _cfg_head_lr is not None
-                    else os.environ["TS_FINETUNE_HEAD_LR"])
-    enc_lr  = float(_cfg_enc_lr  if _cfg_enc_lr  is not None
-                    else os.environ.get("TS_PRETRAIN_LR", head_lr))
+    head_lr = float(_cfg_head_lr) if _cfg_head_lr is not None else 0.001
+    enc_lr  = float(_cfg_enc_lr)  if _cfg_enc_lr  is not None else head_lr
     if linear_probe:
         optimizer = torch.optim.Adam(decoder.parameters(), lr=head_lr)
     else:

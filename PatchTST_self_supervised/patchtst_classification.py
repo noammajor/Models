@@ -1,9 +1,10 @@
 """
-PatchTST linear-probe classification.
+PatchTST classification.
 
-Frozen pretrained PatchTST backbone + ClassificationHead trained on the
-classification split. Head: last patch → flatten(n_vars * d_model) → dropout
-→ linear → n_classes. Identical pattern to DINO/NTP ClassificationHead.
+Pretrained PatchTST backbone (frozen by default; unfrozen if linear_probe=False)
++ ClassificationHead trained on the classification split.
+Head: last patch → flatten(n_vars * d_model) → dropout → linear → n_classes.
+Identical pattern to DINO/NTP ClassificationHead.
 """
 
 import os
@@ -22,11 +23,11 @@ for _p in [_DIR, _ROOT, _SHARED]:
 from src.models.patchTST import PatchTST
 
 
-def classification_zeroshot(config, checkpoint_path, classification_train,
-                             classification_val, classification_test, n_classes,
-                             linear_probe=True):
+def classification(config, checkpoint_path, classification_train,
+                   classification_val, classification_test, n_classes,
+                   linear_probe=True):
     """
-    Linear-probe classification with frozen PatchTST backbone.
+    Classification with PatchTST backbone.
 
     Args:
         config                : dict from config_patchtst.py
@@ -34,12 +35,13 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
         classification_train/val/test : DataLoaders from ClassificationDataPuller
                                         each batch: (patches [B, P, PL, n_vars], labels [B])
         n_classes             : total number of target classes
+        linear_probe          : if True, freeze backbone and train only head. If False, fine-tune backbone + head.
     Returns:
         test accuracy (float)
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    print(f"\n=== PatchTST Classification (linear probe) ===")
+    print(f"\n=== PatchTST Classification ===")
     print(f"Loading checkpoint: {checkpoint_path}")
 
     # Infer shape from first batch

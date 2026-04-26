@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import os
 import matplotlib.pyplot as plt
-from data_loaders.data_puller import ForcastingDataPullerDescrete
 from JEPA.Decoder import LinearDecoder, PredictionHead, ClassificationHead
 from JEPA.Training import _instance_norm
 
@@ -14,7 +13,7 @@ def _instance_denorm(x, mean, std):
     return x * std.reshape(shape) + mean.reshape(shape)
 
 
-def forcasting_zeroshot(self, path, linear_probe=True):
+def forecasting(self, path, linear_probe=True):
     """Non-autoregressive forecasting: slides real context forward, no prediction feedback.
     Runs TWICE: first with random encoder (baseline), then with trained encoder.
 
@@ -48,7 +47,8 @@ def forcasting_zeroshot(self, path, linear_probe=True):
         num_patches = config.get("forecasting_context_patches", config["ratio_patches"])
         h_t         = config["horizon_t"]
         P_L         = config["patch_size_forcasting"]
-        n_v_for = len(config["input_variables_forcasting"][0])
+        # n_vars inferred from the first sample of the forecast loader
+        n_v_for = self.forcast_train.dataset[0][0].shape[-1]
         self.forecast_head_patch = PredictionHead(individual=False, n_vars=n_v_for, d_model=embed_dim, num_patch=num_patches, forecast_len=h_t * P_L).to(self.device)
         # Train decoders
         '''
@@ -57,13 +57,11 @@ def forcasting_zeroshot(self, path, linear_probe=True):
         ])
         '''
         
-        # LR priority: config (user-set) > env var (script default).
+        # LR: config value if set, else hardcoded default.
         _cfg_head_lr = config.get("lr_forcasting")
         _cfg_enc_lr  = config.get("lr_forcasting_encoder")
-        head_lr = float(_cfg_head_lr if _cfg_head_lr is not None
-                        else os.environ["TS_FINETUNE_HEAD_LR"])
-        enc_lr  = float(_cfg_enc_lr  if _cfg_enc_lr  is not None
-                        else os.environ.get("TS_PRETRAIN_LR", head_lr))
+        head_lr = float(_cfg_head_lr) if _cfg_head_lr is not None else 0.0001
+        enc_lr  = float(_cfg_enc_lr)  if _cfg_enc_lr  is not None else head_lr
         if linear_probe:
             optimizer = torch.optim.Adam(
                 self.forecast_head_patch.parameters(),

@@ -71,36 +71,19 @@ config = {
 
     # forecasting downstream
     "epoch_t": 20,
-    "context_t": 21,
-    "horizon_t":6,
-    "input_variables_forcasting": [
-        ["HUFL", "HULL", "MUFL", "MULL", "LUFL", "LULL", "OT"],
-    ],
-    "val_prec_forcasting": 0.1,
-    "test_prec_forcasting": 0.1,
-    "window_step_forecasting": 1,
-    "timestampcols_forcasting": ["date"],
-    "path_data_forcasting": ["./data/ETTh1.csv"],
-    "patches_to_forcast": 8,
-    "patches_size_forecasting": 16,
+    "horizon_t": 6,
     "lr_forcasting": 4e-4,
     "batch_size_forecast": 128,
-    "affine_revin": True,
-    
+
 
     # ── Forecasting modes ─────────────────────────────────────────────────────
     "forecasting_modes": ["zeroshot"],
 
     # ── Classification downstream ─────────────────────────────────────────────
-    "classification_data_dir": "/home/shared/datasets/Classification_TS",
     "epoch_classification":    20,
     "lr_classification":       1e-3,
 
     # ── Pretraining data source ───────────────────────────────────────────────
     # pretrain_source: "monash" | "synthetic" | "monash+synthetic"
     "pretrain_source":    "monash",
-    "monash_data_dir":    "/home/shared/datasets/Monash",
-    "monash_min_len":     512,
-    "synthetic_data_dir": "/home/shared/datasets/synthetic_data_TS",  # dir containing .arrow files
-    "synthetic_mix_data_dir": "/home/shared/datasets/synthetic_TS_Mix",  # smaller curated set for monash+synthetic
 }

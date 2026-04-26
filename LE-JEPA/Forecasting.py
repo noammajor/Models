@@ -2,7 +2,7 @@
 LE-JEPA zero-shot forecasting (linear probe).
 
 Frozen pretrained encoder + linear PredictionHead trained on the forecasting split.
-Identical pattern to JEPA's forcasting_zeroshot but simpler:
+Identical pattern to JEPA's forecasting but simpler:
   - single encoder (no encoder_for copy)
   - load from LE-JEPA checkpoint format: {"epoch": N, "encoder": state_dict}
 """
@@ -33,7 +33,7 @@ def _instance_denorm(x, mean, std):
     return x * std.reshape(shape) + mean.reshape(shape)
 
 
-def forcasting_zeroshot(self, path, linear_probe=True):
+def forecasting(self, path, linear_probe=True):
     """
     Linear-probe forecasting with frozen LE-JEPA encoder.
 
@@ -61,7 +61,8 @@ def forcasting_zeroshot(self, path, linear_probe=True):
     num_patches = config.get("forecasting_context_patches", config["ratio_patches"])
     h_t         = config["horizon_t"]
     P_L         = config["patch_size_forcasting"]
-    n_v         = len(config["input_variables_forcasting"][0])
+    # n_vars inferred from the first sample of the forecast loader
+    n_v         = self.forcast_train.dataset[0][0].shape[-1]
 
     forecast_head = PredictionHead(
         individual   = False,
@@ -72,13 +73,11 @@ def forcasting_zeroshot(self, path, linear_probe=True):
     ).to(self.device)
 
     _all_params = list(self.encoder.parameters()) + list(forecast_head.parameters())
-    # LR priority: config (user-set) > env var (script default).
+    # LR: config value if set, else hardcoded default.
     _cfg_head_lr = config.get("lr_forcasting")
     _cfg_enc_lr  = config.get("lr_forcasting_encoder")
-    head_lr = float(_cfg_head_lr if _cfg_head_lr is not None
-                    else os.environ["TS_FINETUNE_HEAD_LR"])
-    enc_lr  = float(_cfg_enc_lr  if _cfg_enc_lr  is not None
-                    else os.environ.get("TS_PRETRAIN_LR", head_lr))
+    head_lr = float(_cfg_head_lr) if _cfg_head_lr is not None else 0.0001
+    enc_lr  = float(_cfg_enc_lr)  if _cfg_enc_lr  is not None else head_lr
     if linear_probe:
         optimizer = torch.optim.Adam(forecast_head.parameters(),
                                      lr=head_lr, weight_decay=1e-4)

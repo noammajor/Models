@@ -1,7 +1,8 @@
 """
-LE-JEPA linear-probe classification.
+LE-JEPA classification.
 
-Frozen pretrained encoder + ClassificationHead trained on the classification split.
+Pretrained encoder (frozen by default; unfrozen if linear_probe=False) +
+ClassificationHead trained on the classification split.
 Head: last patch → flatten(n_vars * embed_dim) → dropout → linear → n_classes.
 Identical pattern to PatchTST's ClassificationHead.
 """
@@ -27,17 +28,18 @@ def _instance_norm(x, eps=1e-6):
     return (x - mean) / std, mean, std
 
 
-def classification_zeroshot(self, path, classification_train, classification_val,
+def classification(self, path, classification_train, classification_val,
                              classification_test, n_classes,
                              linear_probe=True):
     """
-    Linear-probe classification with frozen LE-JEPA encoder.
+    Classification with LE-JEPA encoder.
 
     Args:
         path                  : checkpoint tag, e.g. "" → loads {path_save}{path}best_model.pt
         classification_train/val/test : DataLoaders from ClassificationDataPuller
                                         each batch: (patches [B, P, PL, n_vars], labels [B])
         n_classes             : total number of target classes
+        linear_probe          : if True, freeze encoder and train only head. If False, fine-tune encoder + head.
     Returns:
         test accuracy (float)
     """
@@ -61,7 +63,7 @@ def classification_zeroshot(self, path, classification_train, classification_val
     embed_dim = config["encoder_embed_dim"]
     encoder_num_patches = self.encoder.W_pos.shape[0]
 
-    patch_len = config.get("patch_size_forcasting", 16)
+    patch_len = config.get("patch_size", 16)
 
     # Infer from first batch — may already be pre-patched (B, P, PL, C) or raw (B, T, C)
     sample_patches, _, _ = next(iter(classification_train))
@@ -85,14 +87,11 @@ def classification_zeroshot(self, path, classification_train, classification_val
 
     n_epochs    = config.get("epoch_classification", 20)
     _all_params = list(self.encoder.parameters()) + list(cls_head.parameters())
-    import os as _os
-    # LR priority: config (user-set) > env var (script default).
+    # LR: config value if set, else hardcoded default.
     _cfg_head_lr = config.get("lr_classification")
     _cfg_enc_lr  = config.get("lr_classification_encoder")
-    head_lr = float(_cfg_head_lr if _cfg_head_lr is not None
-                    else _os.environ["TS_FINETUNE_HEAD_LR"])
-    enc_lr  = float(_cfg_enc_lr  if _cfg_enc_lr  is not None
-                    else _os.environ.get("TS_PRETRAIN_LR", head_lr))
+    head_lr = float(_cfg_head_lr) if _cfg_head_lr is not None else 0.001
+    enc_lr  = float(_cfg_enc_lr)  if _cfg_enc_lr  is not None else head_lr
     if linear_probe:
         optimizer = torch.optim.Adam(cls_head.parameters(),
                                      lr=head_lr, weight_decay=1e-4)
