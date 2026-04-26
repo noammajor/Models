@@ -107,6 +107,10 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
     print(f"{'='*60}")
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
+    # Script defaults for downstream LR (config keys lr_anomaly / lr_anomaly_encoder
+    # in the model's config override these).
+    os.environ.setdefault("TS_FINETUNE_HEAD_LR", "1e-3")
+    os.environ.setdefault("TS_PRETRAIN_LR",      "5e-5")
 
     for dataset in datasets:
         key = (model, encoder_layers, pretrain_source, dataset)
