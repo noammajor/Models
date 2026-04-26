@@ -324,7 +324,7 @@ def main():
             gpu=args.gpu,
             datasets=args.datasets,
             out_csv=Path(args.out_csv),
-            num_patches=args.num_patches,
+            num_patches=(args.num_patches if args.num_patches and args.num_patches > 0 else None),
             pretrain_source=args.pretrain_source,
             linear_probe=args.linear_probe,
         )
