@@ -13,7 +13,7 @@ from JEPA.Decoder import ClassificationHead
 from JEPA.Training import _instance_norm
 
 
-def classification_zeroshot(self, path, classification_train, classification_val,
+def classification(self, path, classification_train, classification_val,
                              classification_test, n_classes,
                              checkpoint_path_override=None,
                              random_encoder=False,
@@ -26,6 +26,8 @@ def classification_zeroshot(self, path, classification_train, classification_val
         classification_train/val/test : DataLoaders from ClassificationDataPuller
                                         each batch: (patches [B, P, PL, n_vars], labels [B])
         n_classes             : total number of target classes
+        linear_probe          : if True, freeze encoder and train only head. If False, fine-tune encoder + head.
+        checkpoint_path_override : if provided, load this checkpoint instead of the default path+best_model
     Returns:
         test accuracy (float)
     """

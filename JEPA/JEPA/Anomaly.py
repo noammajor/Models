@@ -13,7 +13,6 @@ import torch.nn.functional as F
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 
 from JEPA.Training import _instance_norm
-from JEPA.Forecasting import _instance_denorm
 
 
 class _LinearReconDecoder(nn.Module):
@@ -112,22 +111,18 @@ def anomaly_detection(self, path, anomaly_train, anomaly_test,
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
 
     def _encode(patches):
-        """patches [B, P, PL, C] → (z [B, P, embed_dim], mean [B,1,1,C], std [B,1,1,C])"""
+        """patches [B, P, PL, C] → z [B, P, embed_dim]"""
         if patches.dim() == 3:
             patches = patches.unsqueeze(-1)
         patches = patches.to(self.device)
         B, P, PL, C = patches.shape
         # normalise per-channel then reshape back to 4D for JEPA encoder
         flat = patches.permute(0, 3, 1, 2).reshape(B * C, P, PL)
-        norm_flat, m_flat, s_flat = _instance_norm(flat)
-        # reshape per-window stats from [B*C, 1, 1] → [B, 1, 1, C] for _instance_denorm
-        mean = m_flat.reshape(B, C, 1, 1).permute(0, 2, 3, 1)
-        std  = s_flat.reshape(B, C, 1, 1).permute(0, 2, 3, 1)
+        norm_flat, _, _ = _instance_norm(flat)
         norm4d = norm_flat.reshape(B, C, P, PL).permute(0, 2, 3, 1)  # [B, P, PL, C]
         enc_out = self.encoder_for(norm4d)                             # expects [B, P, PL, C]
         z = enc_out["data_patches"]                                    # [B*C, P, embed_dim]
-        z = z.reshape(B, C, P, embed_dim).mean(dim=1)                  # [B, P, embed_dim]
-        return z, mean, std
+        return z.reshape(B, C, P, embed_dim).mean(dim=1)              # [B, P, embed_dim]
 
     # ── (1) train decoder (with validation + early stopping) ─────────────────
     all_batches = list(anomaly_train)
@@ -153,8 +148,8 @@ def anomaly_detection(self, path, anomaly_train, anomaly_test,
             raw = patches.to(self.device)
             B, P, PL, C = raw.shape
             with torch.set_grad_enabled(not linear_probe):
-                z, mean, std = _encode(raw)
-            recon  = _instance_denorm(decoder(z), mean, std)
+                z = _encode(raw)
+            recon  = decoder(z)
             target = raw.reshape(B, P * PL, C)
             loss   = F.mse_loss(recon, target)
             optimizer.zero_grad(); loss.backward(); optimizer.step()
@@ -168,8 +163,8 @@ def anomaly_detection(self, path, anomaly_train, anomaly_test,
                 if patches.dim() == 3: patches = patches.unsqueeze(-1)
                 raw = patches.to(self.device)
                 B, P, PL, C = raw.shape
-                z, mean, std = _encode(raw)
-                recon  = _instance_denorm(decoder(z), mean, std)
+                z      = _encode(raw)
+                recon  = decoder(z)
                 target = raw.reshape(B, P * PL, C)
                 val_loss += F.mse_loss(recon, target).item()
         val_loss /= len(val_batches)
@@ -198,8 +193,8 @@ def anomaly_detection(self, path, anomaly_train, anomaly_test,
             if patches.dim() == 3: patches = patches.unsqueeze(-1)
             raw = patches.to(self.device)
             B, P, PL, C = raw.shape
-            z, mean, std = _encode(raw)
-            recon  = _instance_denorm(decoder(z), mean, std)
+            z      = _encode(raw)
+            recon  = decoder(z)
             target = raw.reshape(B, P * PL, C)
             score  = F.mse_loss(recon, target, reduction="none").mean(dim=-1)
             train_energy.append(score.cpu().numpy())
@@ -212,8 +207,8 @@ def anomaly_detection(self, path, anomaly_train, anomaly_test,
             if patches.dim() == 3: patches = patches.unsqueeze(-1)
             raw = patches.to(self.device)
             B, P, PL, C = raw.shape
-            z, mean, std = _encode(raw)
-            recon  = _instance_denorm(decoder(z), mean, std)
+            z      = _encode(raw)
+            recon  = decoder(z)
             target = raw.reshape(B, P * PL, C)
             score  = F.mse_loss(recon, target, reduction="none").mean(dim=-1)
             test_energy.append(score.cpu().numpy())
