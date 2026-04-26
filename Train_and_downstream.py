@@ -3,7 +3,7 @@ Unified training + forecasting runner for:
   - dino     (wavelet-based DINO)
   - jepa     (JEPA )
   - lejepa   (LE-JEPA — two-view augmentation, SIGReg loss)
-  - patchtst (PatchTST_self_supervised)
+  - patchtst (MAE)
   - NTP
   - TimedART (diffussion)
 
