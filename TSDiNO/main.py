@@ -689,8 +689,8 @@ def test_run(args):
         )
     criterion = nn.MSELoss()
     _lp_fore  = getattr(args, 'linear_probe', True)
-    _head_lr_fore = float(os.environ.get("TS_FINETUNE_HEAD_LR", args.lr_forecasting)) if not _lp_fore else args.lr_forecasting
-    _enc_lr       = float(os.environ.get("TS_PRETRAIN_LR", _head_lr_fore))
+    _head_lr_fore = float(args.lr_forecasting)
+    _enc_lr       = float(getattr(args, 'lr_forecasting_encoder', None) or _head_lr_fore)
     if _lp_fore:
         optimizer = torch.optim.Adam(model.head.parameters(),
                                      lr=_head_lr_fore, weight_decay=1e-4)
@@ -1019,8 +1019,8 @@ def train_classification(args, classification_train=None, classification_val=Non
 
     # Loss and optimizer
     criterion = nn.CrossEntropyLoss()
-    _head_lr_cls = float(os.environ.get("TS_FINETUNE_HEAD_LR", args.lr_classification)) if not _lp_cls else args.lr_classification
-    _enc_lr_cls  = float(os.environ.get("TS_PRETRAIN_LR", _head_lr_cls))
+    _head_lr_cls = float(args.lr_classification)
+    _enc_lr_cls  = float(getattr(args, 'lr_classification_encoder', None) or _head_lr_cls)
     if _lp_cls:
         optimizer = torch.optim.Adam(
             [p for p in model.parameters() if p.requires_grad],
