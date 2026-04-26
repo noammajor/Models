@@ -164,6 +164,78 @@ Typical workflow:
 ---
 ## Scripts
 
+### scripts/synthetic_data_generation/
+
+Two GP-based generators that produce GluonTS `.arrow` files consumed by
+the `synthetic` and `monash+synthetic` pretrain sources. Drop the output
+into the directory pointed to by `synthetic_data_dir` (or
+`synthetic_mix_data_dir`) in [data_paths.py](data_paths.py); the dataloader
+[SyntheticArrowDataPullerJEPA](shared/data_loaders/data_puller.py)
+auto-discovers every `.arrow` file in that directory and handles both
+univariate (`[T]`) and multivariate (`[C, T]`) targets, so kernel-synth and
+LMC outputs can live side-by-side. Sizes used in our experiments:
+
+| Corpus            | Series  | Total timesteps | Notes                                |
+|-------------------|---------|-----------------|--------------------------------------|
+| Synthetic (full)  | 8,000   | ~1.61 B         | LMC_synth_MTS dominates (400k ts/series) |
+| Synthetic (mix)   | 5,800   | ~1.17 B         | curated subset for the mix runs      |
+
+#### kernel-synth.py
+
+Univariate Gaussian-process kernel-synth. Each series is drawn from a GP
+whose covariance is a random composition of base kernels (`RBF`,
+`ExpSineSquared` at many periodicities, `RationalQuadratic`, `DotProduct`,
+`WhiteKernel`, `ConstantKernel`) combined with random `+` or `×` operators.
+
+CLI:
+- `-N`  number of series (default 4000)
+- `-J`  max kernels per series (default 5)
+- `-L`  length per series (default 2500)
+- `-P`  parallel jobs (default 4)
+
+Output: `kernel_synth.arrow` next to the script.
+
+    python scripts/synthetic_data_generation/kernel-synth.py -N 4000 -L 2500 -P 8
+
+#### LMC_Synth.py
+
+Multivariate extension via the Linear Coregionalization Model. For each
+series:
+
+1. Sample `latent_num ~ Weibull(shape, scale)`, clipped to
+   `[max(2, num_channels // 20), num_channels]`.
+2. Build `latent_num` independent univariate GP series, each with a random
+   composite kernel (same kernel bank as kernel-synth).
+3. Sample mixing weights from `Dirichlet(α · 1)` with
+   `α ~ Uniform(dirichlet_min, dirichlet_max)`.
+4. Combine: `output[C, T] = weights[C, latent_num] @ latent[latent_num, T]`
+   → a correlated `num_channels`-variate series.
+
+CLI (in addition to `-N`, `-L`, `-P`, `-J` from kernel-synth):
+- `-C`  number of channels per series (default 160)
+- `-M`  `dirichlet_min` (lower bound of α) — **required**
+- `-X`  `dirichlet_max` (upper bound of α) — **required**
+- `-W`  Weibull shape — **required**
+- `-Z`  Weibull scale — **required**
+- `-O`  output filename (default `LMC_synth_MTS.arrow`)
+- `-D`  output directory (default `./`)
+
+Example (8k series × 400k timesteps × 160 channels — what populates the
+"Synthetic (full)" row above):
+
+    python scripts/synthetic_data_generation/LMC_Synth.py \
+        -N 8000 -L 400000 -C 160 -J 5 -P 16 \
+        -M 0.1 -X 1.0 -W 1.5 -Z 2.0 \
+        -O LMC_synth_MTS.arrow \
+        -D /home/shared/datasets/synthetic_data_TS/
+
+Lower `dirichlet_min` → sparser channel mixtures; higher `weibull_scale` →
+more latent functions per series. Tune to taste.
+
+After generation, run any model with `--pretrain_source synthetic` (synth
+only) or `--pretrain_source monash+synthetic` (Monash + the curated mix
+folder).
+
 ### scripts/pretrain_cls_encoder.py
 
 Pretrains encoders for **classification** with a longer context window than the
