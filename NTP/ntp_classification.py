@@ -1,0 +1,166 @@
+"""
+NTP linear-probe classification.
+
+Frozen pretrained NTP (PatchTST) backbone + ClassificationHead trained on the
+classification split. Head: last patch → flatten(n_vars * d_model) → dropout
+→ linear → n_classes. Identical pattern to PatchTST's ClassificationHead.
+"""
+
+import os
+import sys
+import torch
+import torch.nn.functional as F
+
+_NTP_DIR   = os.path.dirname(os.path.abspath(__file__))
+_ROOT_DIR  = os.path.dirname(_NTP_DIR)
+_SHARED_DIR = os.path.join(_ROOT_DIR, "shared")
+
+for _p in [_NTP_DIR, _ROOT_DIR, _SHARED_DIR]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from models.patchTST import PatchTST, ClassificationHead
+
+
+def _build_backbone(config, c_in, num_patch, device):
+    """Build PatchTST backbone with pretrain head (weights will be loaded)."""
+    return PatchTST(
+        c_in=c_in,
+        target_dim=config["patch_size"],   # pretrain head dim — overwritten after load
+        patch_len=config["patch_size"],
+        stride=config["patch_size"],
+        num_patch=num_patch,
+        n_layers=config["n_layers"],
+        n_heads=config["n_heads"],
+        d_model=config["d_model"],
+        shared_embedding=True,
+        d_ff=config["d_ff"],
+        dropout=config["dropout"],
+        head_dropout=config["head_dropout"],
+        act=config["act"],
+        head_type="pretrain",
+        causal=True,
+        res_attention=False,
+    ).to(device)
+
+
+def classification_zeroshot(config, checkpoint_path, classification_train,
+                             classification_val, classification_test, n_classes,
+                             linear_probe=True):
+    """
+    Linear-probe classification with frozen NTP backbone.
+
+    Args:
+        config                : dict from config_ntp.py
+        checkpoint_path       : path to pretrained .pt file
+        classification_train/val/test : DataLoaders from ClassificationDataPuller
+                                        each batch: (patches [B, P, PL, n_vars], labels [B])
+        n_classes             : total number of target classes
+    Returns:
+        test accuracy (float)
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    print(f"\n=== NTP Classification (linear probe) ===")
+    print(f"Loading checkpoint: {checkpoint_path}")
+
+    # Infer n_vars and num_patches from first batch
+    sample_patches, _, _ = next(iter(classification_train))
+    num_patch = sample_patches.shape[1]
+    n_v       = sample_patches.shape[-1]   # [B, P, PL, n_vars]
+
+    # Build backbone and load pretrained weights
+    backbone = _build_backbone(config, c_in=n_v, num_patch=num_patch, device=device)
+    ckpt = torch.load(checkpoint_path, map_location="cpu")
+    state = ckpt.get("encoder", ckpt.get("model", ckpt))
+    enc_dict = backbone.backbone.state_dict()
+    filtered = {k: v for k, v in state.items()
+                if k in enc_dict and enc_dict[k].shape == v.shape}
+    enc_dict.update(filtered)
+    backbone.backbone.load_state_dict(enc_dict)
+    print(f"  Loaded {len(filtered)}/{len(enc_dict)} encoder parameters from checkpoint")
+    if linear_probe:
+        backbone.eval()
+        for p in backbone.parameters():
+            p.requires_grad = False
+        print(f"  [NTP classify] MODE: linear probe — encoder FROZEN")
+    else:
+        print(f"  [NTP classify] MODE: full fine-tuning — encoder UNFROZEN")
+
+    d_model = config["d_model"]
+    cls_head = ClassificationHead(
+        n_vars       = n_v,
+        d_model      = d_model,
+        n_classes    = n_classes,
+        head_dropout = config.get("head_dropout", 0.1),
+    ).to(device)
+
+    n_epochs   = config.get("epoch_classification", 20)
+    _all_params = list(backbone.parameters()) + list(cls_head.parameters())
+    # LR priority: config (user-set) > env var (script default).
+    _cfg_head_lr = config.get("lr_classification")
+    _cfg_enc_lr  = config.get("lr_classification_encoder")
+    head_lr = float(_cfg_head_lr if _cfg_head_lr is not None
+                    else os.environ["TS_FINETUNE_HEAD_LR"])
+    enc_lr  = float(_cfg_enc_lr  if _cfg_enc_lr  is not None
+                    else os.environ.get("TS_PRETRAIN_LR", head_lr))
+    if linear_probe:
+        optimizer = torch.optim.Adam(cls_head.parameters(),
+                                     lr=head_lr, weight_decay=1e-4)
+        _max_lrs   = head_lr
+        _trainable = sum(p.numel() for p in cls_head.parameters())
+    else:
+        optimizer = torch.optim.Adam([
+            {"params": cls_head.parameters(),  "lr": head_lr},
+            {"params": backbone.parameters(),  "lr": enc_lr},
+        ], weight_decay=1e-4)
+        _max_lrs   = [head_lr, enc_lr]
+        _trainable = sum(p.numel() for p in _all_params)
+        print(f"  [NTP classify] head_lr={head_lr}  encoder_lr={enc_lr}")
+    _total = sum(p.numel() for p in _all_params)
+    print(f"  Trainable: {_trainable:,} / {_total:,} params")
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer, max_lr=_max_lrs,
+        total_steps=n_epochs * len(classification_train),
+        pct_start=0.3, anneal_strategy='cos',
+    )
+
+    for epoch in range(n_epochs):
+        cls_head.train()
+        if not linear_probe:
+            backbone.train()
+        correct, total = 0, 0
+        for patches, labels, padding_mask in classification_train:
+            patches      = patches.to(device)       # [B, P, PL, n_vars]
+            labels       = labels.to(device)
+            padding_mask = padding_mask.to(device)  # [B, P] bool
+            # PatchTST expects [B, P, n_vars, PL]
+            x = patches.permute(0, 1, 3, 2)
+            optimizer.zero_grad()
+            with torch.set_grad_enabled(not linear_probe):
+                enc = backbone.backbone(x, padding_mask=padding_mask)    # [B, n_vars, d_model, P]
+            logits = cls_head(enc)            # [B, n_classes]
+            loss   = F.cross_entropy(logits, labels)
+            loss.backward()
+            optimizer.step()
+            scheduler.step()
+            correct += (logits.argmax(1) == labels).sum().item()
+            total   += len(labels)
+        if epoch % 5 == 0:
+            print(f"  Epoch {epoch:3d} | train acc {correct/total:.4f}")
+
+    cls_head.eval()
+    tc, tt = 0, 0
+    with torch.no_grad():
+        for patches, labels, padding_mask in classification_test:
+            patches      = patches.to(device)
+            labels       = labels.to(device)
+            padding_mask = padding_mask.to(device)
+            x   = patches.permute(0, 1, 3, 2)
+            enc = backbone.backbone(x, padding_mask=padding_mask)
+            logits = cls_head(enc)
+            tc += (logits.argmax(1) == labels).sum().item()
+            tt += len(labels)
+    test_acc = tc / tt
+    print(f"[NTP] Test Accuracy: {test_acc:.4f}")
+    return test_acc

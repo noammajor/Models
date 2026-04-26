@@ -1,0 +1,54 @@
+MODEL SUMMARY
+=============
+
+
+ARCHITECTURE
+------------
+
+Model       d_model   n_heads   d_ff     patch_len   Context        Dropout
+----------  -------   -------   -----    ---------   -------------  -------
+JEPA           256         8    1024         16      512 ts (32p)      0.0
+LE-JEPA        256         8    1024         16      512 ts (32p)      0.0
+DINO           128        16     512         16      336 ts (21p)      0.1
+PatchTST       128        16     512         16      336 ts (21p)      0.2
+NPT            128        16     512         16      336 ts (21p)      0.2
+TimeDart       256         8     512         16      336 ts (21p)      0.1
+
+
+PRETRAINING
+-----------
+
+Model       Optimizer                      LR (8L)   Epochs   Batch   Objective
+----------  -----------------------------  -------   ------   -----   ----------------------------
+JEPA        SGD (momentum=0.9, nesterov)   5e-4          20     128   JEPA + VICReg
+LE-JEPA     AdamW                          5e-4          20     128   JEPA + SigReg
+DINO        AdamW                          5e-4          20     128   DINO self-distillation
+PatchTST    Adam (OneCycleLR)              5e-5          20     128   Masked patch reconstruction
+NTP         Adam                           5e-5          20     128   Causal masked prediction
+TimeDart    Adam (ExponentialLR y=0.5)     5e-5          20     128   Diffusion denoising
+
+
+ZERO-SHOT FORECASTING
+---------------------
+
+Model       Forecast LR      Epochs   
+----------  --------------   ------   
+JEPA        4e-4                 20   
+LE-JEPA     2e-4                 20   
+DINO        2e-4                 20  
+PatchTST    auto (find_lr)       20   
+NPT         1e-4                 20   
+TimeDart    1e-4                 20   
+
+Forecast batch sizes: ETTh1/2, ETTm1/2 = 256   Weather = 128   Electricity, Traffic = 32
+
+
+PRETRAINING DATA
+----------------
+
+Dataset                    Series    Train windows   Unique timesteps   Training ts (w/ overlap)
+-------------------------  ------    -------------   ----------------   ------------------------
+Monash                     39,147          683,982        106,306,153                     ~350M
+Synthetic (full)            8,000        2,512,000      1,610,000,000                    ~1.29B
+Synthetic (mix)             5,800        2,505,182      1,167,250,000                    ~1.28B
+Monash + Synth Mix         44,947        3,189,164      1,273,556,153                    ~1.63B

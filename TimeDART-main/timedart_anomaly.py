@@ -153,9 +153,13 @@ def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
 
     d_model = config.get("d_model", 256)
     decoder = _LinearReconDecoder(d_model, patch_len, n_vars).to(device)
-    _cfg_head_lr = config.get("lr_anomaly", 1e-3)
-    head_lr = float(os.environ.get("TS_FINETUNE_HEAD_LR", _cfg_head_lr)) if not linear_probe else _cfg_head_lr
-    enc_lr  = float(os.environ.get("TS_PRETRAIN_LR", head_lr))
+    # LR priority: config (user-set) > env var (script default).
+    _cfg_head_lr = config.get("lr_anomaly")
+    _cfg_enc_lr  = config.get("lr_anomaly_encoder")
+    head_lr = float(_cfg_head_lr if _cfg_head_lr is not None
+                    else os.environ["TS_FINETUNE_HEAD_LR"])
+    enc_lr  = float(_cfg_enc_lr  if _cfg_enc_lr  is not None
+                    else os.environ.get("TS_PRETRAIN_LR", head_lr))
     if linear_probe:
         optimizer = torch.optim.Adam(decoder.parameters(), lr=head_lr)
     else:

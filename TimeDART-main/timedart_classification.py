@@ -2,7 +2,7 @@
 TimeDaRT linear-probe classification.
 
 Frozen pretrained TimeDaRT (Model) backbone + ClassificationHead.
-Identical pattern to JEPA / LE-JEPA / NPT / PatchTST:
+Identical pattern to JEPA / LE-JEPA / NTP / PatchTST:
   - Channel-independent PatchEmbedding (same as pretrain)
   - CausalTransformer encoder (frozen, weights loaded from checkpoint)
   - ClassificationHead: last patch → flatten(n_vars * d_model) → dropout → linear → n_classes
@@ -157,9 +157,13 @@ def classification_zeroshot(config, checkpoint_path,
 
     n_epochs    = config.get("epoch_classification", 20)
     _all_params = list(model.parameters()) + list(cls_head.parameters())
-    _cfg_head_lr = config.get("lr_classification", 1e-3)
-    head_lr = float(os.environ.get("TS_FINETUNE_HEAD_LR", _cfg_head_lr)) if not linear_probe else _cfg_head_lr
-    enc_lr  = float(os.environ.get("TS_PRETRAIN_LR", head_lr))
+    # LR priority: config (user-set) > env var (script default).
+    _cfg_head_lr = config.get("lr_classification")
+    _cfg_enc_lr  = config.get("lr_classification_encoder")
+    head_lr = float(_cfg_head_lr if _cfg_head_lr is not None
+                    else os.environ["TS_FINETUNE_HEAD_LR"])
+    enc_lr  = float(_cfg_enc_lr  if _cfg_enc_lr  is not None
+                    else os.environ.get("TS_PRETRAIN_LR", head_lr))
     if linear_probe:
         optimizer = torch.optim.Adam(cls_head.parameters(),
                                      lr=head_lr, weight_decay=1e-4)

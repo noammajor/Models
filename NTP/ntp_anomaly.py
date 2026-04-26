@@ -1,33 +1,43 @@
 """
-JEPA anomaly detection (reconstruction-based).
+NTP anomaly detection (reconstruction-based).
 
-pretrained target encoder + linear reconstruction decoder trained on
-normal data only. Anomaly score = per-timestep reconstruction MSE.
-Threshold = percentile of combined train+test energy.
+NTP shares the PatchTST backbone — this is a thin wrapper that loads the
+NTP checkpoint and delegates to the same reconstruction pipeline.
 """
 
+import os
+import sys
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 
-from JEPA.Training import _instance_norm
-from JEPA.Forecasting import _instance_denorm
+_DIR   = os.path.dirname(os.path.abspath(__file__))
+_ROOT  = os.path.dirname(_DIR)
+_PTST  = os.path.join(_ROOT, "PatchTST_self_supervised")
+
+for _p in [_DIR, _ROOT, _PTST]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from src.models.patchTST import PatchTST
 
 
 class _LinearReconDecoder(nn.Module):
-    """[B, P, embed_dim] → [B, T, n_vars]"""
-    def __init__(self, embed_dim: int, patch_size: int, n_vars: int):
+    """[B, n_vars, d_model, n_patches] → [B, T, n_vars]"""
+    def __init__(self, d_model: int, patch_size: int, n_vars: int):
         super().__init__()
         self.patch_size = patch_size
         self.n_vars = n_vars
-        self.proj = nn.Linear(embed_dim, patch_size * n_vars)
+        self.proj = nn.Linear(d_model, patch_size)
 
     def forward(self, z):
-        B, P, _ = z.shape
-        out = self.proj(z)
-        return out.reshape(B, P * self.patch_size, self.n_vars)
+        B, C, D, P = z.shape
+        z   = z.permute(0, 1, 3, 2)                    # [B, C, P, D]
+        out = self.proj(z)                              # [B, C, P, patch_size]
+        out = out.reshape(B, C, P * self.patch_size)
+        return out.permute(0, 2, 1)                     # [B, T, C]
 
 
 def _adjustment(gt, pred):
@@ -48,114 +58,120 @@ def _adjustment(gt, pred):
     return gt, pred
 
 
-def anomaly_detection(self, path, anomaly_train, anomaly_test,
+def anomaly_zeroshot(config, checkpoint_path, anomaly_train, anomaly_test,
                      anomaly_ratio: float = 1.0, linear_probe: bool = True):
     """
-    Reconstruction-based anomaly detection with JEPA encoder.
+    Reconstruction-based anomaly detection with frozen NTP backbone.
 
     Args:
-        path          : checkpoint tag, e.g. "" or "_epoch50"
-        anomaly_train : DataLoader — batches of patches [B, P, patch_size, n_vars]
-        anomaly_test  : DataLoader — batches of (patches, labels [B, T])
-        anomaly_ratio : top-X% of combined energy flagged as anomaly
-        linear_probe   : if True, encoder is frozen and only decoder is trained
+        config         : dict from config_ntp.py
+        checkpoint_path: path to pretrained .pt checkpoint
+        anomaly_train  : DataLoader — batches of patches [B, P, patch_size, n_vars]
+        anomaly_test   : DataLoader — batches of (patches, labels [B, T])
+        anomaly_ratio  : top-X% of combined energy flagged as anomaly
     Returns:
         dict with f1, precision, recall, accuracy, threshold
     """
-    config          = self.config
-    checkpoint_path = f"{self.path_save}{path}best_model.pt"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    print(f"\n=== JEPA Anomaly Detection ===")
+    print(f"\n=== NTP Anomaly Detection ===")
     print(f"Loading checkpoint: {checkpoint_path}")
 
-    ckpt = torch.load(checkpoint_path, map_location="cpu")
-    self.encoder_for.load_state_dict(ckpt["target_encoder"])
-    self.encoder_for.to(self.device)
-    if linear_probe:
-        self.encoder_for.eval()
-        for p in self.encoder_for.parameters():
-            p.requires_grad = False
-        print(f"  [JEPA anomaly] MODE: linear probe — encoder FROZEN")
-    else:
-        for p in self.encoder_for.parameters():
-            p.requires_grad = True
-        print(f"  [JEPA anomaly] MODE: full fine-tune — encoder UNFROZEN")
-
-    embed_dim = config["encoder_embed_dim"]
-
-    # Infer shape from first batch
     sample = next(iter(anomaly_train))
     patches_sample = sample[0] if isinstance(sample, (list, tuple)) else sample
-    if patches_sample.dim() == 3:
-        patches_sample = patches_sample.unsqueeze(-1)
-    patch_size = patches_sample.shape[2]
-    n_vars     = patches_sample.shape[3]
+    patch_len = patches_sample.shape[2]
+    n_vars    = patches_sample.shape[3]
 
-    decoder   = _LinearReconDecoder(embed_dim, patch_size, n_vars).to(self.device)
-    import os as _os
+    # Load checkpoint first — infer num_patch from W_pos so size matches checkpoint
+    ckpt  = torch.load(checkpoint_path, map_location="cpu")
+    # NTP saves ckpt["encoder"] = model.backbone.state_dict() (no "backbone." prefix)
+    state = ckpt.get("encoder", ckpt.get("model", ckpt))
+    if "W_pos" in state:
+        num_patch = state["W_pos"].shape[0]
+    elif "backbone.W_pos" in state:
+        num_patch = state["backbone.W_pos"].shape[0]
+    else:
+        raise KeyError(f"Cannot find W_pos in checkpoint keys: {list(state.keys())[:10]}")
+
+    backbone = PatchTST(
+        c_in         = n_vars,
+        target_dim   = patch_len,
+        patch_len    = patch_len,
+        stride       = patch_len,
+        num_patch    = num_patch,
+        n_layers     = config.get("n_layers",  3),
+        n_heads      = config.get("n_heads",   16),
+        d_model      = config.get("d_model",   128),
+        shared_embedding = True,
+        d_ff         = config.get("d_ff",      512),
+        dropout      = config.get("dropout",   0.2),
+        head_dropout = config.get("head_dropout", 0.2),
+        act          = "gelu",
+        head_type    = "pretrain",
+        res_attention = False,
+    ).to(device)
+
+    backbone.backbone.load_state_dict(state, strict=False)
+    if linear_probe:
+        backbone.eval()
+        for p in backbone.parameters():
+            p.requires_grad = False
+        print(f"  [NTP anomaly] MODE: linear probe — encoder FROZEN")
+    else:
+        for p in backbone.parameters():
+            p.requires_grad = True
+        print(f"  [NTP anomaly] MODE: full fine-tune — encoder UNFROZEN")
+
+    d_model  = config.get("d_model", 128)
+    decoder  = _LinearReconDecoder(d_model, patch_len, n_vars).to(device)
     # LR priority: config (user-set) > env var (script default).
     _cfg_head_lr = config.get("lr_anomaly")
     _cfg_enc_lr  = config.get("lr_anomaly_encoder")
     head_lr = float(_cfg_head_lr if _cfg_head_lr is not None
-                    else _os.environ["TS_FINETUNE_HEAD_LR"])
+                    else os.environ["TS_FINETUNE_HEAD_LR"])
     enc_lr  = float(_cfg_enc_lr  if _cfg_enc_lr  is not None
-                    else _os.environ.get("TS_PRETRAIN_LR", head_lr))
-    
+                    else os.environ.get("TS_PRETRAIN_LR", head_lr))
     if linear_probe:
         optimizer = torch.optim.Adam(decoder.parameters(), lr=head_lr)
     else:
         optimizer = torch.optim.Adam([
-            {"params": decoder.parameters(),          "lr": head_lr},
-            {"params": self.encoder_for.parameters(), "lr": enc_lr},
+            {"params": decoder.parameters(),  "lr": head_lr},
+            {"params": backbone.parameters(), "lr": enc_lr},
         ])
+        print(f"  [NTP anomaly] head_lr={head_lr}  encoder_lr={enc_lr}")
     n_epochs  = config.get("epoch_anomaly", 10)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
 
     def _encode(patches):
-        """patches [B, P, PL, C] → (z [B, P, embed_dim], mean [B,1,1,C], std [B,1,1,C])"""
-        if patches.dim() == 3:
-            patches = patches.unsqueeze(-1)
-        patches = patches.to(self.device)
-        B, P, PL, C = patches.shape
-        # normalise per-channel then reshape back to 4D for JEPA encoder
-        flat = patches.permute(0, 3, 1, 2).reshape(B * C, P, PL)
-        norm_flat, m_flat, s_flat = _instance_norm(flat)
-        # reshape per-window stats from [B*C, 1, 1] → [B, 1, 1, C] for _instance_denorm
-        mean = m_flat.reshape(B, C, 1, 1).permute(0, 2, 3, 1)
-        std  = s_flat.reshape(B, C, 1, 1).permute(0, 2, 3, 1)
-        norm4d = norm_flat.reshape(B, C, P, PL).permute(0, 2, 3, 1)  # [B, P, PL, C]
-        enc_out = self.encoder_for(norm4d)                             # expects [B, P, PL, C]
-        z = enc_out["data_patches"]                                    # [B*C, P, embed_dim]
-        z = z.reshape(B, C, P, embed_dim).mean(dim=1)                  # [B, P, embed_dim]
-        return z, mean, std
+        x = patches.permute(0, 1, 3, 2).to(device)
+        return backbone.backbone(x)
 
     # ── (1) train decoder (with validation + early stopping) ─────────────────
-    all_batches = list(anomaly_train)
-    n_val_b     = max(1, len(all_batches) // 5)
+    all_batches   = list(anomaly_train)
+    n_val_b       = max(1, len(all_batches) // 5)
     train_batches = all_batches[:-n_val_b]
     val_batches   = all_batches[-n_val_b:]
 
-    patience    = config.get("anomaly_patience", 3)
-    best_val    = float('inf')
-    best_state  = None
-    no_improve  = 0
+    patience   = config.get("anomaly_patience", 3)
+    best_val   = float('inf')
+    best_state = None
+    no_improve = 0
 
     print(f"  Training decoder ({n_epochs} epochs, patience={patience}) …")
     for epoch in range(n_epochs):
         # train
         decoder.train()
         if not linear_probe:
-            self.encoder_for.train()
+            backbone.train()
         total_loss = 0.0
         for batch in train_batches:
             patches = batch[0] if isinstance(batch, (list, tuple)) else batch
-            if patches.dim() == 3: patches = patches.unsqueeze(-1)
-            raw = patches.to(self.device)
-            B, P, PL, C = raw.shape
+            patches = patches.to(device)
+            B, P, PL, C = patches.shape
             with torch.set_grad_enabled(not linear_probe):
-                z, mean, std = _encode(raw)
-            recon  = _instance_denorm(decoder(z), mean, std)
-            target = raw.reshape(B, P * PL, C)
+                z = _encode(patches)
+            recon  = decoder(z)
+            target = patches.reshape(B, P * PL, C)
             loss   = F.mse_loss(recon, target)
             optimizer.zero_grad(); loss.backward(); optimizer.step()
             total_loss += loss.item()
@@ -165,12 +181,11 @@ def anomaly_detection(self, path, anomaly_train, anomaly_test,
         with torch.no_grad():
             for batch in val_batches:
                 patches = batch[0] if isinstance(batch, (list, tuple)) else batch
-                if patches.dim() == 3: patches = patches.unsqueeze(-1)
-                raw = patches.to(self.device)
-                B, P, PL, C = raw.shape
-                z, mean, std = _encode(raw)
-                recon  = _instance_denorm(decoder(z), mean, std)
-                target = raw.reshape(B, P * PL, C)
+                patches = patches.to(device)
+                B, P, PL, C = patches.shape
+                z        = _encode(patches)
+                recon    = decoder(z)
+                target   = patches.reshape(B, P * PL, C)
                 val_loss += F.mse_loss(recon, target).item()
         val_loss /= len(val_batches)
         # early stopping
@@ -195,12 +210,11 @@ def anomaly_detection(self, path, anomaly_train, anomaly_test,
     with torch.no_grad():
         for batch in anomaly_train:
             patches = batch[0] if isinstance(batch, (list, tuple)) else batch
-            if patches.dim() == 3: patches = patches.unsqueeze(-1)
-            raw = patches.to(self.device)
-            B, P, PL, C = raw.shape
-            z, mean, std = _encode(raw)
-            recon  = _instance_denorm(decoder(z), mean, std)
-            target = raw.reshape(B, P * PL, C)
+            patches = patches.to(device)
+            B, P, PL, C = patches.shape
+            z      = _encode(patches)
+            recon  = decoder(z)
+            target = patches.reshape(B, P * PL, C)
             score  = F.mse_loss(recon, target, reduction="none").mean(dim=-1)
             train_energy.append(score.cpu().numpy())
     train_energy = np.concatenate(train_energy).reshape(-1)
@@ -209,12 +223,11 @@ def anomaly_detection(self, path, anomaly_train, anomaly_test,
     test_energy, all_labels = [], []
     with torch.no_grad():
         for patches, labels in anomaly_test:
-            if patches.dim() == 3: patches = patches.unsqueeze(-1)
-            raw = patches.to(self.device)
-            B, P, PL, C = raw.shape
-            z, mean, std = _encode(raw)
-            recon  = _instance_denorm(decoder(z), mean, std)
-            target = raw.reshape(B, P * PL, C)
+            patches = patches.to(device)
+            B, P, PL, C = patches.shape
+            z      = _encode(patches)
+            recon  = decoder(z)
+            target = patches.reshape(B, P * PL, C)
             score  = F.mse_loss(recon, target, reduction="none").mean(dim=-1)
             test_energy.append(score.cpu().numpy())
             all_labels.append(labels.numpy())
@@ -233,7 +246,7 @@ def anomaly_detection(self, path, anomaly_train, anomaly_test,
         gt, pred, average="binary", zero_division=0)
 
     print(f"\n{'='*60}")
-    print(f"  [JEPA] Anomaly Detection")
+    print(f"  [NTP] Anomaly Detection")
     print(f"  Threshold: {threshold:.6f}  (top {anomaly_ratio}%)")
     print(f"  Accuracy : {accuracy:.4f}")
     print(f"  Precision: {precision:.4f}")

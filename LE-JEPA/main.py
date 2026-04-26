@@ -24,7 +24,7 @@ from torch.utils.data import DataLoader
 # ── Paths ─────────────────────────────────────────────────────────────────────
 _HERE      = Path(__file__).parent.resolve()
 _ROOT      = _HERE.parent
-_DJEPA_DIR = _ROOT / "Discrete_JEPA"
+_SHARED_DIR = _ROOT / "shared"
 
 def _add(p):
     s = str(p)
@@ -33,7 +33,7 @@ def _add(p):
 
 _add(_HERE)
 _add(_ROOT)
-_add(_DJEPA_DIR)   # DataPullerDJepa + MonashDataPullerJEPA + ForcastingDataPullerDescrete
+_add(_SHARED_DIR)   # shared data_loaders
 
 
 # ── Imports that depend on sys.path ───────────────────────────────────────────

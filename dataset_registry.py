@@ -1,14 +1,14 @@
 """Central dataset registry.
 
 Add a new entry to DATASETS to support a new CSV dataset.
-All paths resolve relative to  Discrete_JEPA/data/  so they work in
+All paths resolve relative to  shared/forecasting_data/  so they work in
 Colab (after drive mount) and locally without editing path strings anywhere else.
 """
 
 import os
 from pathlib import Path
 
-_DATA_DIR = Path("/home/shared/datasets/data - forecasting timeseries")
+_DATA_DIR = Path("/home/shared/datasets/forecasting_data")
 
 # JEPA groups variables into chunks of this many columns.
 # Every group must be the same size; the last group is padded by repeating

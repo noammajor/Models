@@ -3,7 +3,7 @@ PatchTST linear-probe classification.
 
 Frozen pretrained PatchTST backbone + ClassificationHead trained on the
 classification split. Head: last patch → flatten(n_vars * d_model) → dropout
-→ linear → n_classes. Identical pattern to DINO/NPT ClassificationHead.
+→ linear → n_classes. Identical pattern to DINO/NTP ClassificationHead.
 """
 
 import os
@@ -13,9 +13,9 @@ import torch.nn.functional as F
 
 _DIR     = os.path.dirname(os.path.abspath(__file__))
 _ROOT    = os.path.dirname(_DIR)
-_DJEPA   = os.path.join(_ROOT, "Discrete_JEPA")
+_SHARED   = os.path.join(_ROOT, "shared")
 
-for _p in [_DIR, _ROOT, _DJEPA]:
+for _p in [_DIR, _ROOT, _SHARED]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -95,9 +95,13 @@ def classification_zeroshot(config, checkpoint_path, classification_train,
     print(f"  Trainable: {_trainable:,} / {_total:,} params")
 
     n_epochs    = config.get("epoch_classification", 20)
-    _cfg_head_lr = config.get("lr_classification", 1e-3)
-    head_lr      = float(os.environ.get("TS_FINETUNE_HEAD_LR", _cfg_head_lr)) if not linear_probe else _cfg_head_lr
-    enc_lr       = float(os.environ.get("TS_PRETRAIN_LR", head_lr))
+    # LR priority: config (user-set) > env var (script default).
+    _cfg_head_lr = config.get("lr_classification")
+    _cfg_enc_lr  = config.get("lr_classification_encoder")
+    head_lr = float(_cfg_head_lr if _cfg_head_lr is not None
+                    else os.environ["TS_FINETUNE_HEAD_LR"])
+    enc_lr  = float(_cfg_enc_lr  if _cfg_enc_lr  is not None
+                    else os.environ.get("TS_PRETRAIN_LR", head_lr))
     if linear_probe:
         optimizer = torch.optim.Adam(
             [p for p in model.parameters() if p.requires_grad],
