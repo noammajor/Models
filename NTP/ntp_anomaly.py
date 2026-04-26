@@ -113,7 +113,9 @@ def anomaly_detection(config, checkpoint_path, anomaly_train, anomaly_test,
         res_attention = False,
     ).to(device)
 
-    backbone.backbone.load_state_dict(state, strict=False)
+    _load_result = backbone.backbone.load_state_dict(state, strict=False)
+    print(f"  [NTP load] missing_keys    ({len(_load_result.missing_keys)}): {_load_result.missing_keys[:8]}")
+    print(f"  [NTP load] unexpected_keys ({len(_load_result.unexpected_keys)}): {_load_result.unexpected_keys[:8]}")
     if linear_probe:
         backbone.eval()
         for p in backbone.parameters():
