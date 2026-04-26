@@ -24,8 +24,9 @@ import torch
 from torch import nn
 
 # ── path setup ────────────────────────────────────────────────────────────────
-_NTP_DIR    = os.path.dirname(os.path.abspath(__file__))
-_ROOT_DIR   = os.path.dirname(_NTP_DIR)
+_NTP_DIR     = os.path.dirname(os.path.abspath(__file__))   # code dir
+_ROOT_DIR    = os.path.dirname(_NTP_DIR)
+_NPT_SAVE_DIR = os.path.join(_ROOT_DIR, 'NPT')              # checkpoints dir (legacy on-disk name)
 _SHARED_DIR  = os.path.join(_ROOT_DIR, 'shared')
 
 for _p in [_NTP_DIR, _ROOT_DIR, _SHARED_DIR]:
@@ -187,7 +188,7 @@ def pretrain_ntp(config, save_dir_override: str = None):
 
     # Save-path priority: function arg > config["path_save"] > default.
     save_dir = save_dir_override or config.get("path_save") or \
-               os.path.join(_NTP_DIR, 'saved_models', pretrain_dset, 'ntp', f"layers{config['n_layers']}")
+               os.path.join(_NPT_SAVE_DIR, 'saved_models', pretrain_dset, 'ntp', f"layers{config['n_layers']}")
     os.makedirs(save_dir, exist_ok=True)
     save_name = _model_fname(config)
 

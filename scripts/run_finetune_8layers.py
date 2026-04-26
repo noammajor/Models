@@ -79,7 +79,7 @@ def _checkpoint_exists(model: str, encoder_layers: int, pretrain_source: str) ->
         d = ROOT / "output_model" / f"LE-JEPA{src_tag}_layers{encoder_layers}"
         return d.exists() and any(d.glob("*best_model.pt"))
     if model == "ntp":
-        d = ROOT / "NTP" / "saved_models" / pretrain_source / "ntp" / f"layers{encoder_layers}"
+        d = ROOT / "NPT" / "saved_models" / pretrain_source / "ntp" / f"layers{encoder_layers}"
         return d.exists() and any(d.glob("ntp_pretrained_*.pt"))
     if model == "patchtst":
         d = (ROOT / "PatchTST_self_supervised" / "saved_models" /

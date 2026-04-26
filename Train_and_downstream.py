@@ -1059,7 +1059,8 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
             linear_probe: bool = True):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
-    ntp_dir = Path(__file__).parent / "NTP"
+    ntp_dir      = Path(__file__).parent / "NTP"   # code lives here
+    npt_save_dir = Path(__file__).parent / "NPT"   # checkpoints live here (legacy on-disk name)
     _add_path(ntp_dir)
 
     import importlib.util
@@ -1120,11 +1121,11 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     if num_patches is not None:
         _cw = num_patches * cfg.get('patch_size', 16)
         _npt_save_dir_override = str(
-            ntp_dir / "saved_models" / "classification" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}_cw{_cw}{_SEED_TAG}"
+            npt_save_dir / "saved_models" / "classification" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}_cw{_cw}{_SEED_TAG}"
         )
     elif _SEED_TAG:
         _npt_save_dir_override = str(
-            ntp_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}{_SEED_TAG}"
+            npt_save_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}{_SEED_TAG}"
         )
     # Save-path priority: programmatic override > config["path_save"] > default.
     # Mirrors the resolution inside pretrain_ntp() so train/eval read from the same dir.
@@ -1133,7 +1134,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     elif cfg.get("path_save"):
         _save_dir = Path(cfg["path_save"])
     else:
-        _save_dir = ntp_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}"
+        _save_dir = npt_save_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}"
     _base_name = _model_fname(cfg)
     _ckpt_epoch = checkpoints[0] if (checkpoints and checkpoints[0] is not None) else None
     if _ckpt_epoch is not None:
