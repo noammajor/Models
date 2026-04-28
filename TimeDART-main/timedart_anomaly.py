@@ -95,11 +95,6 @@ def _encode(model, x):
     returns: [B, C, d_model, P]
     """
     B, T, C = x.shape
-    if model.use_norm:
-        means  = x.mean(dim=1, keepdim=True).detach()
-        x      = x - means
-        stdevs = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-5).detach()
-        x      = x / stdevs
     x = model.channel_independence(x)   # [B*C, T, 1]
     x = model.patch(x)                  # [B*C, P, patch_len]
     P = x.shape[1]
