@@ -46,8 +46,8 @@ PATCH_SIZE  = 16
 NUM_PATCHES = 72                  # cw1152 / patch_size = 72
 CW          = NUM_PATCHES * PATCH_SIZE
 
-DEFAULT_CKPT    = ROOT / "LE-JEPA Backbones" / "classification" / "LE-JEPA_layers8_cw1152" / "best_model.pt"
-DEFAULT_CLS_DIR = str(ROOT / "classificationdata")
+DEFAULT_CKPT    = ROOT / "output_model" / "classification" / "LE-JEPA_layers8_cw1152" / "best_model.pt"
+DEFAULT_CLS_DIR = "/home/shared/datasets/Classification_TS"
 
 
 def _add_path(*dirs):
