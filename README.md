@@ -220,7 +220,7 @@ CLI (in addition to `-N`, `-L`, `-P`, `-J` from kernel-synth):
 - `-O`  output filename (default `LMC_synth_MTS.arrow`)
 - `-D`  output directory (default `./`)
 
-Example (8k series × 400k timesteps × 160 channels — what populates the
+Example (8k series × 2.5k timesteps × 160 channels — what populates the
 "Synthetic (full)" row above):
 
     python scripts/synthetic_data_generation/LMC_Synth.py \
