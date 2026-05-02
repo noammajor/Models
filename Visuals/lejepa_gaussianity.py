@@ -240,8 +240,7 @@ def make_figure(embs: np.ndarray,
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 5.0))
     fig.suptitle(
-        f"LE-JEPA embedding-space Gaussianity diagnostic — {dataset_name}\n"
-        f"(N={N:,} patch embeddings, D={D})",
+        "LE-JEPA embedding-space",
         fontsize=14, fontweight="bold", y=1.02,
     )
 
