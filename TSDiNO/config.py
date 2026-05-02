@@ -4,7 +4,7 @@ config = {
     # "dino"  |  "classification"  |  "forecasting"
     "task": "dino",
     "seed": 42,
-    "output_dir": "./checkpoints_physical_2",
+    "output_dir": "./checkpoints_phys",
     "saveckp_freq": 1,
     "test_only": False,
 
@@ -133,15 +133,15 @@ config = {
     # ─────────────────────────────────────────────────────────────────────────
 
     # ── Teacher view (global crop) ────────────────────────────────────────────
-    # Physical run #2: polar-coordinate warp — uses default warp_range (0.7, 1.3).
+    # Physical run #1: Galilean scaling (x · a) — uses default a_range (0.8, 1.2).
     "global_crops": [
-        {"type": "polar", "crop_ratio": 1.0},
+        {"type": "galilien", "crop_ratio": 1.0},
     ],
 
     # ── Student view (local crop) ─────────────────────────────────────────────
-    # Physical run #2: 2-D rotation with time axis — uses default angle_range (0, π/8).
+    # Physical run #1: Lorentz boost — uses default v_range (0.2, 0.6).
     "local_crops": [
-        {"type": "rotation", "crop_ratio": 1.0},
+        {"type": "lorentz", "crop_ratio": 1.0},
     ],
 
     # ── Patch reconstruction (MAE-style auxiliary loss) ────────────────────────
