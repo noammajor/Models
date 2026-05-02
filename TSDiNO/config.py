@@ -4,7 +4,7 @@ config = {
     # "dino"  |  "classification"  |  "forecasting"
     "task": "dino",
     "seed": 42,
-    "output_dir": "./checkpoints",
+    "output_dir": "./checkpoints_phys",
     "saveckp_freq": 1,
     "test_only": False,
 
@@ -133,15 +133,15 @@ config = {
     # ─────────────────────────────────────────────────────────────────────────
 
     # ── Teacher view (global crop) ────────────────────────────────────────────
-    # One easy view: soft-threshold strips noise while preserving signal structure.
+    # Physical run: Galilean scaling (x · a) — uses default a_range (0.8, 1.2).
     "global_crops": [
-        {"type": "dwt_soft_threshold", "crop_ratio": 1.0, "soft_threshold_sigma": 0.3},
+        {"type": "galilien", "crop_ratio": 1.0},
     ],
 
     # ── Student view (local crop) ─────────────────────────────────────────────
-    # One hard view: high-perturb adds aggressive Gaussian noise to detail coeffs.
+    # Physical run: Lorentz boost — uses default v_range (0.2, 0.6).
     "local_crops": [
-        {"type": "dwt_high_perturb", "crop_ratio": 1.0, "high_perturb_noise_range": (0.1, 0.3)},
+        {"type": "lorentz", "crop_ratio": 1.0},
     ],
 
     # ── Patch reconstruction (MAE-style auxiliary loss) ────────────────────────
