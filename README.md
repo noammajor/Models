@@ -24,6 +24,13 @@ Downstream tasks supported:
 under linear probing and fine tuning.
 if you want to add to this project, feel free to branch and try add a PR.
 
+recognitions of code we used:
+1. PatchTST: https://arxiv.org/pdf/2211.14730
+2. TimeDart: https://arxiv.org/pdf/2410.05711
+3. DINO: https://arxiv.org/pdf/2104.14294 
+4. JEPA: https://arxiv.org/pdf/2301.08243
+5. TIMESPFN: https://arxiv.org/pdf/2502.16294
+
 ## Quickstart
 
 ```bash
