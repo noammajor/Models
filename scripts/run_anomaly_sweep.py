@@ -95,8 +95,11 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                      datasets: list, out_csv: Path,
                      pretrain_source: str = "monash",
                      linear_probe: bool = True,
-                     anomaly_ratio: float = None):
-    log_base   = ROOT / "logs" / "anomaly_sweep"
+                     anomaly_ratio: float = None,
+                     output_dir: str = None,
+                     log_tag: str = ""):
+    _log_tag   = f"_{log_tag}" if log_tag else ""
+    log_base   = ROOT / "logs" / f"anomaly_sweep{_log_tag}"
     fieldnames = ["model", "encoder_layers", "pretrain_source",
                   "dataset", "f1", "precision", "recall", "accuracy", "timestamp"]
 
@@ -147,6 +150,7 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                     encoder_layers  = encoder_layers,
                     pretrain_source = pretrain_source,
                     linear_probe    = linear_probe,
+                    output_dir      = output_dir,
                 )
 
                 # result shape varies by model but last element is anom_result dict
@@ -194,8 +198,10 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
                   datasets: list, log_dir: Path, out_csv: Path,
                   dry_run: bool, pretrain_source: str = "monash",
                   linear_probe: bool = True,
-                  anomaly_ratio: float = None):
-    log_path = log_dir / f"{model}_layers{encoder_layers}.log"
+                  anomaly_ratio: float = None,
+                  output_dir: str = None, log_tag: str = ""):
+    _log_tag = f"_{log_tag}" if log_tag else ""
+    log_path = log_dir / f"{model}_layers{encoder_layers}{_log_tag}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
@@ -211,6 +217,10 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
     ]
     if anomaly_ratio is not None:
         cmd += ["--anomaly_ratio", str(anomaly_ratio)]
+    if output_dir is not None:
+        cmd += ["--output_dir", output_dir]
+    if log_tag:
+        cmd += ["--log_tag", log_tag]
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -235,10 +245,12 @@ def run_anomaly_sweep(models: list, layer_configs: list, datasets: list,
                       pretrain_source: str = "monash",
                       out_csv: Path = None,
                       linear_probe: bool = True,
-                      anomaly_ratio: float = None):
-    log_dir = ROOT / "logs" / "anomaly_sweep"
+                      anomaly_ratio: float = None,
+                      output_dir: str = None, log_tag: str = ""):
+    _log_tag = f"_{log_tag}" if log_tag else ""
+    log_dir = ROOT / "logs" / f"anomaly_sweep{_log_tag}"
     if out_csv is None:
-        out_csv = ROOT / "results" / "anomaly_sweep.csv"
+        out_csv = ROOT / "results" / f"anomaly_sweep{_log_tag}.csv"
 
     print("Anomaly detection sweep")
     print(f"  Models:          {models}")
@@ -263,7 +275,8 @@ def run_anomaly_sweep(models: list, layer_configs: list, datasets: list,
             proc = launch_worker(model, n_layers, gpu, datasets, log_dir, out_csv,
                                  dry_run, pretrain_source=pretrain_source,
                                  linear_probe=linear_probe,
-                                 anomaly_ratio=anomaly_ratio)
+                                 anomaly_ratio=anomaly_ratio,
+                                 output_dir=output_dir, log_tag=log_tag)
             if proc is not None:
                 procs.append(proc)
 
@@ -303,7 +316,12 @@ def main():
     parser.add_argument("--anomaly_ratio",   type=float, default=None,
                         help="Override TSLib per-dataset anomaly ratio with a single value (e.g. 1.0)")
     parser.add_argument("--out_csv",         type=str,  default=None,
-                        help="Output CSV path (default: results/anomaly_sweep.csv)")
+                        help="Output CSV path (default: results/anomaly_sweep{log_tag}.csv)")
+    parser.add_argument("--output_dir",      type=str,  default=None,
+                        help="Override DINO config's output_dir (base path before _layers suffix). "
+                             "E.g. './checkpoints_phys', './checkpoints_physical_2', './checkpoints_physical_3'.")
+    parser.add_argument("--log_tag",         type=str,  default="",
+                        help="Suffix for log dir / csv / per-worker log filename (e.g. 'physical_2')")
     parser.add_argument("--dry_run",         action="store_true")
 
     # internal worker mode
@@ -324,6 +342,8 @@ def main():
             pretrain_source = args.pretrain_source,
             linear_probe    = args.linear_probe,
             anomaly_ratio   = args.anomaly_ratio,
+            output_dir      = args.output_dir,
+            log_tag         = args.log_tag,
         )
         return
 
@@ -334,6 +354,8 @@ def main():
         out_csv=Path(args.out_csv) if args.out_csv else None,
         linear_probe=args.linear_probe,
         anomaly_ratio=args.anomaly_ratio,
+        output_dir=args.output_dir,
+        log_tag=args.log_tag,
     )
 
 
