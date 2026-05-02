@@ -83,7 +83,8 @@ def predictor_layers_for(encoder_layers: int) -> int:
 
 
 def launch_model(model: str, encoder_layers: int, gpu: int,
-                 log_dir: Path, dry_run: bool, pretrain_source: str = None):
+                 log_dir: Path, dry_run: bool, pretrain_source: str = None,
+                 log_tag: str = ""):
     pred_layers = predictor_layers_for(encoder_layers)
     # For unlisted depths, fall back to the 8-layer LR (mid-range default).
     if model == "dino":
@@ -94,7 +95,8 @@ def launch_model(model: str, encoder_layers: int, gpu: int,
     else:
         lr = LAYER_LR.get(encoder_layers, LAYER_LR[8])
     src_tag   = f"_{pretrain_source}" if pretrain_source and pretrain_source != "monash" else ""
-    log_path  = log_dir / f"{model}{src_tag}_layers{encoder_layers}.log"
+    tag_suffix = f"_{log_tag}" if log_tag else ""
+    log_path  = log_dir / f"{model}{src_tag}_layers{encoder_layers}{tag_suffix}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
@@ -128,7 +130,8 @@ def launch_model(model: str, encoder_layers: int, gpu: int,
 
 
 def run_sweep(models: list, layer_configs: list, dry_run: bool,
-              pretrain_source: str = None, gpu_overrides: dict = None):
+              pretrain_source: str = None, gpu_overrides: dict = None,
+              log_tag: str = ""):
     log_dir = ROOT / "logs" / "layer_sweep"
     gpu_overrides = gpu_overrides or {}
 
@@ -140,7 +143,7 @@ def run_sweep(models: list, layer_configs: list, dry_run: bool,
         procs = []
         for model in models:
             gpu = gpu_overrides.get(model, MODEL_GPU[model])
-            proc = launch_model(model, n_layers, gpu, log_dir, dry_run, pretrain_source)
+            proc = launch_model(model, n_layers, gpu, log_dir, dry_run, pretrain_source, log_tag)
             if proc is not None:
                 procs.append(proc)
 
@@ -178,6 +181,8 @@ def main():
                         help="Override pretrain data source. Checkpoints saved to a separate folder.")
     parser.add_argument("--gpu_override", type=int, default=None,
                         help="Override GPU for all models in this run")
+    parser.add_argument("--log_tag", type=str, default="",
+                        help="Suffix appended to training log filename (e.g. 'physical_2' → dino_layers8_physical_2.log)")
     args = parser.parse_args()
 
     gpu_overrides = {}
@@ -197,7 +202,8 @@ def main():
 
     run_sweep(args.models, args.layers, args.dry_run,
               pretrain_source=args.pretrain_source,
-              gpu_overrides=gpu_overrides)
+              gpu_overrides=gpu_overrides,
+              log_tag=args.log_tag)
 
 
 if __name__ == "__main__":
