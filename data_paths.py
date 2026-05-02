@@ -12,7 +12,7 @@ DATA_PATHS = {
     "synthetic_data_dir":      "/home/shared/datasets/synthetic_data_TS",     # .arrow files
     "synthetic_mix_data_dir":  "/home/shared/datasets/synthetic_TS_Mix",      # smaller curated mix
     # ── Forecasting CSVs (consumed by dataset_registry) ──────────────────────
-    "forecasting_data_dir":    "/home/shared/datasets/forecasting_data",
+    "forecasting_data_dir":    "/home/shared/datasets/data - forecasting timeseries",
     # ── Downstream task datasets ─────────────────────────────────────────────
     "classification_data_dir": "/home/shared/datasets/Classification_TS",
     "anomaly_data_dir":        "/home/shared/datasets/Anomaly_TS",
