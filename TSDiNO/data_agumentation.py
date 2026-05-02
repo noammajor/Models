@@ -169,13 +169,12 @@ class HyperBolicGeometry(nn.Module):
         self.eps = eps
 
     def to_poincare(self, x):
-        length = x.shape[-1]
-        device = x.device
-        t = torch.linspace(-0.9, 0.9, steps=length).to(device)
-        t = t.view(1, 1, -1).expand_as(x)
-        y_min = x.min(dim=-1, keepdim=True)[0]
-        y_max = x.max(dim=-1, keepdim=True)[0]
-        y = 1.8 * (x - y_min) / (y_max - y_min + self.eps) - 0.9 
+        # x: [seq_len, n_vars] — time on dim 0, channels on dim 1
+        seq_len, n_vars = x.shape
+        t = torch.linspace(-0.9, 0.9, steps=seq_len, device=x.device).unsqueeze(1).expand(-1, n_vars)
+        y_min = x.min(dim=0, keepdim=True)[0]
+        y_max = x.max(dim=0, keepdim=True)[0]
+        y = 1.8 * (x - y_min) / (y_max - y_min + self.eps) - 0.9
         return t, y
 
     def mobius_add(self, u, v, u0, v0):
