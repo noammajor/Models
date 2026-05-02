@@ -62,13 +62,20 @@ ALL_MODELS = list(MODEL_GPU.keys())
 # ── checkpoint discovery (layer-aware) ───────────────────────────────────────
 
 def discover_checkpoints(model: str, encoder_layers: int,
-                         pretrain_source: str = None) -> list:
+                         pretrain_source: str = None,
+                         output_dir: str = None) -> list:
     """Return sorted list of checkpoint epoch numbers for a given layer config."""
     suffix = f"_layers{encoder_layers}"
     src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
 
     if model == "dino":
-        ckpt_dir = ROOT / f"checkpoints{src_tag}{suffix}"
+        if output_dir is not None:
+            base = output_dir.rstrip('/')
+            if base.startswith('./'):
+                base = base[2:]
+            ckpt_dir = Path(base + suffix) if Path(base).is_absolute() else (ROOT / (base + suffix))
+        else:
+            ckpt_dir = ROOT / f"checkpoints{src_tag}{suffix}"
         found = sorted(
             int(p.stem.replace("checkpoint", ""))
             for p in ckpt_dir.glob("checkpoint*.pth")
@@ -195,7 +202,8 @@ def log_to_file(log_path: Path):
 def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     gpu: int, log_dir: Path, encoder_layers: int,
                     pretrain_source: str = None,
-                    linear_probe: bool = True):
+                    linear_probe: bool = True,
+                    output_dir: str = None):
     """Returns (mse, mae) tuple — mae may be None for models that don't expose it."""
     ckpt_tag = str(ckpt) if ckpt is not None else "best"
     log_path = log_dir / f"pred{pred_len}_ckpt{ckpt_tag}.log"
@@ -213,6 +221,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     checkpoints=[ckpt],
                     encoder_layers=encoder_layers,
                     linear_probe=linear_probe,
+                    output_dir=output_dir,
                 )
                 return (result[1], None) if result else None
 
@@ -259,7 +268,8 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
 def checkpoint_search(model: str, dataset: str, all_checkpoints: list,
                       gpu: int, log_base: Path, encoder_layers: int,
                       pretrain_source: str = None,
-                      linear_probe: bool = True) -> dict:
+                      linear_probe: bool = True,
+                      output_dir: str = None) -> dict:
     log_dir = log_base / f"layers{encoder_layers}" / model / dataset
     results = {}
 
@@ -269,7 +279,8 @@ def checkpoint_search(model: str, dataset: str, all_checkpoints: list,
 
     def _eval(pl, ck):
         return eval_checkpoint(model, dataset, pl, ck, gpu, log_dir, encoder_layers,
-                               pretrain_source, linear_probe=linear_probe)
+                               pretrain_source, linear_probe=linear_probe,
+                               output_dir=output_dir)
 
     def _mse(val):
         """Extract MSE from a (mse, mae) tuple or scalar — for ranking."""
@@ -334,7 +345,8 @@ def checkpoint_search(model: str, dataset: str, all_checkpoints: list,
 def eval_best(model: str, dataset: str, pred_len: int,
               gpu: int, log_dir: Path, encoder_layers: int,
               pretrain_source: str = None,
-              linear_probe: bool = True):
+              linear_probe: bool = True,
+              output_dir: str = None):
     """Evaluate using only the best checkpoint. Returns (mse, mae) tuple."""
     log_path = log_dir / f"pred{pred_len}_ckptbest.log"
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -345,7 +357,8 @@ def eval_best(model: str, dataset: str, pred_len: int,
                              pred_lens=[pred_len], checkpoints=["best"],
                              encoder_layers=encoder_layers,
                              pretrain_source=pretrain_source,
-                             linear_probe=linear_probe)
+                             linear_probe=linear_probe,
+                             output_dir=output_dir)
                 return (result[1], None) if result else None
             elif model in ("ntp", "patchtst", "patchtst_random"):
                 kwargs = dict(model=model, skip_train=True, forecast_dataset=dataset,
@@ -376,12 +389,15 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                      datasets: list, out_csv: Path, best_only: bool = False,
                      pretrain_source: str = None,
                      linear_probe: bool = True,
-                     pred_lens: list = None):
+                     pred_lens: list = None,
+                     output_dir: str = None,
+                     log_tag: str = ""):
     """Run full forecasting for one model at one layer config. Called in subprocess."""
     if pred_lens is None:
         pred_lens = PRED_LENS
     src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
-    log_base = ROOT / "logs" / f"layer_forecast{src_tag}"
+    _log_tag = f"_{log_tag}" if log_tag else ""
+    log_base = ROOT / "logs" / f"layer_forecast{src_tag}{_log_tag}"
     fieldnames = ["model", "encoder_layers", "dataset", "pred_len", "mse", "mae", "timestamp"]
 
     existing = set()
@@ -395,7 +411,8 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                 existing.add((row["model"], int(row["encoder_layers"]),
                                row["dataset"], int(row["pred_len"])))
 
-    all_checkpoints = discover_checkpoints(model, encoder_layers, pretrain_source)
+    all_checkpoints = discover_checkpoints(model, encoder_layers, pretrain_source,
+                                           output_dir=output_dir)
     print(f"\n{'='*60}")
     print(f"  {model.upper()}  layers={encoder_layers}  checkpoints={all_checkpoints}")
     print(f"{'='*60}")
@@ -416,13 +433,15 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                 mses = {}
                 for pl in pred_lens:
                     val = eval_best(model, dataset, pl, gpu, log_dir, encoder_layers,
-                                    pretrain_source, linear_probe=linear_probe)
+                                    pretrain_source, linear_probe=linear_probe,
+                                    output_dir=output_dir)
                     if val is not None:
                         mses[pl] = val
             else:
                 mses = checkpoint_search(model, dataset, all_checkpoints,
                                          gpu, log_base, encoder_layers, pretrain_source,
-                                         linear_probe=linear_probe)
+                                         linear_probe=linear_probe,
+                                         output_dir=output_dir)
         except Exception as e:
             print(f"  [ERROR] {model}/layers{encoder_layers}/{dataset}: {e}")
             import traceback; traceback.print_exc()
@@ -463,11 +482,13 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
                   datasets: list, log_dir: Path, dry_run: bool,
                   best_only: bool = False, pretrain_source: str = None,
                   linear_probe: bool = True,
-                  pred_lens: list = None, out_csv_override: Path = None):
+                  pred_lens: list = None, out_csv_override: Path = None,
+                  output_dir: str = None, log_tag: str = ""):
     src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
+    _log_tag = f"_{log_tag}" if log_tag else ""
     out_csv = out_csv_override if out_csv_override is not None else \
-              ROOT / "results" / f"layer_forecast_{model}{src_tag}_layers{encoder_layers}.csv"
-    log_path = log_dir / f"{model}{src_tag}_layers{encoder_layers}.log"
+              ROOT / "results" / f"layer_forecast_{model}{src_tag}{_log_tag}_layers{encoder_layers}.csv"
+    log_path = log_dir / f"{model}{src_tag}{_log_tag}_layers{encoder_layers}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
@@ -486,6 +507,10 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
         cmd += ["--pretrain_source", pretrain_source]
     if pred_lens is not None:
         cmd += ["--pred_lens", *[str(p) for p in pred_lens]]
+    if output_dir is not None:
+        cmd += ["--output_dir", output_dir]
+    if log_tag:
+        cmd += ["--log_tag", log_tag]
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -509,8 +534,10 @@ def run_forecast_sweep(models: list, layer_configs: list,
                        datasets: list, dry_run: bool, gpu_override: int = None,
                        best_only: bool = False, pretrain_source: str = None,
                        linear_probe: bool = True,
-                       pred_lens: list = None, out_csv_override: Path = None):
-    log_dir = ROOT / "logs" / "layer_forecast"
+                       pred_lens: list = None, out_csv_override: Path = None,
+                       output_dir: str = None, log_tag: str = ""):
+    _log_tag = f"_{log_tag}" if log_tag else ""
+    log_dir = ROOT / "logs" / f"layer_forecast{_log_tag}"
 
     # patchtst_random runs once (no layer sweep)
     random_models  = [m for m in models if m == "patchtst_random"]
@@ -527,7 +554,8 @@ def run_forecast_sweep(models: list, layer_configs: list,
             proc = launch_worker(model, n_layers, gpu, datasets, log_dir, dry_run,
                                  best_only=best_only, pretrain_source=pretrain_source,
                                  linear_probe=linear_probe,
-                                 pred_lens=pred_lens, out_csv_override=out_csv_override)
+                                 pred_lens=pred_lens, out_csv_override=out_csv_override,
+                                 output_dir=output_dir, log_tag=log_tag)
             if proc is not None:
                 procs.append(proc)
 
@@ -574,7 +602,12 @@ def main():
                         help=f"Forecast horizons (default: {PRED_LENS}). "
                              "Only takes effect with --best_only; tournament search uses fixed [96,192,336,720].")
     parser.add_argument("--out_csv", type=str, default=None,
-                        help="Output CSV path (default: results/layer_forecast_{model}{src_tag}_layers{N}.csv per model)")
+                        help="Output CSV path (default: results/layer_forecast_{model}{src_tag}{log_tag}_layers{N}.csv per model)")
+    parser.add_argument("--output_dir", type=str, default=None,
+                        help="Override DINO config's output_dir (base path before _layers suffix). "
+                             "E.g. './checkpoints_phys', './checkpoints_physical_2', './checkpoints_physical_3'.")
+    parser.add_argument("--log_tag", type=str, default="",
+                        help="Suffix for log dir / csv / per-worker log filename (e.g. 'physical_2')")
 
     # internal worker mode
     parser.add_argument("--_worker",        action="store_true",  help=argparse.SUPPRESS)
@@ -595,6 +628,8 @@ def main():
             pretrain_source=args.pretrain_source,
             linear_probe=args.linear_probe,
             pred_lens=args.pred_lens,
+            output_dir=args.output_dir,
+            log_tag=args.log_tag,
         )
         return
 
@@ -615,7 +650,8 @@ def main():
                        pretrain_source=args.pretrain_source,
                        linear_probe=args.linear_probe,
                        pred_lens=args.pred_lens,
-                       out_csv_override=Path(args.out_csv) if args.out_csv else None)
+                       out_csv_override=Path(args.out_csv) if args.out_csv else None,
+                       output_dir=args.output_dir, log_tag=args.log_tag)
 
 
 if __name__ == "__main__":
