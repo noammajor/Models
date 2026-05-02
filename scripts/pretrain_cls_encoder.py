@@ -61,10 +61,12 @@ ALL_MODELS = list(MODEL_GPU.keys())
 def launch_model(model: str, gpu: int, pretrain_source: str,
                  log_dir: Path, dry_run: bool,
                  encoder_layers: int, predictor_layers: int,
-                 num_patches: int, patch_size: int):
+                 num_patches: int, patch_size: int,
+                 log_tag: str = ""):
     lr = MODEL_LR[model]
     cw = num_patches * patch_size
-    log_path = log_dir / f"{model}_layers{encoder_layers}_{pretrain_source}_cw{cw}.log"
+    tag_suffix = f"_{log_tag}" if log_tag else ""
+    log_path = log_dir / f"{model}_layers{encoder_layers}_{pretrain_source}_cw{cw}{tag_suffix}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
@@ -119,6 +121,8 @@ def main():
                              "actual patch size is set by each model's config file.")
     parser.add_argument("--gpu_override", type=int, default=None,
                         help="Run the task on this GPU (overrides per-model assignment).")
+    parser.add_argument("--log_tag", type=str, default="",
+                        help="Suffix appended to training log filename (e.g. 'physical_3' → dino_layers8_monash_cw1152_physical_3.log)")
     parser.add_argument("--dry_run", action="store_true",
                         help="Print commands without running them")
     args = parser.parse_args()
@@ -145,7 +149,8 @@ def main():
                             encoder_layers=args.encoder_layers,
                             predictor_layers=args.predictor_layers,
                             num_patches=args.num_patches,
-                            patch_size=args.patch_size)
+                            patch_size=args.patch_size,
+                            log_tag=args.log_tag)
         if proc is not None:
             procs.append(proc)
 
