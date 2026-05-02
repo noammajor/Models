@@ -4,7 +4,7 @@ config = {
     # "dino"  |  "classification"  |  "forecasting"
     "task": "dino",
     "seed": 42,
-    "output_dir": "./checkpoints_physical_2",
+    "output_dir": "./checkpoints_physical_3",
     "saveckp_freq": 1,
     "test_only": False,
 
@@ -133,15 +133,15 @@ config = {
     # ─────────────────────────────────────────────────────────────────────────
 
     # ── Teacher view (global crop) ────────────────────────────────────────────
-    # Physical run #2: polar-coordinate warp — uses default warp_range (0.7, 1.3).
+    # Physical run #3: tanh amplitude warp (hyperbolic) — uses default warp_range (0.5, 1.5).
     "global_crops": [
-        {"type": "polar", "crop_ratio": 1.0},
+        {"type": "hyperbolic_warp", "crop_ratio": 1.0},
     ],
 
     # ── Student view (local crop) ─────────────────────────────────────────────
-    # Physical run #2: 2-D rotation with time axis — uses default angle_range (0, π/8).
+    # Physical run #3: Poincaré-disk Möbius shift — uses default shift_magnitude 0.3.
     "local_crops": [
-        {"type": "rotation", "crop_ratio": 1.0},
+        {"type": "hyperbolic_geom", "crop_ratio": 1.0},
     ],
 
     # ── Patch reconstruction (MAE-style auxiliary loss) ────────────────────────
