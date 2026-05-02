@@ -51,7 +51,7 @@ LAYER_CONFIGS           = [ 8]
 CLASSIFICATION_DATASETS = [
     # UEA datasets (sorted by T ascending)
     "JapaneseVowels", "SpokenArabicDigits", "FaceDetection",
-    "Handwriting", "PEMS-SF", "UWaveGestureLibrary",
+    "Handwriting", "UWaveGestureLibrary",
     "Heartbeat", "SelfRegulationSCP1", "SelfRegulationSCP2",
     "EthanolConcentration",
 ]
@@ -108,7 +108,8 @@ def log_to_file(log_path: Path):
 def run_model_worker(model: str, encoder_layers: int, gpu: int,
                      datasets: list, out_csv: Path, num_patches: int = None,
                      pretrain_source: str = None,
-                     linear_probe: bool = True):
+                     linear_probe: bool = True,
+                     output_dir: str = None):
     _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
     _cw_tag  = f"_cw{num_patches * 16}" if num_patches is not None else ""
     log_base = ROOT / "logs" / f"layer_classification{_src_tag}{_cw_tag}"
@@ -150,6 +151,7 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                     num_patches=num_patches,
                     pretrain_source=pretrain_source,
                     linear_probe=linear_probe,
+                    output_dir=output_dir,
                 )
 
                 # Return tuple shapes (when task="classify"):
@@ -192,8 +194,10 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
 def launch_worker(model: str, encoder_layers: int, gpu: int,
                   datasets: list, log_dir: Path, out_csv: Path, dry_run: bool,
                   num_patches: int = None, pretrain_source: str = None,
-                  linear_probe: bool = True):
-    log_path = log_dir / f"{model}_layers{encoder_layers}.log"
+                  linear_probe: bool = True, log_tag: str = "",
+                  output_dir: str = None):
+    tag_suffix = f"_{log_tag}" if log_tag else ""
+    log_path = log_dir / f"{model}_layers{encoder_layers}{tag_suffix}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
@@ -210,6 +214,8 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
         cmd += ["--num_patches", str(num_patches)]
     if pretrain_source is not None:
         cmd += ["--pretrain_source", pretrain_source]
+    if output_dir is not None:
+        cmd += ["--output_dir", output_dir]
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -233,12 +239,14 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
 def run_classification_sweep(models: list, layer_configs: list, datasets: list,
                               gpu_override: int, dry_run: bool, num_patches: int = None,
                               pretrain_source: str = None, out_csv: Path = None,
-                              linear_probe: bool = True):
+                              linear_probe: bool = True, log_tag: str = "",
+                              output_dir: str = None):
     _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
     _cw_tag = f"_cw{num_patches * 16}" if num_patches is not None else ""
-    log_dir = ROOT / "logs" / f"layer_classification{_src_tag}{_cw_tag}"
+    _log_tag = f"_{log_tag}" if log_tag else ""
+    log_dir = ROOT / "logs" / f"layer_classification{_src_tag}{_cw_tag}{_log_tag}"
     if out_csv is None:
-        out_csv = ROOT / "results" / f"layer_classification{_src_tag}{_cw_tag}.csv"
+        out_csv = ROOT / "results" / f"layer_classification{_src_tag}{_cw_tag}{_log_tag}.csv"
 
     print(f"Layer classification sweep")
     print(f"  Models:       {models}")
@@ -261,7 +269,8 @@ def run_classification_sweep(models: list, layer_configs: list, datasets: list,
             gpu = gpu_override if gpu_override is not None else MODEL_GPU[model]
             proc = launch_worker(model, n_layers, gpu, datasets, log_dir, out_csv, dry_run,
                                  num_patches=num_patches, pretrain_source=pretrain_source,
-                                 linear_probe=linear_probe)
+                                 linear_probe=linear_probe, log_tag=log_tag,
+                                 output_dir=output_dir)
             if proc is not None:
                 procs.append(proc)
 
@@ -306,7 +315,13 @@ def main():
     parser.add_argument("--linear_probe", type=_str2bool, default=True,
                         help="True (frozen encoder + head only; default) or False (fine-tune)")
     parser.add_argument("--out_csv",     type=str, default=None,
-                        help="Output CSV path (default: results/layer_classification{src_tag}{cw_tag}.csv)")
+                        help="Output CSV path (default: results/layer_classification{src_tag}{cw_tag}{log_tag}.csv)")
+    parser.add_argument("--log_tag",     type=str, default="",
+                        help="Suffix for log dir, csv, and per-worker log filename (e.g. 'physical_2')")
+    parser.add_argument("--output_dir",  type=str, default=None,
+                        help="Override DINO config's output_dir (base path before _layers/_cw suffixes). "
+                             "Use to point at different pretrained backbones without editing config.py "
+                             "(e.g. './checkpoints_phys', './checkpoints_physical_2', './checkpoints_physical_3').")
     parser.add_argument("--dry_run",     action="store_true")
 
     # internal worker mode
@@ -327,6 +342,7 @@ def main():
             num_patches=(args.num_patches if args.num_patches and args.num_patches > 0 else None),
             pretrain_source=args.pretrain_source,
             linear_probe=args.linear_probe,
+            output_dir=args.output_dir,
         )
         return
 
@@ -340,6 +356,8 @@ def main():
         pretrain_source=args.pretrain_source,
         out_csv=Path(args.out_csv) if args.out_csv else None,
         linear_probe=args.linear_probe,
+        log_tag=args.log_tag,
+        output_dir=args.output_dir,
     )
 
 

@@ -216,7 +216,8 @@ def run_dino(skip_train: bool = False,
              checkpoint: str = None,
              num_patches: int = None,
              seed: int = None,
-             linear_probe: bool = True):
+             linear_probe: bool = True,
+             output_dir: str = None):
     dino_dir  = Path(__file__).parent / "TSDiNO"
     shared_dir = Path(__file__).parent / "shared"
     _add_path(dino_dir)
@@ -247,6 +248,8 @@ def run_dino(skip_train: bool = False,
     dino_cfg = dict(dino_cfg)
     if pretrain_source is not None:
         dino_cfg['pretrain_source'] = pretrain_source
+    if output_dir is not None:
+        dino_cfg['output_dir'] = output_dir
     if encoder_layers is not None:
         dino_cfg['n_layers'] = encoder_layers
         _src_tag = '' if dino_cfg.get('pretrain_source', 'monash') == 'monash' else f"_{dino_cfg['pretrain_source'].replace('+', '_')}"
@@ -2034,7 +2037,8 @@ def run(model: str,
         num_patches: int = None,
         seed: int = None,
         pretrain_cls_model: bool = False,
-        linear_probe: bool = True):
+        linear_probe: bool = True,
+        output_dir: str = None):
     """
     Unified entry point. Each run handles ONE task.
 
@@ -2116,6 +2120,7 @@ def run(model: str,
     if 'seed'                   in sig.parameters: kwargs['seed']                   = seed
     if 'pretrain_cls_model'     in sig.parameters: kwargs['pretrain_cls_model']     = pretrain_cls_model
     if 'linear_probe'           in sig.parameters: kwargs['linear_probe']           = linear_probe
+    if 'output_dir'             in sig.parameters: kwargs['output_dir']             = output_dir
     return runner(**kwargs)
 
 
