@@ -25,6 +25,7 @@ config = {
     "mlp_ratio": 4.0,
     "drop_rate": 0.0,
     "attn_drop_rate": 0.0,
+    "head_dropout_forecasting": 0.2,
     "patch_size": 16,
     "ratio_patches": 32,   # 21×16 = 336 timesteps — aligned with forecasting context
     # Required by MonashDataPullerJEPA — mask indices are returned but ignored by LE-JEPA

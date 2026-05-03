@@ -50,7 +50,7 @@ def forecasting(self, path, linear_probe=True, mlp_head: bool = False):
         P_L         = config["patch_size_forcasting"]
         # n_vars inferred from the first sample of the forecast loader
         n_v_for = self.forcast_train.dataset[0][0].shape[-1]
-        self.forecast_head_patch = PredictionHead(individual=False, n_vars=n_v_for, d_model=embed_dim, num_patch=num_patches, forecast_len=h_t * P_L, mlp_head=mlp_head).to(self.device)
+        self.forecast_head_patch = PredictionHead(individual=False, n_vars=n_v_for, d_model=embed_dim, num_patch=num_patches, forecast_len=h_t * P_L, head_dropout=config.get("head_dropout_forecasting", 0.2), mlp_head=mlp_head).to(self.device)
         # Train decoders
         '''
         optimizer = torch.optim.AdamW([

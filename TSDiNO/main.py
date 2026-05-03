@@ -680,7 +680,7 @@ def test_run(args):
         shared_embedding=True,
         d_ff=args.d_ff,
         dropout=args.dropout,
-        head_dropout=args.head_dropout,
+        head_dropout=getattr(args, 'head_dropout_forecasting', args.head_dropout),
         act='leakyrelu',
         head_type='prediction',
         res_attention=False,

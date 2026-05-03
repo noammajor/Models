@@ -70,6 +70,7 @@ def forecasting(self, path, linear_probe=True, mlp_head: bool = False):
         d_model      = embed_dim,
         num_patch    = num_patches,
         forecast_len = h_t * P_L,
+        head_dropout = config.get("head_dropout_forecasting", 0.2),
         mlp_head     = mlp_head,
     ).to(self.device)
 

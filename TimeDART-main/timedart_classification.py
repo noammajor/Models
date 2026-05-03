@@ -34,11 +34,13 @@ class ClassificationHead(nn.Module):
     def __init__(self, n_vars, d_model, n_classes, head_dropout, mlp_head: bool = False, hidden_dim: int = 512):
         super().__init__()
         self.flatten = nn.Flatten(start_dim=1)
-        self.dropout = nn.Dropout(head_dropout)
+        # MLP has dropout INSIDE the block; linear has dropout BEFORE the projection
+        self.dropout = nn.Identity() if mlp_head else nn.Dropout(head_dropout)
         if mlp_head:
             self.linear = nn.Sequential(
                 nn.Linear(n_vars * d_model, hidden_dim),
                 nn.GELU(),
+                nn.Dropout(head_dropout),
                 nn.Linear(hidden_dim, n_classes),
             )
         else:

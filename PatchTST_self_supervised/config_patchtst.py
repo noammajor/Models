@@ -21,6 +21,7 @@ config = {
     "d_ff":         512,
     "dropout":      0.2,
     "head_dropout": 0.2,
+    "head_dropout_forecasting": 0.2,
     "revin":        True,
 
     # ── Pretraining ───────────────────────────────────────────────────────────

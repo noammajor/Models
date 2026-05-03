@@ -24,6 +24,7 @@ config = {
     "qk_scale": None,
     "drop_rate": 0.00,
     "attn_drop_rate": 0.00,
+    "head_dropout_forecasting": 0.2,
     "kernel_size": 6,
     "encoder_kernel_size": 6,
     "embed_bias": True,

@@ -135,6 +135,7 @@ def _config_to_dino_args(cfg):
         d_ff                        = cfg.get("d_ff", 512),
         dropout                     = cfg.get("dropout", 0.1),
         head_dropout                = cfg.get("head_dropout", 0.1),
+        head_dropout_forecasting    = cfg.get("head_dropout_forecasting", 0.2),
         drop_path_rate              = cfg.get("drop_path_rate", 0.1),
 
         # ── DINO head ─────────────────────────────────────────────────────
@@ -964,7 +965,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
                  "--d_model",         str(cfg.get("d_model", 128)),
                  "--d_ff",            str(cfg.get("d_ff", 512)),
                  "--dropout",         str(cfg.get("dropout", 0.2)),
-                 "--head_dropout",    str(cfg.get("head_dropout", 0.2)),
+                 "--head_dropout",    str(cfg.get("head_dropout_forecasting", cfg.get("head_dropout", 0.2))),
                  "--target_points",   str(_pl),
                  "--pretrained_model", str(pretrained_model_path) if pretrained_model_path is not None else "",
                  "--random_encoder",   str(int(random_encoder)),
@@ -1867,6 +1868,7 @@ def run_timedart(skip_train: bool = False,
             ft_args.lradj          = "constant"
             ft_args.patience       = cfg.get('patience', 5)
             ft_args.mlp_head       = (head_type == "mlp")
+            ft_args.head_dropout   = cfg.get('head_dropout_forecasting', cfg.get('head_dropout', 0.2))
 
             setting = f"timedart_{forecast_dataset}_pl{pred_len}_dm{cfg['d_model']}_el{cfg['e_layers']}"
 

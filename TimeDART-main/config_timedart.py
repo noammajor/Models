@@ -18,6 +18,7 @@ config = {
     "label_len":   0,
     "dropout":     0.1,
     "head_dropout": 0.1,
+    "head_dropout_forecasting": 0.2,
 
     # ── Diffusion ─────────────────────────────────────────────────────────────
     "time_steps":  1000,

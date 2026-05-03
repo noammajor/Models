@@ -79,7 +79,7 @@ def _get_forecasting_model(config, c_in, forecast_len, device, mlp_head: bool = 
         shared_embedding=True,
         d_ff=config["d_ff"],
         dropout=config["dropout"],
-        head_dropout=config["head_dropout"],
+        head_dropout=config.get("head_dropout_forecasting", config.get("head_dropout", 0.2)),
         act=config["act"],
         head_type="prediction",
         causal=True,          # keep causal=True to match pretrained settings

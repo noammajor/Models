@@ -35,6 +35,7 @@ config = {
     "d_ff": 512,
     "dropout": 0.1,
     "head_dropout": 0.1,
+    "head_dropout_forecasting": 0.2,
     "drop_path_rate": 0.1,
 
     # ── DINO head ─────────────────────────────────────────────────────────────

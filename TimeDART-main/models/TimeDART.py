@@ -31,14 +31,17 @@ class FlattenHead(nn.Module):
         self.pred_len = pred_len
         self.flatten = nn.Flatten(start_dim=-2)
         if mlp_head:
+            # MLP block has dropout INSIDE; outer self.dropout is Identity
             self.forecast_head = nn.Sequential(
                 nn.Linear(seq_len * d_model, hidden_dim),
                 nn.GELU(),
+                nn.Dropout(dropout),
                 nn.Linear(hidden_dim, pred_len),
             )
+            self.dropout = nn.Identity()
         else:
             self.forecast_head = nn.Linear(seq_len * d_model, pred_len)
-        self.dropout = nn.Dropout(dropout)
+            self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

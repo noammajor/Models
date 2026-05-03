@@ -15,15 +15,17 @@ from .layers.attention import *
 
 
 def _proj(in_dim, out_dim, dropout, mlp_head=False, hidden_dim=512):
-    """Linear (default) or 1-hidden-layer MLP (Linear→GELU→Linear).
+    """Linear (default) or 1-hidden-layer MLP (Linear→GELU→Dropout→Linear).
 
-    No internal dropout — the head's existing input dropout is the only one applied.
+    For MLP, dropout is applied INSIDE the block. Callers wrap with an external
+    nn.Identity() (instead of Dropout) when mlp_head=True so total dropout count = 1.
     """
     if not mlp_head:
         return nn.Linear(in_dim, out_dim)
     return nn.Sequential(
         nn.Linear(in_dim, hidden_dim),
         nn.GELU(),
+        nn.Dropout(dropout),
         nn.Linear(hidden_dim, out_dim),
     )
 
@@ -93,7 +95,7 @@ class RegressionHead(nn.Module):
         super().__init__()
         self.y_range = y_range
         self.flatten = nn.Flatten(start_dim=1)
-        self.dropout = nn.Dropout(head_dropout)
+        self.dropout = nn.Identity() if mlp_head else nn.Dropout(head_dropout)
         self.linear = _proj(n_vars*d_model, output_dim, head_dropout, mlp_head=mlp_head)
 
     def forward(self, x):
@@ -113,7 +115,7 @@ class ClassificationHead(nn.Module):
     def __init__(self, n_vars, d_model, n_classes, head_dropout, mlp_head: bool = False):
         super().__init__()
         self.flatten = nn.Flatten(start_dim=1)
-        self.dropout = nn.Dropout(head_dropout)
+        self.dropout = nn.Identity() if mlp_head else nn.Dropout(head_dropout)
         self.linear = _proj(n_vars*d_model, n_classes, head_dropout, mlp_head=mlp_head)
 
     def forward(self, x):
@@ -144,11 +146,11 @@ class PredictionHead(nn.Module):
             for i in range(self.n_vars):
                 self.flattens.append(nn.Flatten(start_dim=-2))
                 self.linears.append(_proj(head_dim, forecast_len, head_dropout, mlp_head=mlp_head))
-                self.dropouts.append(nn.Dropout(head_dropout))
+                self.dropouts.append(nn.Identity() if mlp_head else nn.Dropout(head_dropout))
         else:
             self.flatten = nn.Flatten(start_dim=-2)
             self.linear = _proj(head_dim, forecast_len, head_dropout, mlp_head=mlp_head)
-            self.dropout = nn.Dropout(head_dropout)
+            self.dropout = nn.Identity() if mlp_head else nn.Dropout(head_dropout)
 
 
     def forward(self, x):                     
