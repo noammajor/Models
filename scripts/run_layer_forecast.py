@@ -48,7 +48,7 @@ PRED_LENS     = [96, 192, 336, 720]
 # Model → GPU assignment (match run_layer_sweep.py)
 MODEL_GPU = {
     "dino":            0,
-    "jepa":            1,
+    "jepa":            7,
     "lejepa":          2,
     "patchtst":        3,
     "ntp":             4,
