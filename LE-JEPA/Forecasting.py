@@ -33,7 +33,7 @@ def _instance_denorm(x, mean, std):
     return x * std.reshape(shape) + mean.reshape(shape)
 
 
-def forecasting(self, path, linear_probe=True):
+def forecasting(self, path, linear_probe=True, mlp_head: bool = False):
     """
     Linear-probe forecasting with frozen LE-JEPA encoder.
 
@@ -70,6 +70,7 @@ def forecasting(self, path, linear_probe=True):
         d_model      = embed_dim,
         num_patch    = num_patches,
         forecast_len = h_t * P_L,
+        mlp_head     = mlp_head,
     ).to(self.device)
 
     _all_params = list(self.encoder.parameters()) + list(forecast_head.parameters())

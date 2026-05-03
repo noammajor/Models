@@ -13,6 +13,20 @@ from .layers.pos_encoding import *
 from .layers.basics import *
 from .layers.attention import *
 
+
+def _proj(in_dim, out_dim, dropout, mlp_head=False, hidden_dim=512):
+    """Linear (default) or 1-hidden-layer MLP (Linear→GELU→Linear).
+
+    No internal dropout — the head's existing input dropout is the only one applied.
+    """
+    if not mlp_head:
+        return nn.Linear(in_dim, out_dim)
+    return nn.Sequential(
+        nn.Linear(in_dim, hidden_dim),
+        nn.GELU(),
+        nn.Linear(hidden_dim, out_dim),
+    )
+
             
 # Cell
 class PatchTST(nn.Module):
@@ -29,7 +43,8 @@ class PatchTST(nn.Module):
                  res_attention:bool=True, pre_norm:bool=False, store_attn:bool=False,
                  pe:str='zeros', learn_pe:bool=True, head_dropout = 0,
                  head_type = "prediction", individual = False,
-                 y_range:Optional[tuple]=None, causal:bool=False, verbose:bool=False, **kwargs):
+                 y_range:Optional[tuple]=None, causal:bool=False, verbose:bool=False,
+                 mlp_head: bool = False, **kwargs):
 
         super().__init__()
 
@@ -53,11 +68,11 @@ class PatchTST(nn.Module):
             self.head = NTPHead(d_model, d_ff, patch_len, head_dropout, act=act,
                                 horizon_patches=kwargs.get('horizon_patches', None))
         elif head_type == "prediction":
-            self.head = PredictionHead(individual, self.n_vars, d_model, num_patch, target_dim, head_dropout)
+            self.head = PredictionHead(individual, self.n_vars, d_model, num_patch, target_dim, head_dropout, mlp_head=mlp_head)
         elif head_type == "regression":
-            self.head = RegressionHead(self.n_vars, d_model, target_dim, head_dropout, y_range)
+            self.head = RegressionHead(self.n_vars, d_model, target_dim, head_dropout, y_range, mlp_head=mlp_head)
         elif head_type == "classification":
-            self.head = ClassificationHead(self.n_vars, d_model, target_dim, head_dropout)
+            self.head = ClassificationHead(self.n_vars, d_model, target_dim, head_dropout, mlp_head=mlp_head)
 
 
     def forward(self, z):                             
@@ -74,12 +89,12 @@ class PatchTST(nn.Module):
 
 
 class RegressionHead(nn.Module):
-    def __init__(self, n_vars, d_model, output_dim, head_dropout, y_range=None):
+    def __init__(self, n_vars, d_model, output_dim, head_dropout, y_range=None, mlp_head: bool = False):
         super().__init__()
         self.y_range = y_range
         self.flatten = nn.Flatten(start_dim=1)
         self.dropout = nn.Dropout(head_dropout)
-        self.linear = nn.Linear(n_vars*d_model, output_dim)
+        self.linear = _proj(n_vars*d_model, output_dim, head_dropout, mlp_head=mlp_head)
 
     def forward(self, x):
         """
@@ -95,11 +110,11 @@ class RegressionHead(nn.Module):
 
 
 class ClassificationHead(nn.Module):
-    def __init__(self, n_vars, d_model, n_classes, head_dropout):
+    def __init__(self, n_vars, d_model, n_classes, head_dropout, mlp_head: bool = False):
         super().__init__()
         self.flatten = nn.Flatten(start_dim=1)
         self.dropout = nn.Dropout(head_dropout)
-        self.linear = nn.Linear(n_vars*d_model, n_classes)
+        self.linear = _proj(n_vars*d_model, n_classes, head_dropout, mlp_head=mlp_head)
 
     def forward(self, x):
         """
@@ -114,7 +129,7 @@ class ClassificationHead(nn.Module):
 
 
 class PredictionHead(nn.Module):
-    def __init__(self, individual, n_vars, d_model, num_patch, forecast_len, head_dropout=0, flatten=False):
+    def __init__(self, individual, n_vars, d_model, num_patch, forecast_len, head_dropout=0, flatten=False, mlp_head: bool = False):
         super().__init__()
 
         self.individual = individual
@@ -128,11 +143,11 @@ class PredictionHead(nn.Module):
             self.flattens = nn.ModuleList()
             for i in range(self.n_vars):
                 self.flattens.append(nn.Flatten(start_dim=-2))
-                self.linears.append(nn.Linear(head_dim, forecast_len))
+                self.linears.append(_proj(head_dim, forecast_len, head_dropout, mlp_head=mlp_head))
                 self.dropouts.append(nn.Dropout(head_dropout))
         else:
             self.flatten = nn.Flatten(start_dim=-2)
-            self.linear = nn.Linear(head_dim, forecast_len)
+            self.linear = _proj(head_dim, forecast_len, head_dropout, mlp_head=mlp_head)
             self.dropout = nn.Dropout(head_dropout)
 
 

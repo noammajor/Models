@@ -60,7 +60,7 @@ def _instance_denorm(x, mean, std):
 
 # ── model factory ─────────────────────────────────────────────────────────────
 
-def _get_forecasting_model(config, c_in, forecast_len, device):
+def _get_forecasting_model(config, c_in, forecast_len, device, mlp_head: bool = False):
     """
     Build a PatchTST with a PredictionHead.
 
@@ -84,12 +84,13 @@ def _get_forecasting_model(config, c_in, forecast_len, device):
         head_type="prediction",
         causal=True,          # keep causal=True to match pretrained settings
         res_attention=False,
+        mlp_head=mlp_head,
     ).to(device)
 
 
 # ── main entry point ──────────────────────────────────────────────────────────
 
-def forecasting(config, checkpoint_path, linear_probe=True):
+def forecasting(config, checkpoint_path, linear_probe=True, mlp_head: bool = False):
     """
     Forecasting with NTP backbone + trained PredictionHead.
 
@@ -154,7 +155,7 @@ def forecasting(config, checkpoint_path, linear_probe=True):
     print(f"  train={len(train_fc)}  val={len(val_fc)}  test={len(test_fc)}  windows")
 
     # ── build model ───────────────────────────────────────────────────────────
-    model = _get_forecasting_model(fore_cfg, n_vars, forecast_len, device)
+    model = _get_forecasting_model(fore_cfg, n_vars, forecast_len, device, mlp_head=mlp_head)
 
     # Load pretrained backbone weights from the "encoder" key in the checkpoint
     if os.path.exists(checkpoint_path):

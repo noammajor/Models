@@ -120,7 +120,7 @@ def pretrain_cmd(model: str, seed: int, pretrain_source: str) -> list:
     ]
 
 
-def forecast_cmd(model: str, dataset: str, seed: int, pretrain_source: str) -> list:
+def forecast_cmd(model: str, dataset: str, seed: int, pretrain_source: str, head: str = "linear") -> list:
     return [
         sys.executable, str(ROOT / "Train_and_downstream.py"),
         "--model",           model,
@@ -129,10 +129,11 @@ def forecast_cmd(model: str, dataset: str, seed: int, pretrain_source: str) -> l
         "--encoder_layers",  str(ENCODER_LAYERS),
         "--pretrain_source", pretrain_source,
         "--seed",            str(seed),
+        "--head",            head,
     ]
 
 
-def classify_cmd(model: str, dataset: str, seed: int, pretrain_source: str) -> list:
+def classify_cmd(model: str, dataset: str, seed: int, pretrain_source: str, head: str = "linear") -> list:
     return [
         sys.executable, str(ROOT / "Train_and_downstream.py"),
         "--model",                    model,
@@ -142,10 +143,11 @@ def classify_cmd(model: str, dataset: str, seed: int, pretrain_source: str) -> l
         "--num_patches",              str(CLS_NUM_PATCHES),
         "--pretrain_source",          pretrain_source,
         "--seed",                     str(seed),
+        "--head",                     head,
     ]
 
 
-def anomaly_cmd(model: str, dataset: str, seed: int, pretrain_source: str) -> list:
+def anomaly_cmd(model: str, dataset: str, seed: int, pretrain_source: str, head: str = "linear") -> list:
     return [
         sys.executable, str(ROOT / "Train_and_downstream.py"),
         "--model",           model,
@@ -154,6 +156,7 @@ def anomaly_cmd(model: str, dataset: str, seed: int, pretrain_source: str) -> li
         "--encoder_layers",  str(ENCODER_LAYERS),
         "--pretrain_source", pretrain_source,
         "--seed",            str(seed),
+        "--head",            head,
     ]
 
 
@@ -163,7 +166,8 @@ def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
                         skip_pretrain: bool, dry_run: bool, log_base: Path,
                         phases: set = None, forecast_datasets: list = None,
                         classification_datasets: list = None,
-                        anomaly_datasets: list = None):
+                        anomaly_datasets: list = None,
+                        head: str = "linear"):
     if phases is None:
         phases = {"pretrain", "forecast", "classify", "anomaly"}
     if forecast_datasets is None:
@@ -193,20 +197,20 @@ def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
 
     if "forecast" in phases:
         for dataset in forecast_datasets:
-            _step(_launch(forecast_cmd(model, dataset, seed, pretrain_source),
+            _step(_launch(forecast_cmd(model, dataset, seed, pretrain_source, head=head),
                           gpu, log_base / f"seed{seed}" / f"forecast_{model}_{dataset}.log",
                           dry_run, f"forecast/{model}/{dataset}/seed{seed}"))
 
     if "classify" in phases:
         for dataset in classification_datasets:
-            _step(_launch(classify_cmd(model, dataset, seed, pretrain_source),
+            _step(_launch(classify_cmd(model, dataset, seed, pretrain_source, head=head),
                           gpu, log_base / f"seed{seed}" / f"cls_{model}_{dataset}.log",
                           dry_run, f"cls/{model}/{dataset}/seed{seed}"))
 
     if "anomaly" in phases:
         procs = []
         for dataset in anomaly_datasets:
-            proc = _launch(anomaly_cmd(model, dataset, seed, pretrain_source),
+            proc = _launch(anomaly_cmd(model, dataset, seed, pretrain_source, head=head),
                            gpu, log_base / f"seed{seed}" / f"anom_{model}_{dataset}.log",
                            dry_run, f"anom/{model}/{dataset}/seed{seed}")
             if proc:
@@ -221,7 +225,8 @@ def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
 
 def run_seed_analysis(seeds, models, gpu_override, skip_pretrain, dry_run,
                       pretrain_source=PRETRAIN_SOURCE, phases=None, forecast_datasets=None,
-                      classification_datasets=None, anomaly_datasets=None):
+                      classification_datasets=None, anomaly_datasets=None,
+                      head: str = "linear"):
     log_base = ROOT / "logs" / "forecasting" / "seed_analysis"
     if phases is None:
         phases = {"pretrain", "forecast", "classify", "anomaly"}
@@ -237,7 +242,7 @@ def run_seed_analysis(seeds, models, gpu_override, skip_pretrain, dry_run,
             gpu = gpu_override if gpu_override is not None else MODEL_GPU[model]
             t = threading.Thread(
                 target=_run_model_pipeline,
-                args=(model, seed, gpu, pretrain_source, skip_pretrain, dry_run, log_base, phases, forecast_datasets, classification_datasets, anomaly_datasets),
+                args=(model, seed, gpu, pretrain_source, skip_pretrain, dry_run, log_base, phases, forecast_datasets, classification_datasets, anomaly_datasets, head),
                 name=f"{model}/seed{seed}",
                 daemon=True,
             )
@@ -283,6 +288,9 @@ def main():
                         help="Run all models on this GPU")
     parser.add_argument("--dry_run",      action="store_true",
                         help="Print commands without running them")
+    parser.add_argument("--head", type=str, default="linear",
+                        choices=["linear", "mlp"],
+                        help="Downstream head type: 'linear' (single Linear) or 'mlp' (1-hidden-layer MLP)")
     args = parser.parse_args()
 
     print(f"Seed analysis")
@@ -315,6 +323,7 @@ def main():
         forecast_datasets=args.forecast_datasets,
         classification_datasets=args.classification_datasets,
         anomaly_datasets=args.anomaly_datasets,
+        head=args.head,
     )
 
 

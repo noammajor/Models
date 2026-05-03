@@ -25,7 +25,7 @@ from src.models.patchTST import PatchTST
 
 def classification(config, checkpoint_path, classification_train,
                    classification_val, classification_test, n_classes,
-                   linear_probe=True):
+                   linear_probe=True, mlp_head: bool = False):
     """
     Classification with PatchTST backbone.
 
@@ -67,6 +67,7 @@ def classification(config, checkpoint_path, classification_train,
         act          = "gelu",
         head_type    = "classification",
         res_attention = False,
+        mlp_head     = mlp_head,
     ).to(device)
 
     # Load pretrained backbone weights (skip head and shape mismatches)

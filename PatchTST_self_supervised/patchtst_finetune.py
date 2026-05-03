@@ -48,6 +48,7 @@ parser.add_argument('--lr', type=float, default=1e-4, help='learning rate')
 parser.add_argument('--pretrained_model', type=str, default=None, help='pretrained model name')
 parser.add_argument('--random_encoder', type=int, default=0, help='use random (untrained) encoder weights')
 parser.add_argument('--seed', type=int, default=42, help='random seed')
+parser.add_argument('--mlp_head', type=int, default=0, help='use 1-hidden-layer MLP head instead of linear (0/1)')
 # model id to keep track of the number of models saved
 parser.add_argument('--finetuned_model_id', type=int, default=1, help='id of the saved finetuned model')
 parser.add_argument('--model_type', type=str, default='based_model', help='for multivariate model or univariate model')
@@ -91,13 +92,14 @@ def get_model(c_in, args, head_type, weight_path=None):
                 n_heads=args.n_heads,
                 d_model=args.d_model,
                 shared_embedding=True,
-                d_ff=args.d_ff,                        
+                d_ff=args.d_ff,
                 dropout=args.dropout,
                 head_dropout=args.head_dropout,
                 act='relu',
                 head_type=head_type,
-                res_attention=False
-                )    
+                res_attention=False,
+                mlp_head=bool(getattr(args, 'mlp_head', 0)),
+                )
     if weight_path: model = transfer_weights(weight_path, model)
     # print out the model size
     print('number of model params', sum(p.numel() for p in model.parameters() if p.requires_grad))

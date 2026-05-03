@@ -203,6 +203,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     gpu: int, log_dir: Path, encoder_layers: int,
                     pretrain_source: str = None,
                     linear_probe: bool = True,
+                    head_type: str = "linear",
                     output_dir: str = None):
     """Returns (mse, mae) tuple — mae may be None for models that don't expose it."""
     ckpt_tag = str(ckpt) if ckpt is not None else "best"
@@ -221,6 +222,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     checkpoints=[ckpt],
                     encoder_layers=encoder_layers,
                     linear_probe=linear_probe,
+                    head_type=head_type,
                     output_dir=output_dir,
                 )
                 return (result[1], None) if result else None
@@ -234,6 +236,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     encoder_layers=encoder_layers,
                     pretrain_source=pretrain_source,
                     linear_probe=linear_probe,
+                    head_type=head_type,
                 )
                 if model != "patchtst_random":
                     kwargs["checkpoints"] = [ckpt] if ckpt is not None else None
@@ -252,6 +255,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     gpu=gpu,
                     pretrain_source=pretrain_source,
                     linear_probe=linear_probe,
+                    head_type=head_type,
                 )
                 if isinstance(result, tuple) and len(result) >= 3:
                     return (result[1], result[2])
@@ -269,6 +273,7 @@ def checkpoint_search(model: str, dataset: str, all_checkpoints: list,
                       gpu: int, log_base: Path, encoder_layers: int,
                       pretrain_source: str = None,
                       linear_probe: bool = True,
+                      head_type: str = "linear",
                       output_dir: str = None) -> dict:
     log_dir = log_base / f"layers{encoder_layers}" / model / dataset
     results = {}
@@ -280,6 +285,7 @@ def checkpoint_search(model: str, dataset: str, all_checkpoints: list,
     def _eval(pl, ck):
         return eval_checkpoint(model, dataset, pl, ck, gpu, log_dir, encoder_layers,
                                pretrain_source, linear_probe=linear_probe,
+                               head_type=head_type,
                                output_dir=output_dir)
 
     def _mse(val):
@@ -346,6 +352,7 @@ def eval_best(model: str, dataset: str, pred_len: int,
               gpu: int, log_dir: Path, encoder_layers: int,
               pretrain_source: str = None,
               linear_probe: bool = True,
+              head_type: str = "linear",
               output_dir: str = None):
     """Evaluate using only the best checkpoint. Returns (mse, mae) tuple."""
     log_path = log_dir / f"pred{pred_len}_ckptbest.log"
@@ -358,13 +365,15 @@ def eval_best(model: str, dataset: str, pred_len: int,
                              encoder_layers=encoder_layers,
                              pretrain_source=pretrain_source,
                              linear_probe=linear_probe,
+                             head_type=head_type,
                              output_dir=output_dir)
                 return (result[1], None) if result else None
             elif model in ("ntp", "patchtst", "patchtst_random"):
                 kwargs = dict(model=model, skip_train=True, forecast_dataset=dataset,
                               pred_len=pred_len, encoder_layers=encoder_layers,
                               pretrain_source=pretrain_source,
-                              linear_probe=linear_probe)
+                              linear_probe=linear_probe,
+                              head_type=head_type)
                 if model != "patchtst_random":
                     kwargs["checkpoints"] = None
                 result = run(**kwargs)
@@ -375,7 +384,8 @@ def eval_best(model: str, dataset: str, pred_len: int,
                 result = run(model="timedart", skip_train=True, forecast_dataset=dataset,
                              pred_lens=[pred_len], encoder_layers=encoder_layers, gpu=gpu,
                              pretrain_source=pretrain_source,
-                             linear_probe=linear_probe)
+                             linear_probe=linear_probe,
+                             head_type=head_type)
                 if isinstance(result, tuple) and len(result) >= 3:
                     return (result[1], result[2])
                 return (result[1], None) if isinstance(result, tuple) else None
@@ -389,6 +399,7 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                      datasets: list, out_csv: Path, best_only: bool = False,
                      pretrain_source: str = None,
                      linear_probe: bool = True,
+                     head_type: str = "linear",
                      pred_lens: list = None,
                      output_dir: str = None,
                      log_tag: str = ""):
@@ -434,6 +445,7 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                 for pl in pred_lens:
                     val = eval_best(model, dataset, pl, gpu, log_dir, encoder_layers,
                                     pretrain_source, linear_probe=linear_probe,
+                                    head_type=head_type,
                                     output_dir=output_dir)
                     if val is not None:
                         mses[pl] = val
@@ -441,6 +453,7 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                 mses = checkpoint_search(model, dataset, all_checkpoints,
                                          gpu, log_base, encoder_layers, pretrain_source,
                                          linear_probe=linear_probe,
+                                         head_type=head_type,
                                          output_dir=output_dir)
         except Exception as e:
             print(f"  [ERROR] {model}/layers{encoder_layers}/{dataset}: {e}")
@@ -482,6 +495,7 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
                   datasets: list, log_dir: Path, dry_run: bool,
                   best_only: bool = False, pretrain_source: str = None,
                   linear_probe: bool = True,
+                  head_type: str = "linear",
                   pred_lens: list = None, out_csv_override: Path = None,
                   output_dir: str = None, log_tag: str = ""):
     src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
@@ -500,6 +514,7 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
         "--datasets",       *datasets,
         "--out_csv",        str(out_csv),
         "--linear_probe",   str(linear_probe).lower(),
+        "--head",           head_type,
     ]
     if best_only:
         cmd.append("--best_only")
@@ -534,6 +549,7 @@ def run_forecast_sweep(models: list, layer_configs: list,
                        datasets: list, dry_run: bool, gpu_override: int = None,
                        best_only: bool = False, pretrain_source: str = None,
                        linear_probe: bool = True,
+                       head_type: str = "linear",
                        pred_lens: list = None, out_csv_override: Path = None,
                        output_dir: str = None, log_tag: str = ""):
     _log_tag = f"_{log_tag}" if log_tag else ""
@@ -554,6 +570,7 @@ def run_forecast_sweep(models: list, layer_configs: list,
             proc = launch_worker(model, n_layers, gpu, datasets, log_dir, dry_run,
                                  best_only=best_only, pretrain_source=pretrain_source,
                                  linear_probe=linear_probe,
+                                 head_type=head_type,
                                  pred_lens=pred_lens, out_csv_override=out_csv_override,
                                  output_dir=output_dir, log_tag=log_tag)
             if proc is not None:
@@ -598,6 +615,9 @@ def main():
                         help="Pretrain data source for checkpoint lookup (default: monash)")
     parser.add_argument("--linear_probe", type=_str2bool, default=True,
                         help="True (head only; default) or False (fine-tune backbone + head)")
+    parser.add_argument("--head", type=str, default="linear",
+                        choices=["linear", "mlp"],
+                        help="Downstream head type: 'linear' (single Linear) or 'mlp' (1-hidden-layer MLP)")
     parser.add_argument("--pred_lens", nargs="+", type=int, default=None,
                         help=f"Forecast horizons (default: {PRED_LENS}). "
                              "Only takes effect with --best_only; tournament search uses fixed [96,192,336,720].")
@@ -627,6 +647,7 @@ def main():
             best_only=args.best_only,
             pretrain_source=args.pretrain_source,
             linear_probe=args.linear_probe,
+            head_type=args.head,
             pred_lens=args.pred_lens,
             output_dir=args.output_dir,
             log_tag=args.log_tag,
@@ -638,6 +659,7 @@ def main():
     print(f"  Layers:       {args.layers}")
     print(f"  Datasets:     {args.datasets}")
     print(f"  linear_probe: {args.linear_probe}")
+    print(f"  head_type:    {args.head}")
     if args.pretrain_source:
         print(f"  Pretrain src: {args.pretrain_source}")
     if args.pred_lens:
@@ -649,6 +671,7 @@ def main():
                        gpu_override=args.gpu_override, best_only=args.best_only,
                        pretrain_source=args.pretrain_source,
                        linear_probe=args.linear_probe,
+                       head_type=args.head,
                        pred_lens=args.pred_lens,
                        out_csv_override=Path(args.out_csv) if args.out_csv else None,
                        output_dir=args.output_dir, log_tag=args.log_tag)

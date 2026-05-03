@@ -30,7 +30,7 @@ def _instance_norm(x, eps=1e-6):
 
 def classification(self, path, classification_train, classification_val,
                              classification_test, n_classes,
-                             linear_probe=True):
+                             linear_probe=True, mlp_head: bool = False):
     """
     Classification with LE-JEPA encoder.
 
@@ -83,6 +83,7 @@ def classification(self, path, classification_train, classification_val,
         d_model      = embed_dim,
         n_classes    = n_classes,
         head_dropout = config.get("head_dropout", 0.1),
+        mlp_head     = mlp_head,
     ).to(self.device)
 
     n_epochs    = config.get("epoch_classification", 20)

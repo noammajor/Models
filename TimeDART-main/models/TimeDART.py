@@ -24,11 +24,20 @@ class FlattenHead(nn.Module):
         d_model: int,
         pred_len: int,
         dropout: float,
+        mlp_head: bool = False,
+        hidden_dim: int = 512,
     ):
         super(FlattenHead, self).__init__()
         self.pred_len = pred_len
         self.flatten = nn.Flatten(start_dim=-2)
-        self.forecast_head = nn.Linear(seq_len * d_model, pred_len)
+        if mlp_head:
+            self.forecast_head = nn.Sequential(
+                nn.Linear(seq_len * d_model, hidden_dim),
+                nn.GELU(),
+                nn.Linear(hidden_dim, pred_len),
+            )
+        else:
+            self.forecast_head = nn.Linear(seq_len * d_model, pred_len)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -138,6 +147,7 @@ class Model(nn.Module):
                 d_model=args.d_model,
                 pred_len=args.pred_len,
                 dropout=args.head_dropout,
+                mlp_head=getattr(args, 'mlp_head', False),
             )
 
     def pretrain(self, x):

@@ -19,10 +19,17 @@ from models.patchTST import PatchTST
 
 class _LinearReconDecoder(nn.Module):
     """[B, P, nvars, d_model] → [B, T, nvars]"""
-    def __init__(self, d_model: int, patch_len: int):
+    def __init__(self, d_model: int, patch_len: int, mlp_head: bool = False, hidden_dim: int = 512):
         super().__init__()
         self.patch_len = patch_len
-        self.proj = nn.Linear(d_model, patch_len)
+        if mlp_head:
+            self.proj = nn.Sequential(
+                nn.Linear(d_model, hidden_dim),
+                nn.GELU(),
+                nn.Linear(hidden_dim, patch_len),
+            )
+        else:
+            self.proj = nn.Linear(d_model, patch_len)
 
     def forward(self, z):
         # z: [B, P, nvars, d_model]
@@ -53,7 +60,8 @@ def _adjustment(gt, pred):
 def anomaly_detection(args, path_num, anomaly_train, anomaly_test,
                       anomaly_ratio: float = 1.0,
                       checkpoint_path: str = None,
-                      linear_probe: bool = True):
+                      linear_probe: bool = True,
+                      mlp_head: bool = False):
     """
     Reconstruction-based anomaly detection with DINO teacher encoder
     (frozen by default; unfrozen if linear_probe=False).
@@ -135,7 +143,7 @@ def anomaly_detection(args, path_num, anomaly_train, anomaly_test,
     patch_len = patches_sample.shape[2]
     d_model   = args.embed_dim
 
-    decoder   = _LinearReconDecoder(d_model, patch_len).to(device)
+    decoder   = _LinearReconDecoder(d_model, patch_len, mlp_head=mlp_head).to(device)
     # LR: args value if set, else hardcoded default.
     _cfg_head_lr = getattr(args, "lr_anomaly", None)
     _cfg_enc_lr  = getattr(args, "lr_anomaly_encoder", None)

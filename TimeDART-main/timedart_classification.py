@@ -31,11 +31,18 @@ from utils.tools import transfer_weights
 class ClassificationHead(nn.Module):
     """Last patch → flatten(n_vars * d_model) → dropout → linear → n_classes."""
 
-    def __init__(self, n_vars, d_model, n_classes, head_dropout):
+    def __init__(self, n_vars, d_model, n_classes, head_dropout, mlp_head: bool = False, hidden_dim: int = 512):
         super().__init__()
         self.flatten = nn.Flatten(start_dim=1)
         self.dropout = nn.Dropout(head_dropout)
-        self.linear  = nn.Linear(n_vars * d_model, n_classes)
+        if mlp_head:
+            self.linear = nn.Sequential(
+                nn.Linear(n_vars * d_model, hidden_dim),
+                nn.GELU(),
+                nn.Linear(hidden_dim, n_classes),
+            )
+        else:
+            self.linear  = nn.Linear(n_vars * d_model, n_classes)
 
     def forward(self, x):
         """
@@ -109,7 +116,7 @@ def _encode(model, x, padding_mask=None):
 def classification(config, checkpoint_path,
                    classification_train, classification_val,
                    classification_test, n_classes,
-                   linear_probe=True):
+                   linear_probe=True, mlp_head: bool = False):
     """
     Classification with TimeDaRT encoder.
 
@@ -155,6 +162,7 @@ def classification(config, checkpoint_path,
         n_vars=n_v, d_model=d_model,
         n_classes=n_classes,
         head_dropout=config.get("head_dropout", 0.1),
+        mlp_head=mlp_head,
     ).to(device)
 
     n_epochs    = config.get("epoch_classification", 20)

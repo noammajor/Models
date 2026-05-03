@@ -47,7 +47,7 @@ def _build_backbone(config, c_in, num_patch, device):
 
 def classification(config, checkpoint_path, classification_train,
                    classification_val, classification_test, n_classes,
-                   linear_probe=True):
+                   linear_probe=True, mlp_head: bool = False):
     """
     Classification with NTP backbone.
 
@@ -95,6 +95,7 @@ def classification(config, checkpoint_path, classification_train,
         d_model      = d_model,
         n_classes    = n_classes,
         head_dropout = config.get("head_dropout", 0.1),
+        mlp_head     = mlp_head,
     ).to(device)
 
     n_epochs   = config.get("epoch_classification", 20)

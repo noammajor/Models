@@ -217,6 +217,7 @@ def run_dino(skip_train: bool = False,
              num_patches: int = None,
              seed: int = None,
              linear_probe: bool = True,
+             head_type: str = "linear",
              output_dir: str = None):
     dino_dir  = Path(__file__).parent / "TSDiNO"
     shared_dir = Path(__file__).parent / "shared"
@@ -339,6 +340,7 @@ def run_dino(skip_train: bool = False,
             setattr(args, attr, str(dino_dir / val))
 
     args.linear_probe = linear_probe
+    args.mlp_head = (head_type == "mlp")
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     # ── pretraining ──────────────────────────────────────────────────────────
@@ -455,7 +457,8 @@ def run_dino(skip_train: bool = False,
         anom_result = _anom_mod.anomaly_detection(
             args, args.path_num, anom_train, anom_test,
             anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, dino_cfg),
-            linear_probe=linear_probe)
+            linear_probe=linear_probe,
+            mlp_head=(head_type == "mlp"))
 
     return best_ckpt, best_mse, cls_acc, anom_result
 
@@ -484,7 +487,8 @@ def run_jepa(skip_train: bool = False,
                     checkpoint: str = None,
                     num_patches: int = None,
                     random_encoder: bool = False,
-                    linear_probe: bool = True):
+                    linear_probe: bool = True,
+                    head_type: str = "linear"):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -710,7 +714,8 @@ def run_jepa(skip_train: bool = False,
             for epoch in ckpts_to_run:
                 print(f"  → checkpoint epoch {epoch}")
                 ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
-                mse = model.forecasting(ckpt_tag, linear_probe=linear_probe)
+                mse = model.forecasting(ckpt_tag, linear_probe=linear_probe,
+                                        mlp_head=(head_type == "mlp"))
                 if is_search and mse is not None and mse < best_mse:
                     best_mse  = mse
                     best_ckpt = epoch
@@ -765,7 +770,8 @@ def run_jepa(skip_train: bool = False,
         cls_acc   = model.classification(ckpt_tag, cls_train, cls_val, cls_test, n_classes,
                                                   checkpoint_path_override=_ckpt_override,
                                                   random_encoder=random_encoder,
-                                                  linear_probe=linear_probe)
+                                                  linear_probe=linear_probe,
+                                                  mlp_head=(head_type == "mlp"))
         print(f"\n{'='*60}")
         print(f"  [JEPA] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
@@ -787,7 +793,8 @@ def run_jepa(skip_train: bool = False,
         ckpt_tag   = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
         anom_result = model.anomaly_detection(ckpt_tag, anom_train, anom_test,
                                               anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, config),
-                                              linear_probe=linear_probe)
+                                              linear_probe=linear_probe,
+                                              mlp_head=(head_type == "mlp"))
 
     return best_ckpt, best_mse, cls_acc, anom_result
 
@@ -799,7 +806,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
                  pretrain_only: bool = False, classification_only: bool = False, pred_lens=None,
                  checkpoints=None, random_encoder: bool = False, encoder_layers: int = None,
                  predictor_layers: int = None, lr: float = None, pretrain_source: str = None,
-                 num_patches: int = None, seed: int = None, linear_probe: bool = True):
+                 num_patches: int = None, seed: int = None, linear_probe: bool = True,
+                 head_type: str = "linear"):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
     patchtst_dir = Path(__file__).parent / "PatchTST_self_supervised"
@@ -963,7 +971,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
                  "--batch_size",       str(_get_forecast_bs(cfg, 256)),
                  "--num_workers",      str(cfg.get("num_workers", 4)),
                  "--lr",               str(cfg.get("finetune_lr", 1e-4)),
-                 "--seed",             str(seed if seed is not None else GLOBAL_SEED)],
+                 "--seed",             str(seed if seed is not None else GLOBAL_SEED),
+                 "--mlp_head",         str(int(head_type == "mlp"))],
                 cwd=patchtst_dir, capture_output=True, text=True,
             )
             print(result.stdout)
@@ -1024,7 +1033,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
             cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
             n_classes = cls_train.dataset.n_classes
         cls_acc = ptst_classify(cfg, pretrained_model_path, cls_train, cls_val, cls_test, n_classes,
-                                linear_probe=linear_probe)
+                                linear_probe=linear_probe,
+                                mlp_head=(head_type == "mlp"))
         print(f"\n{'='*60}")
         print(f"  [PatchTST] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
@@ -1046,7 +1056,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
             batch_size=anom_bs, shuffle=False)
         anom_result = ptst_anomaly(cfg, pretrained_model_path, anom_train, anom_test,
                                    anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg),
-                                   linear_probe=linear_probe)
+                                   linear_probe=linear_probe,
+                                   mlp_head=(head_type == "mlp"))
 
     return mse_val, mae_val, cls_acc, anom_result
 
@@ -1059,7 +1070,8 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
             pred_lens=None,
             checkpoints=None, encoder_layers: int = None, predictor_layers: int = None,
             lr: float = None, pretrain_source: str = None, num_patches: int = None,
-            linear_probe: bool = True):
+            linear_probe: bool = True,
+            head_type: str = "linear"):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
     ntp_dir      = Path(__file__).parent / "NTP"   # code + checkpoints live here
@@ -1156,7 +1168,8 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         print(f"\n[NTP] Running zero-shot forecasting on {_forecast_dset} …")
         for _pl in pred_lens:
             cfg["horizon_t"] = _pl // cfg["patch_size"]
-            _mse, _mae = ntp_forecasting(cfg, _ckpt_path, linear_probe=linear_probe)
+            _mse, _mae = ntp_forecasting(cfg, _ckpt_path, linear_probe=linear_probe,
+                                         mlp_head=(head_type == "mlp"))
             if _mse is not None:
                 print(f"\n{'='*60}")
                 print(f"  Results on {_forecast_dset}  pred_len={_pl}")
@@ -1212,7 +1225,8 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
             cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
             n_classes = cls_train.dataset.n_classes
         cls_acc = ntp_classify(cfg, _ckpt_path, cls_train, cls_val, cls_test, n_classes,
-                               linear_probe=linear_probe)
+                               linear_probe=linear_probe,
+                               mlp_head=(head_type == "mlp"))
         print(f"\n{'='*60}")
         print(f"  [NTP] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
@@ -1234,7 +1248,8 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
             batch_size=anom_bs, shuffle=False)
         anom_result = ntp_anomaly(cfg, _ckpt_path, anom_train, anom_test,
                                   anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg),
-                                  linear_probe=linear_probe)
+                                  linear_probe=linear_probe,
+                                  mlp_head=(head_type == "mlp"))
 
     return mse_trained, mae_trained, cls_acc, anom_result
 
@@ -1255,7 +1270,8 @@ def run_lejepa(skip_train: bool = False,
                lr: float = None,
                pretrain_source: str = None,
                num_patches: int = None,
-               linear_probe: bool = True):
+               linear_probe: bool = True,
+               head_type: str = "linear"):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -1479,7 +1495,8 @@ def run_lejepa(skip_train: bool = False,
             for epoch in ckpts_to_run:
                 print(f"  → checkpoint epoch {epoch}")
                 ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
-                mse = model.forecasting(ckpt_tag, linear_probe=linear_probe)
+                mse = model.forecasting(ckpt_tag, linear_probe=linear_probe,
+                                        mlp_head=(head_type == "mlp"))
                 if is_search and mse is not None and mse < _best_mse:
                     _best_mse = mse
                     best_ckpt = epoch
@@ -1531,7 +1548,8 @@ def run_lejepa(skip_train: bool = False,
             n_classes = cls_train.dataset.n_classes
         ckpt_tag  = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
         cls_acc   = model.classification(ckpt_tag, cls_train, cls_val, cls_test, n_classes,
-                                         linear_probe=linear_probe)
+                                         linear_probe=linear_probe,
+                                         mlp_head=(head_type == "mlp"))
         print(f"\n{'='*60}")
         print(f"  [LE-JEPA] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
@@ -1553,7 +1571,8 @@ def run_lejepa(skip_train: bool = False,
         ckpt_tag    = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
         anom_result = model.anomaly_detection(ckpt_tag, anom_train, anom_test,
                                               anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, config),
-                                              linear_probe=linear_probe)
+                                              linear_probe=linear_probe,
+                                              mlp_head=(head_type == "mlp"))
 
     return best_ckpt, best_mse, cls_acc, anom_result
 
@@ -1619,6 +1638,7 @@ def run_timedart(skip_train: bool = False,
                  lr: float = None,
                  pretrain_source: str = None,
                  linear_probe: bool = True,
+                 head_type: str = "linear",
                  pretrain_cls_model: bool = False):
     """
     TimeDart: diffusion-based pretraining with Monash/Synthetic data,
@@ -1846,6 +1866,7 @@ def run_timedart(skip_train: bool = False,
             # Use constant LR for forecasting — exponential decay kills LR by epoch 10
             ft_args.lradj          = "constant"
             ft_args.patience       = cfg.get('patience', 5)
+            ft_args.mlp_head       = (head_type == "mlp")
 
             setting = f"timedart_{forecast_dataset}_pl{pred_len}_dm{cfg['d_model']}_el{cfg['e_layers']}"
 
@@ -1947,7 +1968,8 @@ def run_timedart(skip_train: bool = False,
 
         _cls_ckpt = cls_ckpt_file if cls_ckpt_file.exists() else ckpt_file
         cls_acc = timedart_classify(cfg, str(_cls_ckpt), cls_train, cls_val, cls_test, n_classes,
-                                    linear_probe=linear_probe)
+                                    linear_probe=linear_probe,
+                                    mlp_head=(head_type == "mlp"))
         print(f"\n{'='*60}")
         print(f"  [TimeDart] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
@@ -1969,7 +1991,8 @@ def run_timedart(skip_train: bool = False,
             batch_size=anom_bs, shuffle=False)
         anom_result = timedart_anomaly(cfg, str(ckpt_file), anom_train, anom_test,
                                        anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg),
-                                       linear_probe=linear_probe)
+                                       linear_probe=linear_probe,
+                                       mlp_head=(head_type == "mlp"))
 
     return best_pred, best_mse, best_mae, cls_acc, anom_result
 
@@ -1978,7 +2001,8 @@ def run_timedart(skip_train: bool = False,
 
 # ── Random baseline ───────────────────────────────────────────────────────────
 
-def run_random(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None):
+def run_random(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
+               head_type: str = "linear"):
     random_dir = Path(__file__).parent / "random"
     ntp_dir    = Path(__file__).parent / "NTP"
     _add_path(random_dir)
@@ -1999,7 +2023,7 @@ def run_random(skip_train: bool = False, pretrain_dataset: str = None, forecast_
     print("="*60)
 
     from random_forecasting import random_forecasting
-    random_forecasting(cfg, _forecast_dset)
+    random_forecasting(cfg, _forecast_dset, mlp_head=(head_type == "mlp"))
 
 
 # ── entry point ───────────────────────────────────────────────────────────────
@@ -2009,8 +2033,8 @@ RUNNERS = {
     "jepa":            run_jepa,
     "lejepa":          run_lejepa,
     "patchtst":        run_patchtst,
-    "patchtst_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, anomaly_dataset=None, pretrain_only=False, classification_only=False, pred_lens=None, checkpoints=None, encoder_layers=None, pretrain_source=None, num_patches=None, linear_probe=True: run_patchtst(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, anomaly_dataset=anomaly_dataset, pretrain_only=pretrain_only, classification_only=classification_only, pred_lens=pred_lens, checkpoints=checkpoints, random_encoder=True, encoder_layers=encoder_layers, pretrain_source=pretrain_source, num_patches=num_patches, linear_probe=linear_probe),
-    "jepa_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, anomaly_dataset=None, pred_lens=None, checkpoints=None, pretrain_only=False, encoder_layers=None, predictor_layers=None, lr=None, pretrain_source=None, checkpoint=None, num_patches=None, linear_probe=True: run_jepa(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, anomaly_dataset=anomaly_dataset, pred_lens=pred_lens, checkpoints=checkpoints, pretrain_only=pretrain_only, encoder_layers=encoder_layers, predictor_layers=predictor_layers, lr=lr, pretrain_source=pretrain_source, checkpoint=checkpoint, num_patches=num_patches, random_encoder=True, linear_probe=linear_probe),
+    "patchtst_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, anomaly_dataset=None, pretrain_only=False, classification_only=False, pred_lens=None, checkpoints=None, encoder_layers=None, pretrain_source=None, num_patches=None, linear_probe=True, head_type="linear": run_patchtst(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, anomaly_dataset=anomaly_dataset, pretrain_only=pretrain_only, classification_only=classification_only, pred_lens=pred_lens, checkpoints=checkpoints, random_encoder=True, encoder_layers=encoder_layers, pretrain_source=pretrain_source, num_patches=num_patches, linear_probe=linear_probe, head_type=head_type),
+    "jepa_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, anomaly_dataset=None, pred_lens=None, checkpoints=None, pretrain_only=False, encoder_layers=None, predictor_layers=None, lr=None, pretrain_source=None, checkpoint=None, num_patches=None, linear_probe=True, head_type="linear": run_jepa(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, anomaly_dataset=anomaly_dataset, pred_lens=pred_lens, checkpoints=checkpoints, pretrain_only=pretrain_only, encoder_layers=encoder_layers, predictor_layers=predictor_layers, lr=lr, pretrain_source=pretrain_source, checkpoint=checkpoint, num_patches=num_patches, random_encoder=True, linear_probe=linear_probe, head_type=head_type),
     "ntp":             run_ntp,
     "random":          run_random,
     "timedart":        run_timedart,
@@ -2038,6 +2062,7 @@ def run(model: str,
         seed: int = None,
         pretrain_cls_model: bool = False,
         linear_probe: bool = True,
+        head_type: str = "linear",
         output_dir: str = None):
     """
     Unified entry point. Each run handles ONE task.
@@ -2120,6 +2145,7 @@ def run(model: str,
     if 'seed'                   in sig.parameters: kwargs['seed']                   = seed
     if 'pretrain_cls_model'     in sig.parameters: kwargs['pretrain_cls_model']     = pretrain_cls_model
     if 'linear_probe'           in sig.parameters: kwargs['linear_probe']           = linear_probe
+    if 'head_type'              in sig.parameters: kwargs['head_type']              = head_type
     if 'output_dir'             in sig.parameters: kwargs['output_dir']             = output_dir
     return runner(**kwargs)
 
@@ -2177,6 +2203,9 @@ if __name__ == "__main__":
                         help="Random seed (also suffixes checkpoint paths with _seedN)")
     parser.add_argument("--pretrain_cls_model", type=str, default="false",
                         help="Use cls embedding model for pretraining (saves to separate _cls checkpoint)")
+    parser.add_argument("--head", type=str, default="linear",
+                        choices=["linear", "mlp"],
+                        help="Downstream head: 'linear' (single Linear) or 'mlp' (1-hidden-layer MLP)")
     args = parser.parse_args()
     run(model=args.model,
         task=args.task,
@@ -2193,4 +2222,5 @@ if __name__ == "__main__":
         pretrain_source=args.pretrain_source,
         num_patches=args.num_patches,
         seed=args.seed,
-        pretrain_cls_model=args.pretrain_cls_model.lower() == "true")
+        pretrain_cls_model=args.pretrain_cls_model.lower() == "true",
+        head_type=args.head)

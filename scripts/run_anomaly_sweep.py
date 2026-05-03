@@ -95,6 +95,7 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                      datasets: list, out_csv: Path,
                      pretrain_source: str = "monash",
                      linear_probe: bool = True,
+                     head_type: str = "linear",
                      anomaly_ratio: float = None,
                      output_dir: str = None,
                      log_tag: str = ""):
@@ -150,6 +151,7 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                     encoder_layers  = encoder_layers,
                     pretrain_source = pretrain_source,
                     linear_probe    = linear_probe,
+                    head_type       = head_type,
                     output_dir      = output_dir,
                 )
 
@@ -198,6 +200,7 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
                   datasets: list, log_dir: Path, out_csv: Path,
                   dry_run: bool, pretrain_source: str = "monash",
                   linear_probe: bool = True,
+                  head_type: str = "linear",
                   anomaly_ratio: float = None,
                   output_dir: str = None, log_tag: str = ""):
     _log_tag = f"_{log_tag}" if log_tag else ""
@@ -214,6 +217,7 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
         "--out_csv",        str(out_csv),
         "--pretrain_source", pretrain_source,
         "--linear_probe",    str(linear_probe).lower(),
+        "--head",            head_type,
     ]
     if anomaly_ratio is not None:
         cmd += ["--anomaly_ratio", str(anomaly_ratio)]
@@ -245,6 +249,7 @@ def run_anomaly_sweep(models: list, layer_configs: list, datasets: list,
                       pretrain_source: str = "monash",
                       out_csv: Path = None,
                       linear_probe: bool = True,
+                      head_type: str = "linear",
                       anomaly_ratio: float = None,
                       output_dir: str = None, log_tag: str = ""):
     _log_tag = f"_{log_tag}" if log_tag else ""
@@ -258,6 +263,7 @@ def run_anomaly_sweep(models: list, layer_configs: list, datasets: list,
     print(f"  Datasets:        {datasets}")
     print(f"  pretrain_source: {pretrain_source}")
     print(f"  linear_probe:    {linear_probe}")
+    print(f"  head_type:       {head_type}")
     if anomaly_ratio is not None:
         print(f"  anomaly_ratio:   {anomaly_ratio}  (overrides TSLib defaults)")
     print(f"  out_csv:         {out_csv}")
@@ -275,6 +281,7 @@ def run_anomaly_sweep(models: list, layer_configs: list, datasets: list,
             proc = launch_worker(model, n_layers, gpu, datasets, log_dir, out_csv,
                                  dry_run, pretrain_source=pretrain_source,
                                  linear_probe=linear_probe,
+                                 head_type=head_type,
                                  anomaly_ratio=anomaly_ratio,
                                  output_dir=output_dir, log_tag=log_tag)
             if proc is not None:
@@ -313,6 +320,9 @@ def main():
     parser.add_argument("--gpu_override",    type=int,  default=None)
     parser.add_argument("--linear_probe",    type=_str2bool, default=True,
                         help="True = frozen encoder + decoder only (default); False = fine-tune encoder + decoder")
+    parser.add_argument("--head", type=str, default="linear",
+                        choices=["linear", "mlp"],
+                        help="Downstream head type: 'linear' (single Linear) or 'mlp' (1-hidden-layer MLP)")
     parser.add_argument("--anomaly_ratio",   type=float, default=None,
                         help="Override TSLib per-dataset anomaly ratio with a single value (e.g. 1.0)")
     parser.add_argument("--out_csv",         type=str,  default=None,
@@ -341,6 +351,7 @@ def main():
             out_csv         = Path(args.out_csv),
             pretrain_source = args.pretrain_source,
             linear_probe    = args.linear_probe,
+            head_type       = args.head,
             anomaly_ratio   = args.anomaly_ratio,
             output_dir      = args.output_dir,
             log_tag         = args.log_tag,
@@ -353,6 +364,7 @@ def main():
         pretrain_source=args.pretrain_source,
         out_csv=Path(args.out_csv) if args.out_csv else None,
         linear_probe=args.linear_probe,
+        head_type=args.head,
         anomaly_ratio=args.anomaly_ratio,
         output_dir=args.output_dir,
         log_tag=args.log_tag,

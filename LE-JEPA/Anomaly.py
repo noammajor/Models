@@ -23,11 +23,18 @@ def _instance_norm(x, eps=1e-6):
 
 class _LinearReconDecoder(nn.Module):
     """[B, P, embed_dim] → [B, T, n_vars]"""
-    def __init__(self, embed_dim: int, patch_size: int, n_vars: int):
+    def __init__(self, embed_dim: int, patch_size: int, n_vars: int, mlp_head: bool = False, hidden_dim: int = 512):
         super().__init__()
         self.patch_size = patch_size
         self.n_vars = n_vars
-        self.proj = nn.Linear(embed_dim, patch_size * n_vars)
+        if mlp_head:
+            self.proj = nn.Sequential(
+                nn.Linear(embed_dim, hidden_dim),
+                nn.GELU(),
+                nn.Linear(hidden_dim, patch_size * n_vars),
+            )
+        else:
+            self.proj = nn.Linear(embed_dim, patch_size * n_vars)
 
     def forward(self, z):
         B, P, _ = z.shape
@@ -54,7 +61,8 @@ def _adjustment(gt, pred):
 
 
 def anomaly_detection(self, path, anomaly_train, anomaly_test,
-                      anomaly_ratio: float = 1.0, linear_probe: bool = True):
+                      anomaly_ratio: float = 1.0, linear_probe: bool = True,
+                      mlp_head: bool = False):
     """
     Reconstruction-based anomaly detection with frozen LE-JEPA encoder.
 
@@ -96,7 +104,7 @@ def anomaly_detection(self, path, anomaly_train, anomaly_test,
     patch_size = patches_sample.shape[2]
     n_vars     = patches_sample.shape[3]
 
-    decoder   = _LinearReconDecoder(embed_dim, patch_size, n_vars).to(self.device)
+    decoder   = _LinearReconDecoder(embed_dim, patch_size, n_vars, mlp_head=mlp_head).to(self.device)
     # LR: config value if set, else hardcoded default.
     _cfg_head_lr = config.get("lr_anomaly")
     _cfg_enc_lr  = config.get("lr_anomaly_encoder")

@@ -13,12 +13,13 @@ def _instance_denorm(x, mean, std):
     return x * std.reshape(shape) + mean.reshape(shape)
 
 
-def forecasting(self, path, linear_probe=True):
+def forecasting(self, path, linear_probe=True, mlp_head: bool = False):
     """Non-autoregressive forecasting: slides real context forward, no prediction feedback.
     Runs TWICE: first with random encoder (baseline), then with trained encoder.
 
     linear_probe=True : encoder frozen, only forecast head trained.
     linear_probe=False: encoder unfrozen, head + encoder trained jointly (fine-tune).
+    mlp_head=True     : use 1-hidden-layer MLP head (Linear→GELU→Linear) instead of single Linear.
     """
     config    = self.config   # always use instance config, not module-level
     epoch_tag = path
@@ -49,7 +50,7 @@ def forecasting(self, path, linear_probe=True):
         P_L         = config["patch_size_forcasting"]
         # n_vars inferred from the first sample of the forecast loader
         n_v_for = self.forcast_train.dataset[0][0].shape[-1]
-        self.forecast_head_patch = PredictionHead(individual=False, n_vars=n_v_for, d_model=embed_dim, num_patch=num_patches, forecast_len=h_t * P_L).to(self.device)
+        self.forecast_head_patch = PredictionHead(individual=False, n_vars=n_v_for, d_model=embed_dim, num_patch=num_patches, forecast_len=h_t * P_L, mlp_head=mlp_head).to(self.device)
         # Train decoders
         '''
         optimizer = torch.optim.AdamW([

@@ -678,14 +678,15 @@ def test_run(args):
         n_heads=args.n_heads,
         d_model=args.embed_dim,
         shared_embedding=True,
-        d_ff=args.d_ff,                        
+        d_ff=args.d_ff,
         dropout=args.dropout,
         head_dropout=args.head_dropout,
         act='leakyrelu',
         head_type='prediction',
         res_attention=False,
         drop_path_rate=args.drop_path_rate,
-        step_size=1
+        step_size=1,
+        mlp_head=getattr(args, 'mlp_head', False),
         )
     criterion = nn.MSELoss()
     _lp_fore  = getattr(args, 'linear_probe', True)
@@ -961,7 +962,8 @@ def train_classification(args, classification_train=None, classification_val=Non
         act='gelu',
         head_type='classification',
         res_attention=False,
-        step_size=args.patch_len
+        step_size=args.patch_len,
+        mlp_head=getattr(args, 'mlp_head', False),
     ).to(device)
 
     # Load pretrained encoder

@@ -99,7 +99,7 @@ def pretrain_cmd(model: str, dataset: str, seed: int = None) -> list:
     return cmd
 
 
-def forecast_cmd(model: str, dataset: str, seed: int = None) -> list:
+def forecast_cmd(model: str, dataset: str, seed: int = None, head: str = "linear") -> list:
     cmd = [
         _python, str(ROOT / "Train_and_downstream.py"),
         "--model",            model,
@@ -107,6 +107,7 @@ def forecast_cmd(model: str, dataset: str, seed: int = None) -> list:
         "--pretrain_dataset", dataset,
         "--forecast_dataset", dataset,
         "--encoder_layers",   str(ENCODER_LAYERS),
+        "--head",             head,
     ]
     if seed is not None:
         cmd += ["--seed", str(seed)]

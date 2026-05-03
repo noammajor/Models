@@ -9,6 +9,20 @@ import torch
 import torch.nn as nn
 
 
+def _proj(in_dim, out_dim, mlp_head: bool = False, hidden_dim: int = 512):
+    """Linear (default) or 1-hidden-layer MLP (Linear→GELU→Linear).
+
+    No internal dropout — the head's existing input dropout is the only one applied.
+    """
+    if not mlp_head:
+        return nn.Linear(in_dim, out_dim)
+    return nn.Sequential(
+        nn.Linear(in_dim, hidden_dim),
+        nn.GELU(),
+        nn.Linear(hidden_dim, out_dim),
+    )
+
+
 class ClassificationHead(nn.Module):
     """Linear classification head for JEPA encoder output.
 
@@ -19,11 +33,11 @@ class ClassificationHead(nn.Module):
     Expected input (after reshape): [B, n_vars, D, num_patches]
     Output: [B, n_classes]
     """
-    def __init__(self, n_vars: int, d_model: int, n_classes: int, head_dropout: float = 0.0):
+    def __init__(self, n_vars: int, d_model: int, n_classes: int, head_dropout: float = 0.0, mlp_head: bool = False):
         super().__init__()
         self.flatten = nn.Flatten(start_dim=1)
         self.dropout = nn.Dropout(head_dropout)
-        self.linear  = nn.Linear(n_vars * d_model, n_classes)
+        self.linear  = _proj(n_vars * d_model, n_classes, mlp_head=mlp_head)
 
     def forward(self, x):
         """x: [B, n_vars, D, num_patches]  →  [B, n_classes]"""
@@ -61,7 +75,7 @@ class MLPForecastHead(nn.Module):
         # x: [B*n_v, in_dim]  →  [B*n_v, out_dim]
         return self.net(x)
 class PredictionHead(nn.Module):
-    def __init__(self, individual, n_vars, d_model, num_patch, forecast_len, head_dropout=0):
+    def __init__(self, individual, n_vars, d_model, num_patch, forecast_len, head_dropout=0, mlp_head: bool = False):
         super().__init__()
         self.individual = individual
         self.n_vars = n_vars
@@ -69,11 +83,11 @@ class PredictionHead(nn.Module):
 
         if self.individual:
             self.flattens = nn.ModuleList([nn.Flatten(start_dim=-2) for _ in range(n_vars)])
-            self.linears = nn.ModuleList([nn.Linear(head_dim, forecast_len) for _ in range(n_vars)])
+            self.linears = nn.ModuleList([_proj(head_dim, forecast_len, mlp_head=mlp_head) for _ in range(n_vars)])
             self.dropouts = nn.ModuleList([nn.Dropout(head_dropout) for _ in range(n_vars)])
         else:
             self.flatten = nn.Flatten(start_dim=-2)
-            self.linear = nn.Linear(head_dim, forecast_len)
+            self.linear = _proj(head_dim, forecast_len, mlp_head=mlp_head)
             self.dropout = nn.Dropout(head_dropout)
 
     def forward(self, x):

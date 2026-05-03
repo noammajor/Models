@@ -274,6 +274,7 @@ def run_model_worker(model: str, gpu: int, tasks: list,
                             gpu             = gpu,
                             checkpoint      = checkpoint,
                             linear_probe    = False,
+                            head_type       = "linear",
                         )
                         mse, mae = _unpack_forecast(model, result)
                     except Exception as e:
@@ -327,6 +328,7 @@ def run_model_worker(model: str, gpu: int, tasks: list,
                         gpu                    = gpu,
                         checkpoint             = checkpoint,
                         linear_probe           = False,
+                        head_type              = "linear",
                     )
                     acc = _unpack_classify(model, result)
                 except Exception as e:
@@ -378,6 +380,7 @@ def run_model_worker(model: str, gpu: int, tasks: list,
                         gpu             = gpu,
                         checkpoint      = checkpoint,
                         linear_probe    = False,
+                        head_type       = "linear",
                     )
                     # result last element is the anom dict
                     anom = result[-1] if isinstance(result, tuple) else result

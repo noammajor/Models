@@ -30,10 +30,17 @@ from utils.tools import transfer_weights
 
 class _LinearReconDecoder(nn.Module):
     """[B, n_vars, d_model, n_patches] → [B, T, n_vars]"""
-    def __init__(self, d_model: int, patch_size: int, n_vars: int):
+    def __init__(self, d_model: int, patch_size: int, n_vars: int, mlp_head: bool = False, hidden_dim: int = 512):
         super().__init__()
         self.patch_size = patch_size
-        self.proj = nn.Linear(d_model, patch_size)
+        if mlp_head:
+            self.proj = nn.Sequential(
+                nn.Linear(d_model, hidden_dim),
+                nn.GELU(),
+                nn.Linear(hidden_dim, patch_size),
+            )
+        else:
+            self.proj = nn.Linear(d_model, patch_size)
 
     def forward(self, z):
         # z: [B, C, d_model, P]
@@ -106,7 +113,8 @@ def _encode(model, x):
 
 
 def anomaly_detection(config, checkpoint_path, anomaly_train, anomaly_test,
-                      anomaly_ratio: float = 1.0, linear_probe: bool = True):
+                      anomaly_ratio: float = 1.0, linear_probe: bool = True,
+                      mlp_head: bool = False):
     """
     Reconstruction-based anomaly detection with TimeDaRT encoder
     (frozen by default; unfrozen if linear_probe=False).
@@ -150,7 +158,7 @@ def anomaly_detection(config, checkpoint_path, anomaly_train, anomaly_test,
         print(f"  [TimeDart anomaly] MODE: full fine-tune — encoder UNFROZEN")
 
     d_model = config.get("d_model", 256)
-    decoder = _LinearReconDecoder(d_model, patch_len, n_vars).to(device)
+    decoder = _LinearReconDecoder(d_model, patch_len, n_vars, mlp_head=mlp_head).to(device)
     # LR priority: config (user-set) > script default.
     _cfg_head_lr = config.get("lr_anomaly")
     _cfg_enc_lr  = config.get("lr_anomaly_encoder")
