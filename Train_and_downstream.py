@@ -696,13 +696,13 @@ def run_jepa(skip_train: bool = False,
         for pred_len in pred_lens:
             h_t = pred_len // p_s
             model.forcast_train = torch.utils.data.DataLoader(
-                PatchTSTForcastingAdapter(_csv, 'train', _PATCHTST_SEQ_LEN, pred_len, p_s),
+                PatchTSTForcastingAdapter(_csv, 'train', _JEPA_SEQ_LEN, pred_len, p_s),
                 batch_size=_fc_bs2, shuffle=True,  num_workers=_fc_nw2)
             model.forcast_val = torch.utils.data.DataLoader(
-                PatchTSTForcastingAdapter(_csv, 'val',   _PATCHTST_SEQ_LEN, pred_len, p_s),
+                PatchTSTForcastingAdapter(_csv, 'val',   _JEPA_SEQ_LEN, pred_len, p_s),
                 batch_size=_fc_bs2, shuffle=False, num_workers=_fc_nw2)
             model.forcast_test = torch.utils.data.DataLoader(
-                PatchTSTForcastingAdapter(_csv, 'test',  _PATCHTST_SEQ_LEN, pred_len, p_s),
+                PatchTSTForcastingAdapter(_csv, 'test',  _JEPA_SEQ_LEN, pred_len, p_s),
                 batch_size=_fc_bs2, shuffle=False, num_workers=_fc_nw2)
             model.config["horizon_t"] = h_t
 
