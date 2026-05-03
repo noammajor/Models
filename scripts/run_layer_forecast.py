@@ -232,7 +232,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     model=model,
                     skip_train=True,
                     forecast_dataset=dataset,
-                    pred_len=pred_len,
+                    pred_lens=[pred_len],
                     encoder_layers=encoder_layers,
                     pretrain_source=pretrain_source,
                     linear_probe=linear_probe,
@@ -370,7 +370,7 @@ def eval_best(model: str, dataset: str, pred_len: int,
                 return (result[1], None) if result else None
             elif model in ("ntp", "patchtst", "patchtst_random"):
                 kwargs = dict(model=model, skip_train=True, forecast_dataset=dataset,
-                              pred_len=pred_len, encoder_layers=encoder_layers,
+                              pred_lens=[pred_len], encoder_layers=encoder_layers,
                               pretrain_source=pretrain_source,
                               linear_probe=linear_probe,
                               head_type=head_type)
