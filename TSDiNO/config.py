@@ -4,7 +4,7 @@ config = {
     # "dino"  |  "classification"  |  "forecasting"
     "task": "dino",
     "seed": 42,
-    "output_dir": "./checkpoints_physical_2",
+    "output_dir": "./checkpoints",
     "saveckp_freq": 1,
     "test_only": False,
 
