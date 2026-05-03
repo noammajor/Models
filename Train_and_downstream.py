@@ -1152,10 +1152,18 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         _save_dir = ntp_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}"
     _base_name = _model_fname(cfg)
     _ckpt_epoch = checkpoints[0] if (checkpoints and checkpoints[0] is not None) else None
-    if _ckpt_epoch is not None:
-        _ckpt_path = str(_save_dir / f"{_base_name}_epoch{_ckpt_epoch}.pt")
-    else:
-        _ckpt_path = str(_save_dir / f"{_base_name}.pt")
+    _ckpt_filename = f"{_base_name}_epoch{_ckpt_epoch}.pt" if _ckpt_epoch is not None else f"{_base_name}.pt"
+    _ckpt_path = str(_save_dir / _ckpt_filename)
+    # Fallback for legacy on-disk dir name "NPT" (vs current "NTP").
+    if not os.path.exists(_ckpt_path):
+        _legacy_root = ntp_dir.parent / "NPT"
+        try:
+            _rel = Path(_save_dir).relative_to(ntp_dir)
+            _legacy_path = str(_legacy_root / _rel / _ckpt_filename)
+            if os.path.exists(_legacy_path):
+                _ckpt_path = _legacy_path
+        except ValueError:
+            pass
 
     if not skip_train:
         print(f"\n[NTP] Starting NTP pretraining on {_pretrain_dset} …")
