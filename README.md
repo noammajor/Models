@@ -1,35 +1,51 @@
-HEY! 
-Thank you for coming to look at our project.
-small run down on what we have here:
-we have 6 SSL models, who use the same/"sameish" backbones to check the efficency of learning from large datasets.
+# Quantifying the Pre-training Dividend: Generative versus Latent Self-Supervised Learning for Time Series Foundation Models
 
-Our models are as follows:
-1. JEPA
-2. LE-JEPA
-3. Wavelets Dino
-4. TimeDart -> Diffusion
-5. PatchTST -> MAE
-6. NTP
+This repository contains the code and experimental setup for our study comparing
+generative and latent self-supervised pre-training paradigms for time-series
+foundation models. We benchmark six representative SSL methods under
+near-matched encoder backbones and a unified evaluation protocol so that
+observed differences can be attributed to the pre-training objective rather
+than to architectural asymmetries.
 
-Our datasets for pre-training are as follows:
-1. Monash
-2. Fully Synthetic
-3. Mix of both
+## Methods evaluated
 
-Downstream tasks supported:
-1. Forecasting
-2. Anomoly Detection
-3. Classification
+Latent / joint-embedding objectives:
 
-under linear probing and fine tuning.
-if you want to add to this project, feel free to branch and try add a PR.
+1. **JEPA** — joint-embedding predictive architecture
+2. **LE-JEPA** — JEPA with VICReg/SIGReg-style latent regularization
+3. **Wavelet DINO** — self-distillation with momentum teacher and DWT-based augmentations
 
-recognitions of code we used:
-1. PatchTST: https://arxiv.org/pdf/2211.14730
-2. TimeDart: https://arxiv.org/pdf/2410.05711
-3. DINO: https://arxiv.org/pdf/2104.14294 
-4. JEPA: https://arxiv.org/pdf/2301.08243
-5. TIMESPFN: https://arxiv.org/pdf/2502.16294
+Generative / reconstructive objectives:
+
+4. **Diffusion** (TimeDART) — denoising-diffusion patch reconstruction
+5. **MAE** (PatchTST) — masked-patch autoencoding
+6. **NTP** — next-patch prediction (causal masking)
+
+## Pre-training corpora
+
+1. **Monash** — the Monash Time Series Forecasting Archive
+2. **Synthetic** — kernel-synth + LMC-synth Gaussian-process series (see [scripts/synthetic_data_generation/](scripts/synthetic_data_generation/))
+3. **Monash + Synthetic** — curated mixture of the two
+
+## Downstream evaluations
+
+All three tasks are evaluated under both **linear probing** (frozen encoder) and **end-to-end fine-tuning**:
+
+1. Long-horizon forecasting
+2. Anomaly detection
+3. Classification (UEA archive)
+
+Contributions are welcome — please open a branch and submit a PR.
+
+## Acknowledgements
+
+This codebase builds on prior open-source releases:
+
+1. PatchTST — [arXiv:2211.14730](https://arxiv.org/pdf/2211.14730)
+2. TimeDART — [arXiv:2410.05711](https://arxiv.org/pdf/2410.05711)
+3. DINO — [arXiv:2104.14294](https://arxiv.org/pdf/2104.14294)
+4. I-JEPA — [arXiv:2301.08243](https://arxiv.org/pdf/2301.08243)
+5. TimesPFN — [arXiv:2502.16294](https://arxiv.org/pdf/2502.16294)
 
 ## Quickstart
 
@@ -347,8 +363,10 @@ CLI options:
 - `--pretrain_source`    monash | synthetic | monash+synthetic  (default: monash)
 - `--gpu_override N`     run the task on GPU N (overrides per-model GPU assignment)
 - `--linear_probe`       true|false (default: true). false → fine-tune encoder + decoder
+- `--head`               linear|mlp (default: linear). mlp = `Linear(in→512) → GELU → Linear(512→patch_len)` (no dropout for the anomaly head)
 - `--anomaly_ratio F`    override TSLib per-dataset ratio with a single value (e.g. 1.0)
 - `--out_csv PATH`       output CSV path (default: results/anomaly_sweep.csv)
+- `--log_tag STR`        suffix for log dir / per-worker log filename (e.g. `mlp_head` → `logs/anomaly_sweep_mlp_head/...`)
 - `--dry_run`            print commands without launching
 
 Examples:
@@ -356,6 +374,7 @@ Examples:
     python scripts/run_anomaly_sweep.py --models jepa lejepa --layers 8
     python scripts/run_anomaly_sweep.py --datasets MSL SMAP SMD
     python scripts/run_anomaly_sweep.py --models jepa --layers 8 --linear_probe false
+    python scripts/run_anomaly_sweep.py --head mlp --log_tag mlp_head
     python scripts/run_anomaly_sweep.py --anomaly_ratio 1.0
     python scripts/run_anomaly_sweep.py --out_csv results/anomaly_sweep_synthetic.csv \
                                         --pretrain_source synthetic
@@ -439,7 +458,9 @@ CLI options:
 - `--pretrain_source`    monash | synthetic | monash+synthetic (default: monash)
 - `--gpu_override N`     run the task on GPU N (overrides per-model GPU assignment)
 - `--linear_probe`       true|false (default: true). false → fine-tune encoder + head
+- `--head`               linear|mlp (default: linear). mlp = `Linear(in→512) → GELU → Dropout → Linear(512→n_classes)`
 - `--out_csv PATH`       output CSV path (default: results/layer_classification{src_tag}{cw_tag}.csv)
+- `--log_tag STR`        suffix for log dir / csv / per-worker log filename (e.g. `mlp_head`)
 - `--dry_run`            print commands without launching
 
 Examples:
@@ -449,6 +470,7 @@ Examples:
     python scripts/run_layer_classification.py --datasets EthanolConcentration SelfRegulationSCP2
     python scripts/run_layer_classification.py --gpu_override 5
     python scripts/run_layer_classification.py --linear_probe false       # fine-tune mode
+    python scripts/run_layer_classification.py --head mlp --log_tag mlp_head
     python scripts/run_layer_classification.py --out_csv results/cls_synth.csv \
                                                --pretrain_source synthetic
 
@@ -490,7 +512,10 @@ CLI options:
 - `--pred_lens N ...`  custom horizons — **only effective with `--best_only`**.
                        The tournament keeps fixed `[96,192,336,720]` because its
                        top-K filtering depends on those exact stages.
+- `--head`             linear|mlp (default: linear). mlp = `Linear(in→512) → GELU → Dropout → Linear(512→pred_len)` (channel-independent, applied per variable)
 - `--out_csv PATH`     single output CSV for all workers (overrides the per-model auto-path)
+- `--output_dir PATH`  override the DINO config's `output_dir` (base path before the auto `_layers{N}` suffix)
+- `--log_tag STR`      suffix for log dir / csv / per-worker log filename (e.g. `mlp_head` → `logs/layer_forecast_mlp_head/...`, `results/layer_forecast_{model}_mlp_head_layers{N}.csv`)
 - `--dry_run`          print commands without launching
 
 Examples:
@@ -499,6 +524,7 @@ Examples:
     python scripts/run_layer_forecast.py --models dino lejepa
     python scripts/run_layer_forecast.py --linear_probe false                  # fine-tune
     python scripts/run_layer_forecast.py --best_only --pred_lens 96 192        # quick eval
+    python scripts/run_layer_forecast.py --best_only --head mlp --log_tag mlp_head
     python scripts/run_layer_forecast.py --pretrain_source synthetic
     python scripts/run_layer_forecast.py --dry_run
 
@@ -530,6 +556,7 @@ CLI options:
 - `--forecast_datasets D ...`    restrict forecast phase to these datasets
 - `--classification_datasets D …`restrict classify phase to these UEA datasets
 - `--skip_pretrain`              reuse existing `_seedN` checkpoints, skip the pretrain phase
+- `--head`                       linear|mlp (default: linear). Applies to all downstream phases (forecast / classify / anomaly)
 - `--gpu_override N`             run all models on GPU N (overrides per-model assignment)
 - `--dry_run`                    print commands without launching
 
@@ -539,6 +566,7 @@ Examples:
     python scripts/run_seed_analysis.py --seeds 42                         # any seed
     python scripts/run_seed_analysis.py --models dino ntp
     python scripts/run_seed_analysis.py --skip_pretrain --phases forecast
+    python scripts/run_seed_analysis.py --head mlp
     python scripts/run_seed_analysis.py --pretrain_source synthetic
     python scripts/run_seed_analysis.py --gpu_override 3
     python scripts/run_seed_analysis.py --dry_run
