@@ -1628,6 +1628,352 @@ def run_lejepa(skip_train: bool = False,
     return best_ckpt, best_mse, cls_acc, anom_result
 
 
+# ── Hybrid (LEJEPA + NTP) ─────────────────────────────────────────────────────
+
+def run_hybrid(skip_train: bool = False,
+               pretrain_dataset: str = None,
+               forecast_dataset: str = None,
+               classification_dataset=None,
+               anomaly_dataset: str = None,
+               pretrain_only: bool = False,
+               classification_only: bool = False,
+               pred_lens=None,
+               checkpoints=None,
+               encoder_layers: int = None,
+               lr: float = None,
+               pretrain_source: str = None,
+               num_patches: int = None,
+               phi: float = None,
+               linear_probe: bool = True,
+               head_type: str = "linear",
+               embed_dim: int = None,
+               epochs: int = None,
+               epochs_forecasting: int = None):
+    """
+    Hybrid LEJEPA+NTP pretraining.
+
+    Shared backbone trained with:  φ·lejepa_loss + (1−φ)·ntp_loss
+    φ=1 → pure LEJEPA,  φ=0 → pure NTP.
+
+    Downstream tasks (forecasting, classification, anomaly detection) reuse
+    the same encoder and head infrastructure as LE-JEPA.
+    """
+    if pred_lens is None:
+        pred_lens = [96, 192, 336, 720]
+
+    hybrid_dir = Path(__file__).parent / "Hybrid"
+    lejepa_dir = Path(__file__).parent / "LE-JEPA"
+    shared_dir  = Path(__file__).parent / "shared"
+    _add_path(shared_dir)
+
+    import importlib.util, torch
+
+    _spec = importlib.util.spec_from_file_location(
+        "config_hybrid", hybrid_dir / "config_hybrid.py")
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+    config = {**DATA_PATHS, **dict(_mod.config)}
+
+    if pretrain_source is not None:
+        config['pretrain_source'] = pretrain_source
+        _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source != 'monash' else ''
+        config['path_save'] = f'./output_model/Hybrid{_src_tag}/'
+    if encoder_layers is not None:
+        config['num_encoder_layers'] = encoder_layers
+        _src_tag = f"_{config['pretrain_source'].replace('+', '_')}" if config.get('pretrain_source', 'monash') != 'monash' else ''
+        config['path_save'] = f'./output_model/Hybrid{_src_tag}_layers{encoder_layers}{_SEED_TAG}/'
+    if embed_dim is not None:
+        config['encoder_embed_dim'] = embed_dim
+    if phi is not None:
+        config['phi'] = phi
+    if epochs is not None:
+        config['num_epochs'] = epochs
+    if epochs_forecasting is not None:
+        config['epoch_t'] = epochs_forecasting
+    if num_patches is not None:
+        config['ratio_patches'] = num_patches
+        config['context_patches'] = num_patches - config.get('horizon_t', 6)
+        _cw = num_patches * config.get('patch_size', 16)
+        _p = Path(config['path_save'].rstrip('/'))
+        config['path_save'] = str(_p.parent / 'classification' / (_p.name + f'_cw{_cw}')) + '/'
+    if lr is not None:
+        config['lr_adamw'] = lr
+
+    # Evict cached LE-JEPA modules so HybridModel.py can re-import cleanly
+    _lj = str(lejepa_dir)
+    if _lj in sys.path:
+        sys.path.remove(_lj)
+    sys.path.insert(0, _lj)
+    for _name in ("Encoder", "augmentations", "Training", "Forecasting"):
+        sys.modules.pop(_name, None)
+
+    from data_loaders.data_puller import (DataPullerDJepa, MonashDataPullerJEPA,
+                                          SyntheticArrowDataPullerJEPA, PatchTSTForcastingAdapter)
+
+    _spec2 = importlib.util.spec_from_file_location(
+        "hybrid_model", hybrid_dir / "HybridModel.py")
+    _mod2 = importlib.util.module_from_spec(_spec2)
+    _spec2.loader.exec_module(_mod2)
+    HybridModel = _mod2.HybridModel
+
+    if pretrain_only or classification_only or (anomaly_dataset is not None and forecast_dataset is None):
+        forecast_dataset = None
+    elif forecast_dataset is None and not skip_train:
+        forecast_dataset = config.get('forecast_dataset')
+    if forecast_dataset is None:
+        config.pop('path_data_forcasting', None)
+        config.pop('forecast_dataset', None)
+    config["lr_forcasting"] = _get_forecast_lr(config, "lr_forcasting")
+
+    pretrain_source = _resolve_pretrain_source(config)
+    use_global_data = pretrain_source is not None
+
+    if use_global_data:
+        if not pretrain_only and classification_dataset is None and forecast_dataset is None and anomaly_dataset is None:
+            raise ValueError("forecast_dataset must be set when pretraining on global data")
+        if pretrain_source in ('monash', 'monash+synthetic'):
+            monash_dir = config['monash_data_dir']
+            if not os.path.isabs(monash_dir):
+                config['monash_data_dir'] = str((hybrid_dir / monash_dir).resolve())
+        if pretrain_source in ('synthetic', 'monash+synthetic'):
+            _synth_key = 'synthetic_mix_data_dir' if pretrain_source == 'monash+synthetic' else 'synthetic_data_dir'
+            synth_dir = config[_synth_key]
+            if not os.path.isabs(synth_dir):
+                synth_dir = str((hybrid_dir / synth_dir).resolve())
+            config['synthetic_data_dir'] = synth_dir
+        _src_label = {
+            'monash':           f"Monash ({config['monash_data_dir']})",
+            'synthetic':        f"Synthetic ({config['synthetic_data_dir']})",
+            'monash+synthetic': "Monash + Synthetic",
+        }.get(pretrain_source, pretrain_source)
+        print("\n" + "="*60)
+        print(f"  MODEL: Hybrid (LEJEPA+NTP)  φ={config['phi']}")
+        if pretrain_only:
+            print(f"  pretrain: {_src_label}  [pretrain only]")
+        elif classification_only or forecast_dataset is None:
+            print(f"  pretrain: {_src_label}   [classify only]")
+        else:
+            print(f"  pretrain: {_src_label}   forecast: {forecast_dataset}")
+        print("="*60)
+    else:
+        pretrain_dataset = pretrain_dataset or config.get('pretrain_dataset')
+        forecast_dataset = forecast_dataset or pretrain_dataset
+        if pretrain_dataset is None:
+            raise ValueError("pretrain_dataset not set — specify via run() or config_hybrid.py")
+        ds_pre  = get_dataset_info(pretrain_dataset)
+        ds_fore = get_dataset_info(forecast_dataset)
+        n_groups = len(ds_pre["jepa_groups"])
+
+        def _resolve(p):
+            return str((hybrid_dir / p).resolve()) if not os.path.isabs(p) else p
+
+        config["path_data"]       = [_resolve(ds_pre["csv_path"])] * n_groups
+        config["timestampcols"]   = [ds_pre["timestamp_col"]] * n_groups
+        config["input_variables"] = ds_pre["jepa_groups"]
+        print("\n" + "="*60)
+        print(f"  MODEL: Hybrid (LEJEPA+NTP)  φ={config['phi']}")
+        print(f"  pretrain: {pretrain_dataset}   forecast: {forecast_dataset}")
+        print("="*60)
+
+    if not pretrain_only and forecast_dataset is not None:
+        ds_fore = get_dataset_info(forecast_dataset)
+        config["path_data_forcasting"] = [str((lejepa_dir / ds_fore["csv_path"]).resolve())]
+
+    # ── data ──────────────────────────────────────────────────────────────────
+    if skip_train and use_global_data:
+        print("\n[Hybrid] skip_train=True + global pretrain: skipping pretrain data load.")
+        input_dim   = config["patch_size"]
+        num_patches = config["ratio_patches"]
+        train_loader = val_loader = test_loader = None
+    else:
+        print("\n[Hybrid] Loading datasets …")
+        if use_global_data:
+            import torch.utils.data as _tud
+            if pretrain_source in ('monash', 'monash+synthetic'):
+                train_dataset = MonashDataPullerJEPA(config, which='train')
+                val_dataset   = MonashDataPullerJEPA(config, which='val')
+                test_dataset  = MonashDataPullerJEPA(config, which='test')
+            if pretrain_source in ('synthetic', 'monash+synthetic'):
+                syn_train = SyntheticArrowDataPullerJEPA(config, which='train')
+                syn_val   = SyntheticArrowDataPullerJEPA(config, which='val')
+                syn_test  = SyntheticArrowDataPullerJEPA(config, which='test')
+                if pretrain_source == 'monash+synthetic':
+                    train_dataset = _tud.ConcatDataset([train_dataset, syn_train])
+                    val_dataset   = _tud.ConcatDataset([val_dataset,   syn_val])
+                    test_dataset  = _tud.ConcatDataset([test_dataset,  syn_test])
+                else:
+                    train_dataset, val_dataset, test_dataset = syn_train, syn_val, syn_test
+        else:
+            train_dataset = DataPullerDJepa(
+                data_paths          = config["path_data"],
+                patch_size          = config["patch_size"],
+                batch_size          = config["batch_size"],
+                ratio_patches       = config["ratio_patches"],
+                mask_ratio          = config.get("mask_ratio", 0.25),
+                masking_type        = config.get("masking_type", "multi_block"),
+                num_semantic_tokens = config.get("num_semantic_tokens", 0),
+                input_variables     = config["input_variables"],
+                timestamp_cols      = config["timestampcols"],
+                type_data           = "train",
+                val_prec            = config["val_prec"],
+                test_prec           = config["test_prec"],
+                num_blocks          = config.get("num_blocks", 1),
+            )
+            val_dataset  = copy.copy(train_dataset); val_dataset.which  = "val"
+            test_dataset = copy.copy(train_dataset); test_dataset.which = "test"
+
+        _nw = config.get("num_workers", 4)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True,  num_workers=_nw)
+        val_loader   = torch.utils.data.DataLoader(val_dataset,   batch_size=config["batch_size"], shuffle=False, num_workers=_nw)
+        test_loader  = torch.utils.data.DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False, num_workers=_nw)
+
+        sample       = train_dataset[0]
+        patch_sample = sample[0] if isinstance(sample, (list, tuple)) else sample
+        num_patches  = patch_sample.shape[0]
+        input_dim    = patch_sample.shape[1]
+
+    # ── model ──────────────────────────────────────────────────────────────────
+    model = HybridModel(
+        config      = config,
+        input_dim   = input_dim,
+        num_patches = num_patches,
+        train_loader = train_loader,
+        val_loader   = val_loader,
+        test_loader  = test_loader,
+    )
+    model.to(model.device)
+
+    # ── pretraining ────────────────────────────────────────────────────────────
+    if not skip_train:
+        print(f"\n[Hybrid] Starting pretraining  φ={config['phi']} …")
+        model.train_and_evaluate()
+    else:
+        print("[Hybrid] Skipping pretraining.")
+
+    if pretrain_only:
+        print("\n[Hybrid] Pretrain-only mode — skipping forecasting.")
+        return
+
+    # ── forecasting downstream ─────────────────────────────────────────────────
+    best_mse = best_ckpt = None
+    if forecast_dataset is None:
+        print("\n[Hybrid] No forecast_dataset — skipping forecasting.")
+    else:
+        _PATCHTST_SEQ_LEN = 336
+        p_s  = config["patch_size_forcasting"]
+        _ctx_patches = _PATCHTST_SEQ_LEN // p_s
+        config["forecasting_context_patches"] = _ctx_patches
+        _csv = config["path_data_forcasting"][0]
+
+        _best_mse = float('inf')
+        ckpts     = checkpoints if checkpoints is not None else ["best"]
+        _fc_bs = _get_forecast_bs(config, 256)
+        _fc_nw = config.get("num_workers", 4)
+
+        for pred_len in pred_lens:
+            h_t = pred_len // p_s
+            model.forcast_train = torch.utils.data.DataLoader(
+                PatchTSTForcastingAdapter(_csv, 'train', _PATCHTST_SEQ_LEN, pred_len, p_s),
+                batch_size=_fc_bs, shuffle=True,  num_workers=_fc_nw)
+            model.forcast_val   = torch.utils.data.DataLoader(
+                PatchTSTForcastingAdapter(_csv, 'val',   _PATCHTST_SEQ_LEN, pred_len, p_s),
+                batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
+            model.forcast_test  = torch.utils.data.DataLoader(
+                PatchTSTForcastingAdapter(_csv, 'test',  _PATCHTST_SEQ_LEN, pred_len, p_s),
+                batch_size=_fc_bs, shuffle=False, num_workers=_fc_nw)
+            model.config["horizon_t"] = h_t
+
+            is_search    = (pred_len == pred_lens[0])
+            ckpts_to_run = ckpts if is_search else [best_ckpt if best_ckpt is not None else ckpts[-1]]
+
+            print(f"\n[Hybrid] pred_len={pred_len} (horizon_t={h_t})"
+                  + ("" if is_search else f"  [best ckpt={ckpts_to_run[0]}]"))
+
+            for epoch in ckpts_to_run:
+                print(f"  → checkpoint epoch {epoch}")
+                ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
+                mse = model.forecasting(ckpt_tag, linear_probe=linear_probe,
+                                        mlp_head=(head_type == "mlp"))
+                if is_search and mse is not None and mse < _best_mse:
+                    _best_mse = mse
+                    best_ckpt = epoch
+
+            if is_search:
+                print(f"\n[Hybrid] Best checkpoint at pred_len={pred_lens[0]}: "
+                      f"epoch {best_ckpt} (MSE={_best_mse:.4f})")
+        best_mse = _best_mse
+
+    # ── classification downstream ─────────────────────────────────────────────
+    cls_acc = None
+    if classification_dataset is not None:
+        from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
+        import torch.nn.functional as _F
+        cls_dir    = config["classification_data_dir"]
+        cls_bs     = config.get("batch_size", 64)
+        p_s        = config["patch_size_forcasting"]
+        _n_patches = 72
+        _target_T  = _n_patches * p_s
+        def _hybrid_patch_collate(batch, _ps=p_s, _tT=_target_T, _nP=_n_patches):
+            xs, ys, orig_lens = zip(*batch)
+            orig_lens = torch.stack(orig_lens)
+            max_t = max(x.shape[0] for x in xs)
+            xs = torch.stack([_F.pad(x, (0, 0, 0, max_t - x.shape[0])) for x in xs])
+            B_, T_, C_ = xs.shape
+            if T_ != _tT:
+                idx = torch.linspace(0, T_ - 1, _tT).long()
+                xs  = xs[:, idx, :]
+                patch_idx    = idx[torch.arange(_nP) * _ps]
+                padding_mask = patch_idx.unsqueeze(0) < orig_lens.unsqueeze(1)
+            else:
+                patch_starts = torch.arange(_nP) * _ps
+                padding_mask = patch_starts.unsqueeze(0) < orig_lens.unsqueeze(1)
+            xs = xs.reshape(B_, _nP, _ps, C_)
+            return xs, torch.stack(ys), padding_mask
+        if list(Path(os.path.join(cls_dir, classification_dataset)).glob("*_TRAIN.ts")):
+            _raw_tr, _, _raw_te, n_classes = make_uea_dataloaders(
+                cls_dir, classification_dataset, batch_size=cls_bs)
+            _wrap = lambda ds, shuf: torch.utils.data.DataLoader(
+                ds, batch_size=cls_bs, shuffle=shuf, collate_fn=_hybrid_patch_collate)
+            cls_train = _wrap(_raw_tr.dataset, True)
+            cls_val   = None
+            cls_test  = _wrap(_raw_te.dataset, False)
+        else:
+            _mk = lambda split: torch.utils.data.DataLoader(
+                ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
+                batch_size=cls_bs, shuffle=(split == "train"))
+            cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
+            n_classes = cls_train.dataset.n_classes
+        ckpt_tag = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
+        cls_acc  = model.classification(ckpt_tag, cls_train, cls_val, cls_test, n_classes,
+                                        linear_probe=linear_probe,
+                                        mlp_head=(head_type == "mlp"))
+        print(f"\n{'='*60}")
+        print(f"  [Hybrid] Classification on {classification_dataset}")
+        print(f"  Test Accuracy: {cls_acc:.4f}")
+        print(f"{'='*60}")
+
+    # ── anomaly detection downstream ──────────────────────────────────────────
+    anom_result = None
+    if anomaly_dataset is not None:
+        from data_loaders.data_puller import AnomalyDataPuller
+        anom_dir = config["anomaly_data_dir"]
+        anom_bs  = config.get("batch_size", 64)
+        p_s      = config["patch_size_forcasting"]
+        anom_train = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
+            batch_size=anom_bs, shuffle=False)
+        anom_test  = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
+            batch_size=anom_bs, shuffle=False)
+        ckpt_tag    = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
+        anom_result = model.anomaly_detection(ckpt_tag, anom_train, anom_test,
+                                              anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, config),
+                                              linear_probe=linear_probe,
+                                              mlp_head=(head_type == "mlp"))
+
+    return best_ckpt, best_mse, cls_acc, anom_result
+
+
 # ── TimeDart ──────────────────────────────────────────────────────────────────
 
 # Registry key → TimeDart data arg + csv filename + freq
@@ -2091,6 +2437,7 @@ RUNNERS = {
     "patchtst_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, anomaly_dataset=None, pretrain_only=False, classification_only=False, pred_lens=None, checkpoints=None, encoder_layers=None, pretrain_source=None, num_patches=None, linear_probe=True, head_type="linear": run_patchtst(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, anomaly_dataset=anomaly_dataset, pretrain_only=pretrain_only, classification_only=classification_only, pred_lens=pred_lens, checkpoints=checkpoints, random_encoder=True, encoder_layers=encoder_layers, pretrain_source=pretrain_source, num_patches=num_patches, linear_probe=linear_probe, head_type=head_type),
     "jepa_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, anomaly_dataset=None, pred_lens=None, checkpoints=None, pretrain_only=False, encoder_layers=None, predictor_layers=None, lr=None, pretrain_source=None, checkpoint=None, num_patches=None, linear_probe=True, head_type="linear": run_jepa(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, anomaly_dataset=anomaly_dataset, pred_lens=pred_lens, checkpoints=checkpoints, pretrain_only=pretrain_only, encoder_layers=encoder_layers, predictor_layers=predictor_layers, lr=lr, pretrain_source=pretrain_source, checkpoint=checkpoint, num_patches=num_patches, random_encoder=True, linear_probe=linear_probe, head_type=head_type),
     "ntp":             run_ntp,
+    "hybrid":          run_hybrid,
     "random":          run_random,
     "timedart":        run_timedart,
 }
@@ -2123,7 +2470,8 @@ def run(model: str,
         predictor_embed_dim: int = None,
         out_dim: int = None,
         epochs: int = None,
-        epochs_forecasting: int = None):
+        epochs_forecasting: int = None,
+        phi: float = None):
     """
     Unified entry point. Each run handles ONE task.
 
@@ -2212,6 +2560,7 @@ def run(model: str,
     if 'out_dim'               in sig.parameters: kwargs['out_dim']               = out_dim
     if 'epochs'                in sig.parameters: kwargs['epochs']                = epochs
     if 'epochs_forecasting'    in sig.parameters: kwargs['epochs_forecasting']    = epochs_forecasting
+    if 'phi'                   in sig.parameters: kwargs['phi']                   = phi
     return runner(**kwargs)
 
 
@@ -2221,7 +2570,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model", type=str, required=True,
         choices=list(RUNNERS),
-        help="Which model to run: dino | jepa | lejepa | patchtst | ntp | random",
+        help="Which model to run: dino | jepa | lejepa | patchtst | ntp | hybrid | random",
     )
     parser.add_argument(
         "--pretrain_dataset", type=str, default=None,
@@ -2283,6 +2632,8 @@ if __name__ == "__main__":
     parser.add_argument("--head", type=str, default="linear",
                         choices=["linear", "mlp"],
                         help="Downstream head: 'linear' (single Linear) or 'mlp' (1-hidden-layer MLP)")
+    parser.add_argument("--phi", type=float, default=None,
+                        help="Hybrid model mixing weight φ∈[0,1] (φ=1 pure LEJEPA, φ=0 pure NTP)")
     args = parser.parse_args()
     run(model=args.model,
         task=args.task,
@@ -2306,4 +2657,5 @@ if __name__ == "__main__":
         checkpoints=[int(c) if c.isdigit() else c for c in args.checkpoints] if args.checkpoints else None,
         seed=args.seed,
         pretrain_cls_model=args.pretrain_cls_model.lower() == "true",
-        head_type=args.head)
+        head_type=args.head,
+        phi=args.phi)

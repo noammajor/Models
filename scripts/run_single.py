@@ -27,7 +27,7 @@ ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(ROOT))
 
 IN_DOMAIN_DATASETS = ["etth1", "etth2", "ettm1", "ettm2", "weather"]
-ALL_MODELS         = ["dino", "jepa", "lejepa", "patchtst", "ntp"]
+ALL_MODELS         = ["dino", "jepa", "lejepa", "patchtst", "ntp", "hybrid"]
 
 MODEL_DEFAULT_LR = {
     "dino":     5e-4,
@@ -35,6 +35,7 @@ MODEL_DEFAULT_LR = {
     "lejepa":   5e-4,
     "patchtst": 5e-5,
     "ntp":      5e-5,
+    "hybrid":   5e-4,
 }
 
 _python = sys.executable
@@ -63,6 +64,9 @@ def _find_src_checkpoint(model: str, dataset: str, layers: int) -> Path:
         save_dir = ROOT / "NTP" / "saved_models" / dataset / "ntp" / f"layers{layers}"
         candidates = [p for p in save_dir.glob("*.pt") if "_epoch" not in p.name and "_losses" not in p.name]
         return candidates[0] if candidates else save_dir / "checkpoint_best.pt"
+
+    elif model == "hybrid":
+        return ROOT / "output_model" / f"Hybrid_layers{layers}" / "best_model.pt"
 
     else:
         raise ValueError(f"Unknown model: {model}")
@@ -120,6 +124,8 @@ def main():
                         help="GPU index via CUDA_VISIBLE_DEVICES (default: 0)")
     parser.add_argument("--seed",     type=int, default=None,
                         help="Random seed")
+    parser.add_argument("--phi",        type=float, default=None,
+                        help="LEJEPA/NTP mixing weight φ∈[0,1] (hybrid model only)")
     parser.add_argument("--skip_pretrain", action="store_true",
                         help="Skip pretraining, go straight to forecasting")
     parser.add_argument("--dry_run",       action="store_true",
@@ -168,6 +174,8 @@ def main():
         base_cmd += ["--epochs_forecasting", str(args.epochs_forecasting)]
     if args.seed is not None:
         base_cmd += ["--seed", str(args.seed)]
+    if args.phi is not None:
+        base_cmd += ["--phi", str(args.phi)]
 
     # ── pretrain ──────────────────────────────────────────────────────────────
     if not args.skip_pretrain:
