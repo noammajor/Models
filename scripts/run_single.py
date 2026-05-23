@@ -112,6 +112,8 @@ def main():
                         help="Number of pretraining epochs")
     parser.add_argument("--epochs_forecasting", type=int, default=None,
                         help="Number of forecasting fine-tune epochs (DINO)")
+    parser.add_argument("--checkpoints", nargs="+", default=None,
+                        help="Checkpoint epochs to evaluate during forecasting, e.g. --checkpoints 1 3 5 10")
     parser.add_argument("--lr",       type=float, default=None,
                         help="Pretraining LR (default: model-specific)")
     parser.add_argument("--gpu",      type=int, default=0,
@@ -196,12 +198,16 @@ def main():
         print(f"\n[dry_run] copy  {src_ckpt}\n         →     {target_ckpt}")
 
     # ── forecast ──────────────────────────────────────────────────────────────
+    forecast_cmd = base_cmd + [
+        "--task",             "forecast",
+        "--pretrain_dataset", args.dataset,
+        "--forecast_dataset", args.dataset,
+    ]
+    if args.checkpoints:
+        forecast_cmd += ["--checkpoints"] + [str(c) for c in args.checkpoints]
+
     rc = _run(
-        base_cmd + [
-            "--task",             "forecast",
-            "--pretrain_dataset", args.dataset,
-            "--forecast_dataset", args.dataset,
-        ],
+        forecast_cmd,
         args.gpu,
         log_base / "forecast.log",
         args.dry_run,

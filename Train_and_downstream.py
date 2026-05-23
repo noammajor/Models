@@ -503,7 +503,9 @@ def run_jepa(skip_train: bool = False,
                     linear_probe: bool = True,
                     head_type: str = "linear",
                     embed_dim: int = None,
-                    predictor_embed_dim: int = None):
+                    predictor_embed_dim: int = None,
+                    epochs: int = None,
+                    epochs_forecasting: int = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -533,6 +535,10 @@ def run_jepa(skip_train: bool = False,
         config['encoder_embed_dim'] = embed_dim
     if predictor_embed_dim is not None:
         config['predictor_embed_dim'] = predictor_embed_dim
+    if epochs is not None:
+        config['num_epochs'] = epochs
+    if epochs_forecasting is not None:
+        config['epoch_t'] = epochs_forecasting
     if num_patches is not None:
         config['ratio_patches'] = num_patches
         _cw = num_patches * config.get('patch_size', 16)
@@ -1092,7 +1098,8 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
             checkpoints=None, encoder_layers: int = None, predictor_layers: int = None,
             lr: float = None, pretrain_source: str = None, num_patches: int = None,
             linear_probe: bool = True,
-            head_type: str = "linear", embed_dim: int = None):
+            head_type: str = "linear", embed_dim: int = None,
+            epochs: int = None, epochs_forecasting: int = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
     ntp_dir      = Path(__file__).parent / "NTP"   # code + checkpoints live here
@@ -1110,6 +1117,10 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
         cfg['pretrained_model_id'] = encoder_layers  # unique checkpoint per layer config
     if embed_dim is not None:
         cfg['d_model'] = embed_dim
+    if epochs is not None:
+        cfg['num_epochs'] = epochs
+    if epochs_forecasting is not None:
+        cfg['epochs_forecasting'] = epochs_forecasting
     if num_patches is not None:
         cfg['context_patches'] = num_patches
         # NTP computes context_patches = ratio_patches - horizon_t, so add horizon_t here
@@ -1303,7 +1314,9 @@ def run_lejepa(skip_train: bool = False,
                num_patches: int = None,
                linear_probe: bool = True,
                head_type: str = "linear",
-               embed_dim: int = None):
+               embed_dim: int = None,
+               epochs: int = None,
+               epochs_forecasting: int = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -1329,6 +1342,10 @@ def run_lejepa(skip_train: bool = False,
         config['path_save'] = f'./output_model/LE-JEPA{_src_tag}_layers{encoder_layers}{_SEED_TAG}/'
     if embed_dim is not None:
         config['encoder_embed_dim'] = embed_dim
+    if epochs is not None:
+        config['num_epochs'] = epochs
+    if epochs_forecasting is not None:
+        config['epoch_t'] = epochs_forecasting
     if num_patches is not None:
         config['ratio_patches'] = num_patches
         _cw = num_patches * config.get('patch_size', 16)
@@ -2257,6 +2274,8 @@ if __name__ == "__main__":
                         help="Override number of pretraining epochs")
     parser.add_argument("--epochs_forecasting",  type=int, default=None,
                         help="Override number of forecasting fine-tune epochs (DINO)")
+    parser.add_argument("--checkpoints", nargs="+", default=None,
+                        help="Checkpoint epochs to evaluate during forecasting, e.g. --checkpoints 1 3 5 10 best")
     parser.add_argument("--seed",             type=int,   default=None,
                         help="Random seed (also suffixes checkpoint paths with _seedN)")
     parser.add_argument("--pretrain_cls_model", type=str, default="false",
@@ -2284,6 +2303,7 @@ if __name__ == "__main__":
         out_dim=args.out_dim,
         epochs=args.epochs,
         epochs_forecasting=args.epochs_forecasting,
+        checkpoints=[int(c) if c.isdigit() else c for c in args.checkpoints] if args.checkpoints else None,
         seed=args.seed,
         pretrain_cls_model=args.pretrain_cls_model.lower() == "true",
         head_type=args.head)
