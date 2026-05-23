@@ -66,7 +66,8 @@ def _find_src_checkpoint(model: str, dataset: str, layers: int) -> Path:
         return candidates[0] if candidates else save_dir / "checkpoint_best.pt"
 
     elif model == "hybrid":
-        return ROOT / "output_model" / f"Hybrid_layers{layers}" / "best_model.pt"
+        # in-domain run: path includes dataset tag
+        return ROOT / "output_model" / f"Hybrid_{dataset}_layers{layers}" / "best_model.pt"
 
     else:
         raise ValueError(f"Unknown model: {model}")

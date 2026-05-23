@@ -1676,11 +1676,19 @@ def run_hybrid(skip_train: bool = False,
 
     if pretrain_source is not None:
         config['pretrain_source'] = pretrain_source
-        _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source != 'monash' else ''
+    elif pretrain_dataset is not None:
+        # Explicit dataset name → in-domain CSV pretraining; clear global-data override
+        config.pop('pretrain_source', None)
+    _src_tag = ''
+    _psrc = config.get('pretrain_source')
+    if _psrc and _psrc != 'monash':
+        _src_tag = f"_{_psrc.replace('+', '_')}"
+    elif not _psrc and pretrain_dataset:
+        _src_tag = f"_{pretrain_dataset}"
+    if pretrain_source is not None:
         config['path_save'] = f'./output_model/Hybrid{_src_tag}/'
     if encoder_layers is not None:
         config['num_encoder_layers'] = encoder_layers
-        _src_tag = f"_{config['pretrain_source'].replace('+', '_')}" if config.get('pretrain_source', 'monash') != 'monash' else ''
         config['path_save'] = f'./output_model/Hybrid{_src_tag}_layers{encoder_layers}{_SEED_TAG}/'
     if embed_dim is not None:
         config['encoder_embed_dim'] = embed_dim
