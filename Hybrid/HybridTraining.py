@@ -34,7 +34,7 @@ def compute_hybrid_loss(self, patches, global_step, batch_idx=0, epoch=0):
     patches: [B, P, P_L, F]
     """
     patches = patches.float()
-    B, P, P_L, F = patches.shape
+    B, P, P_L, C = patches.shape
     context_P = self.config['context_patches']
     phi = self.phi
 
@@ -47,12 +47,12 @@ def compute_hybrid_loss(self, patches, global_step, batch_idx=0, epoch=0):
     # ── LEJEPA branch ─────────────────────────────────────────────────────────
     if phi > 0:
         T = P * P_L
-        x = patches.reshape(B, T, F)
-        v1 = self.augment_v1(x)                                           # [B, T, F]
+        x = patches.reshape(B, T, C)
+        v1 = self.augment_v1(x)                                           # [B, T, C]
         v2 = self.augment_v2(x)
 
-        z1 = self.encoder(v1.reshape(B, P, P_L, F))['data_patches']      # [B*F, P, D]
-        z2 = self.encoder(v2.reshape(B, P, P_L, F))['data_patches']
+        z1 = self.encoder(v1.reshape(B, P, P_L, C))['data_patches']      # [B*C, P, D]
+        z2 = self.encoder(v2.reshape(B, P, P_L, C))['data_patches']
 
         pred_loss = F.mse_loss(z1, z2)
         n_slices  = self.config.get('sigreg_num_slices', 512)
@@ -74,10 +74,10 @@ def compute_hybrid_loss(self, patches, global_step, batch_idx=0, epoch=0):
         tgt = patches[:, context_P:]               # [B, horizon_P, P_L, F]
 
         enc_out = self.encoder(ctx)
-        z_ctx   = enc_out['data_patches']          # [B*F, context_P, D]
+        z_ctx   = enc_out['data_patches']          # [B*C, context_P, D]
         D       = z_ctx.shape[-1]
-        # reshape to [B, F, D, context_P] — the layout NTPHead expects
-        z_ctx = z_ctx.reshape(B, F, context_P, D).permute(0, 1, 3, 2)
+        # reshape to [B, C, D, context_P] — the layout NTPHead expects
+        z_ctx = z_ctx.reshape(B, C, context_P, D).permute(0, 1, 3, 2)
 
         pred     = self.ntp_head(z_ctx)            # [B, horizon_P, F, P_L]
         tgt_perm = tgt.permute(0, 1, 3, 2)        # [B, horizon_P, F, P_L]

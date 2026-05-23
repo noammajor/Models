@@ -46,10 +46,10 @@ _python = sys.executable
 def _find_src_checkpoint(model: str, dataset: str, layers: int) -> Path:
     """Return the path where Train_and_downstream.py saves the best checkpoint."""
     if model == "dino":
-        return ROOT / f"checkpoints_layers{layers}" / "checkpoint_best.pth"
+        return ROOT / f"checkpoints_{dataset}_layers{layers}" / "checkpoint_best.pth"
 
     elif model == "jepa":
-        return ROOT / "output_model" / f"JEPA_layers{layers}" / "best_model.pt"
+        return ROOT / "output_model" / f"JEPA_{dataset}_layers{layers}" / "best_model.pt"
 
     elif model == "lejepa":
         return ROOT / "output_model" / f"LE-JEPA_layers{layers}" / "best_model.pt"

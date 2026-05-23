@@ -254,6 +254,8 @@ def run_dino(skip_train: bool = False,
     dino_cfg = dict(dino_cfg)
     if pretrain_source is not None:
         dino_cfg['pretrain_source'] = pretrain_source
+    elif pretrain_dataset is not None:
+        dino_cfg.pop('pretrain_source', None)
     if output_dir is not None:
         dino_cfg['output_dir'] = output_dir
     if embed_dim is not None:
@@ -266,7 +268,13 @@ def run_dino(skip_train: bool = False,
         dino_cfg['epochs_forecasting'] = epochs_forecasting
     if encoder_layers is not None:
         dino_cfg['n_layers'] = encoder_layers
-        _src_tag = '' if dino_cfg.get('pretrain_source', 'monash') == 'monash' else f"_{dino_cfg['pretrain_source'].replace('+', '_')}"
+        _psrc = dino_cfg.get('pretrain_source')
+        if _psrc and _psrc != 'monash':
+            _src_tag = f"_{_psrc.replace('+', '_')}"
+        elif not _psrc and pretrain_dataset:
+            _src_tag = f"_{pretrain_dataset}"
+        else:
+            _src_tag = ''
         dino_cfg['output_dir'] = dino_cfg.get('output_dir', './checkpoints').rstrip('/') + f'{_src_tag}_layers{encoder_layers}' + _SEED_TAG
     if num_patches is not None:
         dino_cfg['num_patches'] = num_patches
@@ -527,9 +535,17 @@ def run_jepa(skip_train: bool = False,
         _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source != 'monash' else ''
         base_path = './output_model/JEPA'
         config['path_save'] = base_path + _src_tag + '/'
+    elif pretrain_dataset is not None:
+        config.pop('pretrain_source', None)
     if encoder_layers is not None:
         config['num_encoder_layers'] = encoder_layers
-        _src_tag = f"_{config['pretrain_source'].replace('+', '_')}" if config.get('pretrain_source', 'monash') != 'monash' else ''
+        _psrc = config.get('pretrain_source')
+        if _psrc and _psrc != 'monash':
+            _src_tag = f"_{_psrc.replace('+', '_')}"
+        elif not _psrc and pretrain_dataset:
+            _src_tag = f"_{pretrain_dataset}"
+        else:
+            _src_tag = ''
         config['path_save'] = f'./output_model/JEPA{_src_tag}_layers{encoder_layers}{_SEED_TAG}/'
     if embed_dim is not None:
         config['encoder_embed_dim'] = embed_dim
