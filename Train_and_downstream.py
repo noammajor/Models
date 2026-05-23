@@ -333,14 +333,14 @@ def run_dino(skip_train: bool = False,
             raise ValueError("pretrain_dataset not set — specify via run() or config.py")
         ds_pre  = get_dataset_info(pretrain_dataset)
         ds_fore = get_dataset_info(forecast_dataset)
-        dino_cfg["data_path"] = ds_pre["csv_path"]
-        dino_cfg["c_in"]      = ds_pre["c_in"]
+        dino_cfg["data_path"]                      = ds_pre["csv_path"]
+        dino_cfg["data_path_forecast_training"]    = ds_fore["csv_path"]  # required by DINO dataset2 even during pretrain_only
+        dino_cfg["c_in"]                           = ds_pre["c_in"]
         print("\n" + "="*60)
         print(f"  MODEL: DINO  (TSDiNO)")
         print(f"  pretrain: {pretrain_dataset}   forecast: {forecast_dataset}")
         print("="*60)
     if not pretrain_only and forecast_dataset is not None:
-        dino_cfg["data_path_forecast_training"]    = ds_fore["csv_path"]
         dino_cfg["data_path_forecast_test"]        = ds_fore["csv_path"]
         dino_cfg["parms_for_training_forecasting"] = ds_fore["columns"]
         dino_cfg["parms_for_testing_forecasting"]  = ds_fore["columns"]
