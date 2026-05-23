@@ -191,9 +191,11 @@ if __name__ == "__main__":
     parser.add_argument("-J", "--max-kernels", type=int, default=5)
     parser.add_argument("-L", "--length", type=int, default=2500)
     parser.add_argument("-P", "--jobs", type=int, default=4)
+    parser.add_argument("-O", "--output", type=str, default="kernel_synth.arrow")
+    parser.add_argument("-D", "--directory", type=str, default=str(Path(__file__).parent))
     args = parser.parse_args()
     LENGTH = args.length
-    path = Path(__file__).parent / "kernel_synth.arrow"
+    path = Path(args.directory) / args.output
 
     generated_dataset = Parallel(n_jobs=args.jobs)(
         delayed(generate_time_series)(max_kernels=args.max_kernels)

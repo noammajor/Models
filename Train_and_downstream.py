@@ -219,7 +219,11 @@ def run_dino(skip_train: bool = False,
              seed: int = None,
              linear_probe: bool = True,
              head_type: str = "linear",
-             output_dir: str = None):
+             output_dir: str = None,
+             embed_dim: int = None,
+             out_dim: int = None,
+             epochs: int = None,
+             epochs_forecasting: int = None):
     dino_dir  = Path(__file__).parent / "TSDiNO"
     shared_dir = Path(__file__).parent / "shared"
     _add_path(dino_dir)
@@ -252,6 +256,14 @@ def run_dino(skip_train: bool = False,
         dino_cfg['pretrain_source'] = pretrain_source
     if output_dir is not None:
         dino_cfg['output_dir'] = output_dir
+    if embed_dim is not None:
+        dino_cfg['embed_dim'] = embed_dim
+    if out_dim is not None:
+        dino_cfg['out_dim'] = out_dim
+    if epochs is not None:
+        dino_cfg['epochs'] = epochs
+    if epochs_forecasting is not None:
+        dino_cfg['epochs_forecasting'] = epochs_forecasting
     if encoder_layers is not None:
         dino_cfg['n_layers'] = encoder_layers
         _src_tag = '' if dino_cfg.get('pretrain_source', 'monash') == 'monash' else f"_{dino_cfg['pretrain_source'].replace('+', '_')}"
@@ -489,7 +501,9 @@ def run_jepa(skip_train: bool = False,
                     num_patches: int = None,
                     random_encoder: bool = False,
                     linear_probe: bool = True,
-                    head_type: str = "linear"):
+                    head_type: str = "linear",
+                    embed_dim: int = None,
+                    predictor_embed_dim: int = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -515,6 +529,10 @@ def run_jepa(skip_train: bool = False,
         config['num_encoder_layers'] = encoder_layers
         _src_tag = f"_{config['pretrain_source'].replace('+', '_')}" if config.get('pretrain_source', 'monash') != 'monash' else ''
         config['path_save'] = f'./output_model/JEPA{_src_tag}_layers{encoder_layers}{_SEED_TAG}/'
+    if embed_dim is not None:
+        config['encoder_embed_dim'] = embed_dim
+    if predictor_embed_dim is not None:
+        config['predictor_embed_dim'] = predictor_embed_dim
     if num_patches is not None:
         config['ratio_patches'] = num_patches
         _cw = num_patches * config.get('patch_size', 16)
@@ -808,7 +826,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
                  checkpoints=None, random_encoder: bool = False, encoder_layers: int = None,
                  predictor_layers: int = None, lr: float = None, pretrain_source: str = None,
                  num_patches: int = None, seed: int = None, linear_probe: bool = True,
-                 head_type: str = "linear"):
+                 head_type: str = "linear", embed_dim: int = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
     patchtst_dir = Path(__file__).parent / "PatchTST_self_supervised"
@@ -826,6 +844,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     if encoder_layers is not None:
         cfg['n_layers'] = encoder_layers
         cfg['pretrained_model_id'] = encoder_layers  # unique checkpoint per layer config
+    if embed_dim is not None:
+        cfg['d_model'] = embed_dim
     if num_patches is not None:
         cfg['context_points'] = num_patches * cfg.get('patch_len', 16)
 
@@ -1072,7 +1092,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
             checkpoints=None, encoder_layers: int = None, predictor_layers: int = None,
             lr: float = None, pretrain_source: str = None, num_patches: int = None,
             linear_probe: bool = True,
-            head_type: str = "linear"):
+            head_type: str = "linear", embed_dim: int = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
     ntp_dir      = Path(__file__).parent / "NTP"   # code + checkpoints live here
@@ -1088,6 +1108,8 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     if encoder_layers is not None:
         cfg['n_layers'] = encoder_layers
         cfg['pretrained_model_id'] = encoder_layers  # unique checkpoint per layer config
+    if embed_dim is not None:
+        cfg['d_model'] = embed_dim
     if num_patches is not None:
         cfg['context_patches'] = num_patches
         # NTP computes context_patches = ratio_patches - horizon_t, so add horizon_t here
@@ -1280,7 +1302,8 @@ def run_lejepa(skip_train: bool = False,
                pretrain_source: str = None,
                num_patches: int = None,
                linear_probe: bool = True,
-               head_type: str = "linear"):
+               head_type: str = "linear",
+               embed_dim: int = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
@@ -1304,6 +1327,8 @@ def run_lejepa(skip_train: bool = False,
         config['num_encoder_layers'] = encoder_layers
         _src_tag = f"_{config['pretrain_source'].replace('+', '_')}" if config.get('pretrain_source', 'monash') != 'monash' else ''
         config['path_save'] = f'./output_model/LE-JEPA{_src_tag}_layers{encoder_layers}{_SEED_TAG}/'
+    if embed_dim is not None:
+        config['encoder_embed_dim'] = embed_dim
     if num_patches is not None:
         config['ratio_patches'] = num_patches
         _cw = num_patches * config.get('patch_size', 16)
@@ -1648,7 +1673,8 @@ def run_timedart(skip_train: bool = False,
                  pretrain_source: str = None,
                  linear_probe: bool = True,
                  head_type: str = "linear",
-                 pretrain_cls_model: bool = False):
+                 pretrain_cls_model: bool = False,
+                 embed_dim: int = None):
     """
     TimeDart: diffusion-based pretraining with Monash/Synthetic data,
     followed by forecasting fine-tune using our PatchTSTForcastingAdapter
@@ -1679,6 +1705,8 @@ def run_timedart(skip_train: bool = False,
         cfg['pretrain_source'] = pretrain_source
     if encoder_layers is not None:
         cfg['e_layers'] = encoder_layers
+    if embed_dim is not None:
+        cfg['d_model'] = embed_dim
     if lr is not None:
         cfg['learning_rate'] = lr
 
@@ -2073,7 +2101,12 @@ def run(model: str,
         pretrain_cls_model: bool = False,
         linear_probe: bool = True,
         head_type: str = "linear",
-        output_dir: str = None):
+        output_dir: str = None,
+        embed_dim: int = None,
+        predictor_embed_dim: int = None,
+        out_dim: int = None,
+        epochs: int = None,
+        epochs_forecasting: int = None):
     """
     Unified entry point. Each run handles ONE task.
 
@@ -2157,6 +2190,11 @@ def run(model: str,
     if 'linear_probe'           in sig.parameters: kwargs['linear_probe']           = linear_probe
     if 'head_type'              in sig.parameters: kwargs['head_type']              = head_type
     if 'output_dir'             in sig.parameters: kwargs['output_dir']             = output_dir
+    if 'embed_dim'              in sig.parameters: kwargs['embed_dim']              = embed_dim
+    if 'predictor_embed_dim'   in sig.parameters: kwargs['predictor_embed_dim']   = predictor_embed_dim
+    if 'out_dim'               in sig.parameters: kwargs['out_dim']               = out_dim
+    if 'epochs'                in sig.parameters: kwargs['epochs']                = epochs
+    if 'epochs_forecasting'    in sig.parameters: kwargs['epochs_forecasting']    = epochs_forecasting
     return runner(**kwargs)
 
 
@@ -2209,6 +2247,16 @@ if __name__ == "__main__":
                         help="Override pretrain data source (dino only)")
     parser.add_argument("--num_patches",      type=int,   default=None,
                         help="Override number of patches (context window = num_patches × patch_size)")
+    parser.add_argument("--embed_dim",           type=int, default=None,
+                        help="Override embedding dim / d_model for the encoder")
+    parser.add_argument("--predictor_embed_dim", type=int, default=None,
+                        help="Override predictor embedding dim (JEPA only)")
+    parser.add_argument("--out_dim",             type=int, default=None,
+                        help="Override DINO output bins (out_dim / prototype count)")
+    parser.add_argument("--epochs",              type=int, default=None,
+                        help="Override number of pretraining epochs")
+    parser.add_argument("--epochs_forecasting",  type=int, default=None,
+                        help="Override number of forecasting fine-tune epochs (DINO)")
     parser.add_argument("--seed",             type=int,   default=None,
                         help="Random seed (also suffixes checkpoint paths with _seedN)")
     parser.add_argument("--pretrain_cls_model", type=str, default="false",
@@ -2231,6 +2279,11 @@ if __name__ == "__main__":
         lr=args.lr,
         pretrain_source=args.pretrain_source,
         num_patches=args.num_patches,
+        embed_dim=args.embed_dim,
+        predictor_embed_dim=args.predictor_embed_dim,
+        out_dim=args.out_dim,
+        epochs=args.epochs,
+        epochs_forecasting=args.epochs_forecasting,
         seed=args.seed,
         pretrain_cls_model=args.pretrain_cls_model.lower() == "true",
         head_type=args.head)
