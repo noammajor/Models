@@ -255,7 +255,7 @@ def run_dino(skip_train: bool = False,
     if pretrain_source is not None:
         dino_cfg['pretrain_source'] = pretrain_source
     elif pretrain_dataset is not None:
-        dino_cfg.pop('pretrain_source', None)
+        dino_cfg['pretrain_source'] = None  # None propagates into dino_main.cfg via update()
     if output_dir is not None:
         dino_cfg['output_dir'] = output_dir
     if embed_dim is not None:
