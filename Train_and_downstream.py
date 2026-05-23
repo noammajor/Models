@@ -504,6 +504,7 @@ def run_jepa(skip_train: bool = False,
                     encoder_layers: int = None,
                     predictor_layers: int = None,
                     lr: float = None,
+                    lr_pred: float = None,
                     pretrain_source: str = None,
                     checkpoint: str = None,
                     num_patches: int = None,
@@ -564,6 +565,8 @@ def run_jepa(skip_train: bool = False,
         config['predictor_num_layers'] = predictor_layers
     if lr is not None:
         config['lr'] = lr
+    if lr_pred is not None:
+        config['lr_pred'] = lr_pred
 
     from data_loaders.data_puller import (DataPullerDJepa, MonashDataPullerJEPA,
                                           SyntheticArrowDataPullerJEPA, PatchTSTForcastingAdapter)
@@ -2482,6 +2485,7 @@ def run(model: str,
         encoder_layers: int = None,
         predictor_layers: int = None,
         lr: float = None,
+        lr_pred: float = None,
         pretrain_source: str = None,
         gpu: int = None,
         num_patches: int = None,
@@ -2568,6 +2572,7 @@ def run(model: str,
     if 'encoder_layers'         in sig.parameters: kwargs['encoder_layers']         = encoder_layers
     if 'predictor_layers'       in sig.parameters: kwargs['predictor_layers']       = predictor_layers
     if 'lr'                     in sig.parameters: kwargs['lr']                     = lr
+    if 'lr_pred'                in sig.parameters: kwargs['lr_pred']                = lr_pred
     if 'classification_dataset' in sig.parameters: kwargs['classification_dataset'] = classification_dataset
     if 'anomaly_dataset'        in sig.parameters: kwargs['anomaly_dataset']        = anomaly_dataset
     if 'checkpoint'             in sig.parameters: kwargs['checkpoint']             = checkpoint
@@ -2643,6 +2648,8 @@ if __name__ == "__main__":
                         help="Override predictor embedding dim (JEPA only)")
     parser.add_argument("--out_dim",             type=int, default=None,
                         help="Override DINO output bins (out_dim / prototype count)")
+    parser.add_argument("--lr_pred",             type=float, default=None,
+                        help="Override predictor learning rate (JEPA only)")
     parser.add_argument("--epochs",              type=int, default=None,
                         help="Override number of pretraining epochs")
     parser.add_argument("--epochs_forecasting",  type=int, default=None,
@@ -2671,6 +2678,7 @@ if __name__ == "__main__":
         encoder_layers=args.encoder_layers,
         predictor_layers=args.predictor_layers,
         lr=args.lr,
+        lr_pred=args.lr_pred,
         pretrain_source=args.pretrain_source,
         num_patches=args.num_patches,
         embed_dim=args.embed_dim,

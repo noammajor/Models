@@ -121,6 +121,8 @@ def main():
                         help="Checkpoint epochs to evaluate during forecasting, e.g. --checkpoints 1 3 5 10")
     parser.add_argument("--lr",       type=float, default=None,
                         help="Pretraining LR (default: model-specific)")
+    parser.add_argument("--lr_pred",  type=float, default=None,
+                        help="Predictor LR (JEPA only)")
     parser.add_argument("--gpu",      type=int, default=0,
                         help="GPU index via CUDA_VISIBLE_DEVICES (default: 0)")
     parser.add_argument("--seed",     type=int, default=None,
@@ -161,6 +163,8 @@ def main():
         "--encoder_layers", str(args.layers),
         "--lr",             str(lr),
     ]
+    if args.lr_pred:
+        base_cmd += ["--lr_pred", str(args.lr_pred)]
     if args.embed_dim:
         base_cmd += ["--embed_dim", str(args.embed_dim)]
     if args.predictor_embed_dim:
