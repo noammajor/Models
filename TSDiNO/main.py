@@ -111,8 +111,18 @@ def train_TS_DINO(args):
     elif _pretrain_source == 'synthetic':
         _val_synth_kwargs = dict(_val_kwargs, window_step=cfg.get('window_step', None))
         val_dataset = dpuller.SyntheticArrowDataPuller(data_dir=cfg['synthetic_data_dir'], **_val_synth_kwargs)
+    elif 'UCI HAR' in args.data_path:
+        val_dataset = None  # UCI HAR — no val split
     else:
-        val_dataset = None  # CSV/UCI — no val split used
+        # CSV in-domain: use val split so checkpoint_best.pth gets saved
+        val_dataset = dpuller.DataPuller(
+            data_dir   = args.data_path,
+            split      = 'val',
+            transform  = dataAugmentationDino,
+            batch_size = args.num_patches,
+            patch_size = args.patch_len,
+            step_size  = args.step_size,
+        )
 
     _is_distributed = utils.is_dist_avail_and_initialized()
     data_loader = torch.utils.data.DataLoader(

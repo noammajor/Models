@@ -173,6 +173,12 @@ def train_and_evaluate(self):
 
         self.save_model(self.encoder, self.optimizer, epoch, f"{self.path_save}_epoch{epoch}")
 
+    # Ensure best_model.pt always exists (fallback: save last epoch)
+    import os as _os
+    if not _os.path.exists(f"{self.path_save}best_model.pt"):
+        self.save_model(self.encoder, self.optimizer, epoch, self.path_save)
+        print("[Hybrid] best_model.pt not saved during training — saved last epoch as fallback.")
+
     print("Training complete.")
     test_loss, test_dict = self.evaluate(self.test_loader, global_step, epoch=-1)
     print(f"TEST | loss: {test_loss:.4f} | {test_dict}")
