@@ -82,21 +82,24 @@ def train_TS_DINO(args):
         )
     else:
         print("Using CSV datasets for DINO training")
-        dataset1= dpuller.DataPuller(
-            data_dir=args.data_path,
+        _shared_dir = str(Path(__file__).parent.parent / "shared")
+        if _shared_dir not in sys.path:
+            sys.path.insert(0, _shared_dir)
+        from data_loaders.data_puller import PatchTSTPretrainAdapter
+        _seq_len = args.num_patches * args.patch_len
+        dataset1 = PatchTSTPretrainAdapter(
+            csv_path=args.data_path,
             split='train',
-            transform=dataAugmentationDino,
-            batch_size=args.num_patches,
+            seq_len=_seq_len,
             patch_size=args.patch_len,
-            step_size=args.step_size
+            transform=dataAugmentationDino,
         )
-        dataset2= dpuller.DataPuller(
-            data_dir=args.data_path_forecast_training,
+        dataset2 = PatchTSTPretrainAdapter(
+            csv_path=args.data_path_forecast_training,
             split='train',
-            transform=dataAugmentationDino,
-            batch_size=args.num_patches,
+            seq_len=_seq_len,
             patch_size=args.patch_len,
-            step_size=args.step_size
+            transform=dataAugmentationDino,
         )
         combined_dataset = ConcatDataset([dataset1, dataset2])
 
@@ -115,13 +118,12 @@ def train_TS_DINO(args):
         val_dataset = None  # UCI HAR — no val split
     else:
         # CSV in-domain: use val split so checkpoint_best.pth gets saved
-        val_dataset = dpuller.DataPuller(
-            data_dir   = args.data_path,
-            split      = 'val',
-            transform  = dataAugmentationDino,
-            batch_size = args.num_patches,
-            patch_size = args.patch_len,
-            step_size  = args.step_size,
+        val_dataset = PatchTSTPretrainAdapter(
+            csv_path  = args.data_path,
+            split     = 'val',
+            seq_len   = args.num_patches * args.patch_len,
+            patch_size= args.patch_len,
+            transform = dataAugmentationDino,
         )
 
     _is_distributed = utils.is_dist_avail_and_initialized()

@@ -190,6 +190,50 @@ class PatchTSTForcastingAdapter(Dataset):
         return ctx, tgt
 
 
+# ── PatchTST-identical pretraining adapter (DINO, etc.) ──────────────────────
+
+class PatchTSTPretrainAdapter(Dataset):
+    """
+    Wraps PatchTST's Dataset_ETT_hour / Dataset_ETT_minute / Dataset_Custom
+    for self-supervised pretraining (DINO, etc.).
+
+    Uses identical splits, normalization, and sliding-window stride to the
+    PatchTST forecasting benchmark.  Returns transform(seq_x) where
+    seq_x is [seq_len, n_vars].
+    """
+
+    def __init__(self, csv_path: str, split: str, seq_len: int, patch_size: int,
+                 transform=None):
+        _patchtst_dir = str(Path(__file__).parent.parent.parent / "PatchTST_self_supervised")
+        if _patchtst_dir not in sys.path:
+            sys.path.insert(0, _patchtst_dir)
+        from src.data.pred_dataset import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom
+
+        root      = os.path.dirname(os.path.abspath(csv_path))
+        fname     = os.path.basename(csv_path)
+        fname_low = fname.lower()
+        size      = [seq_len, 0, patch_size]   # pred_len=patch_size: minimum valid
+
+        if 'etth' in fname_low:
+            self._ds = Dataset_ETT_hour(root, split=split, size=size, features='M', data_path=fname)
+        elif 'ettm' in fname_low:
+            self._ds = Dataset_ETT_minute(root, split=split, size=size, features='M', data_path=fname)
+        else:
+            self._ds = Dataset_Custom(root, split=split, size=size, features='M', data_path=fname)
+
+        self.transform = transform
+        print(f"PatchTSTPretrainAdapter [{split}] ({fname}): {len(self._ds)} windows")
+
+    def __len__(self):
+        return len(self._ds)
+
+    def __getitem__(self, idx):
+        seq_x, _ = self._ds[idx]   # [seq_len, n_vars]
+        if self.transform:
+            seq_x = self.transform(seq_x)
+        return seq_x
+
+
 # ── Monash pretraining (JEPA) ─────────────────────────────────────────────────
 
 class MonashDataPullerJEPA(Dataset):
