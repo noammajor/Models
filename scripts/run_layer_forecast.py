@@ -54,6 +54,7 @@ MODEL_GPU = {
     "ntp":             4,
     "patchtst_random": 5,
     "timedart":        6,
+    "softclt":         1,
 }
 
 ALL_MODELS = list(MODEL_GPU.keys())
@@ -160,6 +161,10 @@ def discover_checkpoints(model: str, encoder_layers: int,
         # TimeDart only saves ckpt_best.pth — no per-epoch tournament search
         return ["best"]
 
+    elif model == "softclt":
+        # SoftCLT saves checkpoint_best.pth — no per-epoch tournament search
+        return ["best"]
+
     return [None]
 
 
@@ -213,7 +218,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
 
     with log_to_file(log_path):
         try:
-            if model in ("jepa", "lejepa", "dino"):
+            if model in ("jepa", "lejepa", "dino", "softclt"):
                 result = run(
                     model=model,
                     skip_train=True,

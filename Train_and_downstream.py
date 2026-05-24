@@ -275,7 +275,8 @@ def run_dino(skip_train: bool = False,
             _src_tag = f"_{pretrain_dataset}"
         else:
             _src_tag = ''
-        dino_cfg['output_dir'] = dino_cfg.get('output_dir', './checkpoints').rstrip('/') + f'{_src_tag}_layers{encoder_layers}' + _SEED_TAG
+        _outdim_tag = f"_outdim{dino_cfg['out_dim']}" if dino_cfg.get('out_dim') is not None else ''
+        dino_cfg['output_dir'] = dino_cfg.get('output_dir', './checkpoints').rstrip('/') + f'{_src_tag}_layers{encoder_layers}{_outdim_tag}' + _SEED_TAG
     if num_patches is not None:
         dino_cfg['num_patches'] = num_patches
         _cw = num_patches * dino_cfg.get('patch_len', 16)
@@ -2454,6 +2455,279 @@ def run_random(skip_train: bool = False, pretrain_dataset: str = None, forecast_
     random_forecasting(cfg, _forecast_dset, mlp_head=(head_type == "mlp"))
 
 
+# ── SoftCLT ──────────────────────────────────────────────────────────────────
+
+def run_softclt(
+    skip_train: bool = False,
+    pretrain_dataset: str = None,
+    forecast_dataset: str = None,
+    classification_dataset=None,
+    anomaly_dataset: str = None,
+    pred_lens=None,
+    checkpoints=None,
+    pretrain_only: bool = False,
+    classification_only: bool = False,
+    encoder_layers: int = None,
+    lr: float = None,
+    pretrain_source: str = None,
+    num_patches: int = None,
+    linear_probe: bool = True,
+    head_type: str = "linear",
+    embed_dim: int = None,
+    epochs: int = None,
+    epochs_forecasting: int = None,
+    output_dir: str = None,
+):
+    softclt_dir = Path(__file__).parent / "softclt-main"
+    dino_dir    = Path(__file__).parent / "TSDiNO"
+    shared_dir  = Path(__file__).parent / "shared"
+    _add_path(softclt_dir)
+    _add_path(softclt_dir / "softclt_ts2vec")
+    _add_path(dino_dir)
+    _add_path(shared_dir)
+
+    import importlib.util as _ilu, sys as _sys, torch
+
+    # ── Load SoftCLT config ───────────────────────────────────────────────────
+    _spec = _ilu.spec_from_file_location("config_softclt", softclt_dir / "config_softclt.py")
+    _mod  = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+    cfg = {**DATA_PATHS, **dict(_mod.config)}
+
+    # ── Load DINO main.py (for test_run / train_classification) ───────────────
+    _cfg_spec = _ilu.spec_from_file_location("_dino_config", dino_dir / "config.py")
+    _cfg_mod  = _ilu.module_from_spec(_cfg_spec)
+    _cfg_spec.loader.exec_module(_cfg_mod)
+    _sys.modules["config"] = _cfg_mod
+
+    _sys.modules.pop("main", None)
+    _main_spec = _ilu.spec_from_file_location("_dino_main", dino_dir / "main.py")
+    dino_main  = _ilu.module_from_spec(_main_spec)
+    _sys.modules["main"] = dino_main
+    _main_spec.loader.exec_module(dino_main)
+
+    # ── Apply overrides ───────────────────────────────────────────────────────
+    if encoder_layers is not None:
+        cfg['n_layers'] = encoder_layers
+    if embed_dim is not None:
+        cfg['embed_dim'] = embed_dim
+    if lr is not None:
+        cfg['lr'] = lr
+    if epochs is not None:
+        cfg['epochs'] = epochs
+    if epochs_forecasting is not None:
+        cfg['epochs_forecasting'] = epochs_forecasting
+    if output_dir is not None:
+        cfg['output_dir'] = output_dir
+    if pretrain_source is not None:
+        cfg['pretrain_source'] = pretrain_source
+    if pred_lens is None:
+        pred_lens = [96, 192, 336, 720]
+
+    pretrain_source = _resolve_pretrain_source(cfg)
+    use_global_data = pretrain_source is not None
+
+    if pretrain_only or classification_only or (anomaly_dataset is not None and forecast_dataset is None):
+        forecast_dataset = None
+    elif forecast_dataset is None and not pretrain_only:
+        forecast_dataset = cfg.get("forecast_dataset")
+
+    cfg["lr_forecasting"] = _get_forecast_lr(cfg, "lr_forecasting")
+
+    # ── Resolve data dirs ─────────────────────────────────────────────────────
+    if use_global_data:
+        if pretrain_source in ('monash', 'monash+synthetic'):
+            _mdir = cfg['monash_data_dir']
+            if not os.path.isabs(_mdir):
+                cfg['monash_data_dir'] = str((softclt_dir / _mdir).resolve())
+        if pretrain_source in ('synthetic', 'monash+synthetic'):
+            _skey = 'synthetic_mix_data_dir' if pretrain_source == 'monash+synthetic' else 'synthetic_data_dir'
+            _sdir = cfg[_skey]
+            if not os.path.isabs(_sdir):
+                _sdir = str((softclt_dir / _sdir).resolve())
+            cfg['synthetic_data_dir'] = _sdir
+
+        _src_label = {
+            'monash':           f"Monash ({cfg['monash_data_dir']})",
+            'synthetic':        f"Synthetic ({cfg['synthetic_data_dir']})",
+            'monash+synthetic': "Monash + Synthetic",
+        }.get(pretrain_source, pretrain_source)
+        print("\n" + "="*60)
+        print(f"  MODEL: SoftCLT")
+        if pretrain_only:
+            print(f"  pretrain: {_src_label}  [pretrain only]")
+        else:
+            print(f"  pretrain: {_src_label}   forecast: {forecast_dataset}")
+        print("="*60)
+    else:
+        pretrain_dataset = pretrain_dataset or cfg.get("pretrain_dataset")
+        forecast_dataset = forecast_dataset or pretrain_dataset
+        if pretrain_dataset is None:
+            raise ValueError("pretrain_dataset not set — specify via run() or config_softclt.py")
+        ds_pre = get_dataset_info(pretrain_dataset)
+        print("\n" + "="*60)
+        print(f"  MODEL: SoftCLT")
+        print(f"  pretrain: {pretrain_dataset}   forecast: {forecast_dataset}")
+        print("="*60)
+
+    out_dir   = Path(cfg['output_dir'])
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ckpt_path = str(out_dir / "checkpoint_best.pth")
+
+    from SoftCLT import (build_model, save_backbone,
+                         load_monash_windows, load_synthetic_windows, load_csv_train_data)
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # ── Pretraining ───────────────────────────────────────────────────────────
+    if not skip_train:
+        print("\n[SoftCLT] Loading pretrain data …")
+        seq_len = cfg['patch_len'] * cfg['num_patches']   # 336
+        min_len = cfg.get('monash_min_len', 512)
+
+        if use_global_data:
+            parts = []
+            if pretrain_source in ('monash', 'monash+synthetic'):
+                parts.append(load_monash_windows(cfg['monash_data_dir'], seq_len, min_len))
+            if pretrain_source in ('synthetic', 'monash+synthetic'):
+                parts.append(load_synthetic_windows(cfg['synthetic_data_dir'], seq_len, min_len))
+            train_arr = np.concatenate(parts, axis=0) if len(parts) > 1 else parts[0]
+        else:
+            train_arr = load_csv_train_data(ds_pre["csv_path"], ds_pre.get("timestamp_col", "date"))
+
+        c_in = train_arr.shape[2]
+        print(f"[SoftCLT] Pretrain array: {train_arr.shape}  c_in={c_in}")
+
+        model = build_model(cfg, c_in, device)
+        print(f"[SoftCLT] Starting pretraining for {cfg['epochs']} epochs …")
+        model.fit(train_arr, 0, 0, 0, None, str(out_dir), n_epochs=cfg['epochs'], verbose=True)
+
+        # Save SoftCLT-native checkpoint
+        save_backbone(model, str(out_dir / "checkpoint_softclt.pth"), cfg['epochs'], cfg)
+
+        # Save DINO-compatible checkpoint for downstream.
+        # test_run reads checkpoint['teacher'], train_classification reads checkpoint['student'],
+        # both strip the leading 'backbone.' prefix before loading into PatchTST.
+        backbone_sd = model._net.backbone.state_dict()
+        dino_sd = {'backbone.' + k: v for k, v in backbone_sd.items()}
+        torch.save({'teacher': dino_sd, 'student': dino_sd, 'epoch': cfg['epochs']}, ckpt_path)
+        print(f"[SoftCLT] DINO-compatible checkpoint saved → {ckpt_path}")
+    else:
+        print("[SoftCLT] Skipping pretraining.")
+
+    if pretrain_only:
+        print("\n[SoftCLT] Pretrain-only mode — skipping downstream tasks.")
+        return
+
+    # ── Build DINO args for downstream ────────────────────────────────────────
+    ds_fore       = get_dataset_info(forecast_dataset) if forecast_dataset is not None else None
+    c_in_forecast = ds_fore["c_in"] if ds_fore is not None else 1
+
+    dino_args_cfg = {**dict(_cfg_mod.config), **cfg}
+    dino_args_cfg['output_dir'] = str(out_dir)
+    dino_args_cfg['c_in']       = c_in_forecast
+    if ds_fore is not None:
+        dino_args_cfg['data_path_forecast_training']    = ds_fore["csv_path"]
+        dino_args_cfg['data_path_forecast_test']        = ds_fore["csv_path"]
+        dino_args_cfg['parms_for_training_forecasting'] = ds_fore["columns"]
+        dino_args_cfg['parms_for_testing_forecasting']  = ds_fore["columns"]
+    dino_main.cfg.update(dino_args_cfg)
+
+    args = _config_to_dino_args(dino_args_cfg)
+    for _attr in ('data_path_forecast_training', 'data_path_forecast_test'):
+        _val = getattr(args, _attr, '')
+        if _val and not os.path.isabs(_val):
+            setattr(args, _attr, str(dino_dir / _val))
+    args.linear_probe = linear_probe
+    args.mlp_head     = (head_type == "mlp")
+    args.path_num     = "best"
+
+    # ── Forecasting downstream ────────────────────────────────────────────────
+    best_mse = None
+    if not classification_only and forecast_dataset is not None:
+        print("\n[SoftCLT] Running forecasting downstream …")
+        for pred_len in pred_lens:
+            args.pred_len = pred_len
+            mse = dino_main.test_run(args)
+            if mse is not None and (best_mse is None or mse < best_mse):
+                best_mse = mse
+
+    # ── Classification downstream ─────────────────────────────────────────────
+    cls_acc = None
+    if classification_dataset is not None:
+        from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
+        import torch.nn.functional as _F
+        cls_dir = cfg["classification_data_dir"]
+        cls_bs  = _get_cls_bs(cfg, "batch_size_classification", 64)
+        p_s     = cfg['patch_len']
+        _n_patches = 72
+        _target_T  = _n_patches * p_s
+        def _softclt_patch_collate(batch, _ps=p_s, _tT=_target_T, _nP=_n_patches):
+            xs, ys, orig_lens = zip(*batch)
+            orig_lens = torch.stack(orig_lens)
+            max_t = max(x.shape[0] for x in xs)
+            xs = torch.stack([_F.pad(x, (0, 0, 0, max_t - x.shape[0])) for x in xs])
+            B_, T_, C_ = xs.shape
+            if T_ != _tT:
+                idx = torch.linspace(0, T_ - 1, _tT).long()
+                xs  = xs[:, idx, :]
+                patch_idx    = idx[torch.arange(_nP) * _ps]
+                padding_mask = patch_idx.unsqueeze(0) < orig_lens.unsqueeze(1)
+            else:
+                patch_starts = torch.arange(_nP) * _ps
+                padding_mask = patch_starts.unsqueeze(0) < orig_lens.unsqueeze(1)
+            xs = xs.reshape(B_, _nP, _ps, C_)
+            return xs, torch.stack(ys), padding_mask
+        if list(Path(os.path.join(cls_dir, classification_dataset)).glob("*_TRAIN.ts")):
+            _raw_tr, _, _raw_te, n_classes = make_uea_dataloaders(
+                cls_dir, classification_dataset, batch_size=cls_bs)
+            cls_train = torch.utils.data.DataLoader(
+                _raw_tr.dataset, batch_size=cls_bs, shuffle=True,
+                collate_fn=_softclt_patch_collate)
+            cls_val   = None
+            cls_test  = torch.utils.data.DataLoader(
+                _raw_te.dataset, batch_size=cls_bs, shuffle=False,
+                collate_fn=_softclt_patch_collate)
+        else:
+            _mk = lambda split: torch.utils.data.DataLoader(
+                ClassificationDataPuller(cls_dir, classification_dataset, p_s, which=split),
+                batch_size=cls_bs, shuffle=(split == "train"))
+            cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
+            n_classes = cls_train.dataset.n_classes
+        args.path_num = "best"
+        cls_acc = dino_main.train_classification(args, cls_train, cls_val, cls_test, n_classes)
+        print(f"\n{'='*60}")
+        print(f"  [SoftCLT] Classification on {classification_dataset}")
+        print(f"  Test Accuracy: {cls_acc:.4f}")
+        print(f"{'='*60}")
+
+    # ── Anomaly detection downstream ──────────────────────────────────────────
+    anom_result = None
+    if anomaly_dataset is not None:
+        _anom_spec = _ilu.spec_from_file_location("tsdino_anomaly", dino_dir / "Anomaly.py")
+        _anom_mod  = _ilu.module_from_spec(_anom_spec)
+        _anom_spec.loader.exec_module(_anom_mod)
+
+        from data_loaders.data_puller import AnomalyDataPuller
+        anom_dir = cfg["anomaly_data_dir"]
+        anom_bs  = cfg.get("batch_size_anomaly", 64)
+        p_s      = cfg['patch_len']
+        anom_train = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
+            batch_size=anom_bs, shuffle=False)
+        anom_test  = torch.utils.data.DataLoader(
+            AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
+            batch_size=anom_bs, shuffle=False)
+        args.path_num = "best"
+        anom_result = _anom_mod.anomaly_detection(
+            args, args.path_num, anom_train, anom_test,
+            anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg),
+            linear_probe=linear_probe,
+            mlp_head=(head_type == "mlp"))
+
+    return "best", best_mse, cls_acc, anom_result
+
+
 # ── entry point ───────────────────────────────────────────────────────────────
 
 RUNNERS = {
@@ -2467,6 +2741,7 @@ RUNNERS = {
     "hybrid":          run_hybrid,
     "random":          run_random,
     "timedart":        run_timedart,
+    "softclt":         run_softclt,
 }
 
 def run(model: str,

@@ -43,10 +43,11 @@ _python = sys.executable
 
 # ── checkpoint locator ────────────────────────────────────────────────────────
 
-def _find_src_checkpoint(model: str, dataset: str, layers: int) -> Path:
+def _find_src_checkpoint(model: str, dataset: str, layers: int, out_dim: int = None) -> Path:
     """Return the path where Train_and_downstream.py saves the best checkpoint."""
     if model == "dino":
-        return ROOT / f"checkpoints_{dataset}_layers{layers}" / "checkpoint_best.pth"
+        _outdim_tag = f"_outdim{out_dim}" if out_dim is not None else ''
+        return ROOT / f"checkpoints_{dataset}_layers{layers}{_outdim_tag}" / "checkpoint_best.pth"
 
     elif model == "jepa":
         return ROOT / "output_model" / f"JEPA_{dataset}_layers{layers}" / "best_model.pt"
@@ -199,7 +200,7 @@ def main():
             sys.exit(rc)
 
     # ── copy best checkpoint to unified path ──────────────────────────────────
-    src_ckpt = _find_src_checkpoint(args.model, args.dataset, args.layers)
+    src_ckpt = _find_src_checkpoint(args.model, args.dataset, args.layers, args.out_dim)
     if not args.dry_run:
         if src_ckpt.exists():
             target_dir.mkdir(parents=True, exist_ok=True)
