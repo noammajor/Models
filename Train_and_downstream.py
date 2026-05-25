@@ -863,7 +863,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
                  checkpoints=None, random_encoder: bool = False, encoder_layers: int = None,
                  predictor_layers: int = None, lr: float = None, pretrain_source: str = None,
                  num_patches: int = None, seed: int = None, linear_probe: bool = True,
-                 head_type: str = "linear", embed_dim: int = None):
+                 head_type: str = "linear", embed_dim: int = None, epochs: int = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
     patchtst_dir = Path(__file__).parent / "PatchTST_self_supervised"
@@ -937,7 +937,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         "--dropout",             str(cfg.get("dropout",             0.2)),
         "--head_dropout",        str(cfg.get("head_dropout",        0.2)),
         "--mask_ratio",          str(cfg.get("mask_ratio",          0.4)),
-        "--n_epochs_pretrain",   str(cfg.get("n_epochs_pretrain",   10)),
+        "--n_epochs_pretrain",   str(epochs if epochs is not None else cfg.get("n_epochs_pretrain", 10)),
         "--batch_size",          str(cfg.get("batch_size",          64)),
         "--revin",               str(int(cfg.get("revin",           True))),
         "--pretrained_model_id", str(cfg.get("pretrained_model_id", 1)),
@@ -2879,6 +2879,7 @@ def run(model: str,
     if 'embed_dim'              in sig.parameters: kwargs['embed_dim']              = embed_dim
     if 'predictor_embed_dim'   in sig.parameters: kwargs['predictor_embed_dim']   = predictor_embed_dim
     if 'out_dim'               in sig.parameters: kwargs['out_dim']               = out_dim
+    if 'epochs'                in sig.parameters: kwargs['epochs']                = epochs
     if 'epochs'                in sig.parameters: kwargs['epochs']                = epochs
     if 'epochs_forecasting'    in sig.parameters: kwargs['epochs_forecasting']    = epochs_forecasting
     if 'warmup_epochs'         in sig.parameters: kwargs['warmup_epochs']         = warmup_epochs
