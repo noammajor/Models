@@ -223,7 +223,8 @@ def run_dino(skip_train: bool = False,
              embed_dim: int = None,
              out_dim: int = None,
              epochs: int = None,
-             epochs_forecasting: int = None):
+             epochs_forecasting: int = None,
+             warmup_epochs: int = None):
     dino_dir  = Path(__file__).parent / "TSDiNO"
     shared_dir = Path(__file__).parent / "shared"
     _add_path(dino_dir)
@@ -2867,6 +2868,7 @@ def run(model: str,
     if 'out_dim'               in sig.parameters: kwargs['out_dim']               = out_dim
     if 'epochs'                in sig.parameters: kwargs['epochs']                = epochs
     if 'epochs_forecasting'    in sig.parameters: kwargs['epochs_forecasting']    = epochs_forecasting
+    if 'warmup_epochs'         in sig.parameters: kwargs['warmup_epochs']         = warmup_epochs
     if 'phi'                   in sig.parameters: kwargs['phi']                   = phi
     return runner(**kwargs)
 
