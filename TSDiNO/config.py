@@ -31,7 +31,7 @@ config = {
     "num_patches": 21,  # window length in patches → 21×16 = 336 timesteps
     "n_layers": 5,
     "n_heads": 16,
-    "embed_dim": 256,
+    "embed_dim": 128,
     "d_ff": 512,
     "dropout": 0.1,
     "head_dropout": 0.1,
