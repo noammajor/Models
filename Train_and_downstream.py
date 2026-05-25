@@ -878,6 +878,8 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     cfg = {**DATA_PATHS, **dict(_mod.config)}
     if pretrain_source is not None:
         cfg['pretrain_source'] = pretrain_source
+    elif pretrain_dataset is not None and pretrain_dataset not in ('monash', 'synthetic', 'monash+synthetic'):
+        cfg['pretrain_source'] = None  # force in-domain CSV pretraining
     if encoder_layers is not None:
         cfg['n_layers'] = encoder_layers
         cfg['pretrained_model_id'] = encoder_layers  # unique checkpoint per layer config
