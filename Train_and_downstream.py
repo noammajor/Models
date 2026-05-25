@@ -986,7 +986,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         print("[PatchTST] Skipping pretraining.")
 
     # ── resolve checkpoint path (needed for both forecast and classify) ────────
-    n_ep    = cfg.get("n_epochs_pretrain", 10)
+    n_ep    = epochs if epochs is not None else cfg.get("n_epochs_pretrain", 10)
     ctx     = cfg.get("context_points", 512)
     p_len   = cfg.get("patch_len", 12)
     stride  = cfg.get("stride", 12)
