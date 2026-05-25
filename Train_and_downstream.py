@@ -2078,7 +2078,9 @@ def run_timedart(skip_train: bool = False,
                  linear_probe: bool = True,
                  head_type: str = "linear",
                  pretrain_cls_model: bool = False,
-                 embed_dim: int = None):
+                 embed_dim: int = None,
+                 epochs: int = None,
+                 epochs_forecasting: int = None):
     """
     TimeDart: diffusion-based pretraining with Monash/Synthetic data,
     followed by forecasting fine-tune using our PatchTSTForcastingAdapter
@@ -2178,7 +2180,7 @@ def run_timedart(skip_train: bool = False,
         features           = cfg.get('features', 'M'),
         num_classes        = 6,
         num_workers        = cfg.get('num_workers', 4),
-        train_epochs       = cfg.get('train_epochs', 20),
+        train_epochs       = epochs if epochs is not None else cfg.get('train_epochs', 20),
         batch_size         = cfg.get('batch_size', 128),
         learning_rate      = cfg['learning_rate'],
         patience           = cfg.get('patience', 3),
@@ -2250,7 +2252,7 @@ def run_timedart(skip_train: bool = False,
         optimizer       = torch.optim.Adam(exp.model.parameters(), lr=cfg['learning_rate'])
         model_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=cfg['lr_decay'])
 
-        n_epochs = cfg.get('train_epochs', 20)
+        n_epochs = epochs if epochs is not None else cfg.get('train_epochs', 20)
         min_vali = float('inf')
 
         print(f"\n[TimeDart] Pretraining ({n_epochs} epochs) …")
