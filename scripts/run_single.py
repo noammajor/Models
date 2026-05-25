@@ -27,7 +27,7 @@ ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(ROOT))
 
 IN_DOMAIN_DATASETS = ["etth1", "etth2", "ettm1", "ettm2", "weather"]
-ALL_MODELS         = ["dino", "jepa", "lejepa", "patchtst", "ntp", "hybrid"]
+ALL_MODELS         = ["dino", "jepa", "lejepa", "patchtst", "ntp", "hybrid", "timedart"]
 
 MODEL_DEFAULT_LR = {
     "dino":     5e-4,
@@ -36,6 +36,7 @@ MODEL_DEFAULT_LR = {
     "patchtst": 5e-5,
     "ntp":      5e-5,
     "hybrid":   5e-4,
+    "timedart": 1e-4,
 }
 
 _python = sys.executable
@@ -70,6 +71,9 @@ def _find_src_checkpoint(model: str, dataset: str, layers: int, out_dim: int = N
     elif model == "hybrid":
         # in-domain run: path includes dataset tag
         return ROOT / "output_model" / f"Hybrid_{dataset}_layers{layers}" / "best_model.pt"
+
+    elif model == "timedart":
+        return ROOT / "outputs" / f"timedart_pretrain_{dataset}_layers{layers}" / "monash" / "ckpt_best.pth"
 
     else:
         raise ValueError(f"Unknown model: {model}")

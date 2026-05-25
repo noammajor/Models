@@ -2112,10 +2112,10 @@ def run_timedart(skip_train: bool = False,
     if lr is not None:
         cfg['learning_rate'] = lr
 
-    _src_tag  = f"_{cfg['pretrain_source'].replace('+', '_')}" if cfg.get('pretrain_source', 'monash') != 'monash' else ''
+    _src_tag  = f"_{cfg['pretrain_source'].replace('+', '_')}" if cfg.get('pretrain_source', 'monash') != 'monash' else (f"_{pretrain_dataset}" if pretrain_dataset else '')
     ckpt_dir  = Path(__file__).parent / f"outputs/timedart_pretrain{_src_tag}_layers{cfg['e_layers']}"
-    ckpt_file     = ckpt_dir / f"monash{_src_tag}" / "ckpt_best.pth"
-    cls_ckpt_file = ckpt_dir / f"monash{_src_tag}_cls" / "ckpt_best.pth"
+    ckpt_file     = ckpt_dir / "monash" / "ckpt_best.pth"
+    cls_ckpt_file = ckpt_dir / "monash_cls" / "ckpt_best.pth"
 
     pretrain_src = _resolve_pretrain_source(cfg)
 
