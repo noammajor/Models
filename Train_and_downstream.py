@@ -224,7 +224,8 @@ def run_dino(skip_train: bool = False,
              out_dim: int = None,
              epochs: int = None,
              epochs_forecasting: int = None,
-             warmup_epochs: int = None):
+             warmup_epochs: int = None,
+             ckpt_tag: str = None):
     dino_dir  = Path(__file__).parent / "TSDiNO"
     shared_dir = Path(__file__).parent / "shared"
     _add_path(dino_dir)
@@ -2779,6 +2780,7 @@ def run(model: str,
         epochs: int = None,
         epochs_forecasting: int = None,
         warmup_epochs: int = None,
+        ckpt_tag: str = None,
         phi: float = None):
     """
     Unified entry point. Each run handles ONE task.
@@ -2870,6 +2872,7 @@ def run(model: str,
     if 'epochs'                in sig.parameters: kwargs['epochs']                = epochs
     if 'epochs_forecasting'    in sig.parameters: kwargs['epochs_forecasting']    = epochs_forecasting
     if 'warmup_epochs'         in sig.parameters: kwargs['warmup_epochs']         = warmup_epochs
+    if 'ckpt_tag'              in sig.parameters: kwargs['ckpt_tag']              = ckpt_tag
     if 'phi'                   in sig.parameters: kwargs['phi']                   = phi
     return runner(**kwargs)
 
@@ -2948,6 +2951,8 @@ if __name__ == "__main__":
                         help="Hybrid model mixing weight φ∈[0,1] (φ=1 pure LEJEPA, φ=0 pure NTP)")
     parser.add_argument("--warmup_epochs", type=int, default=None,
                         help="Number of LR warmup epochs (DINO only)")
+    parser.add_argument("--ckpt_tag", type=str, default=None,
+                        help="Extra tag appended to checkpoint directory name (e.g. 'wrLR')")
     args = parser.parse_args()
     run(model=args.model,
         task=args.task,
@@ -2970,6 +2975,7 @@ if __name__ == "__main__":
         epochs=args.epochs,
         epochs_forecasting=args.epochs_forecasting,
         warmup_epochs=args.warmup_epochs,
+        ckpt_tag=args.ckpt_tag,
         checkpoints=[int(c) if c.isdigit() else c for c in args.checkpoints] if args.checkpoints else None,
         seed=args.seed,
         pretrain_cls_model=args.pretrain_cls_model.lower() == "true",

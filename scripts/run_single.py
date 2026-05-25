@@ -43,11 +43,12 @@ _python = sys.executable
 
 # ── checkpoint locator ────────────────────────────────────────────────────────
 
-def _find_src_checkpoint(model: str, dataset: str, layers: int, out_dim: int = None) -> Path:
+def _find_src_checkpoint(model: str, dataset: str, layers: int, out_dim: int = None, ckpt_tag: str = None) -> Path:
     """Return the path where Train_and_downstream.py saves the best checkpoint."""
     if model == "dino":
         _outdim_tag = f"_outdim{out_dim}" if out_dim is not None else ''
-        return ROOT / f"checkpoints_{dataset}_layers{layers}{_outdim_tag}" / "checkpoint_best.pth"
+        _ckpt_tag   = f"_{ckpt_tag}" if ckpt_tag else ''
+        return ROOT / f"checkpoints_{dataset}_layers{layers}{_outdim_tag}{_ckpt_tag}" / "checkpoint_best.pth"
 
     elif model == "jepa":
         return ROOT / "output_model" / f"JEPA_{dataset}_layers{layers}" / "best_model.pt"
@@ -124,6 +125,8 @@ def main():
                         help="Pretraining LR (default: model-specific)")
     parser.add_argument("--warmup_epochs", type=int, default=None,
                         help="Number of LR warmup epochs (DINO only)")
+    parser.add_argument("--ckpt_tag", type=str, default=None,
+                        help="Extra tag appended to checkpoint directory name (e.g. 'wrLR')")
     parser.add_argument("--lr_pred",  type=float, default=None,
                         help="Predictor LR (JEPA only)")
     parser.add_argument("--gpu",      type=int, default=0,
@@ -184,6 +187,8 @@ def main():
         base_cmd += ["--seed", str(args.seed)]
     if args.warmup_epochs is not None:
         base_cmd += ["--warmup_epochs", str(args.warmup_epochs)]
+    if args.ckpt_tag is not None:
+        base_cmd += ["--ckpt_tag", args.ckpt_tag]
     if args.phi is not None:
         base_cmd += ["--phi", str(args.phi)]
 
@@ -204,7 +209,7 @@ def main():
             sys.exit(rc)
 
     # ── copy best checkpoint to unified path ──────────────────────────────────
-    src_ckpt = _find_src_checkpoint(args.model, args.dataset, args.layers, args.out_dim)
+    src_ckpt = _find_src_checkpoint(args.model, args.dataset, args.layers, args.out_dim, args.ckpt_tag)
     if not args.dry_run:
         if src_ckpt.exists():
             target_dir.mkdir(parents=True, exist_ok=True)
