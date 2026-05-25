@@ -140,7 +140,7 @@ config = {
 
     # ── Student view (local crop) ─────────────────────────────────────────────
     "local_crops": [
-        {"type": "dwt_high_perturb_zero", "crop_ratio": 1.0, "high_perturb_noise_range": (0.1, 0.3), "zero_out_ratio": 0.25},
+        {"type": "dwt_high_perturb", "crop_ratio": 1.0, "high_perturb_noise_range": (0.1, 0.3)},
     ],
 
     # ── Patch reconstruction (MAE-style auxiliary loss) ────────────────────────
