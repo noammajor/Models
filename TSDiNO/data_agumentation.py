@@ -83,6 +83,19 @@ class DWTAugmentation:
                     for c in coeffs[1:]
                 ]
 
+            elif self.mode == 'high_perturb_zero':
+                # Gaussian noise on all detail coeffs, then zero out finest levels
+                noise_scale = random.uniform(*self.high_perturb_noise_range)
+                new_coeffs = [coeffs[0]] + [
+                    c + np.random.randn(*c.shape) * noise_scale
+                    for c in coeffs[1:]
+                ]
+                for c_idx in range(len(coeffs) - self.finest_levels, len(coeffs)):
+                    c = new_coeffs[c_idx].copy()
+                    mask = np.random.rand(*c.shape) < self.zero_out_ratio
+                    c[mask] = 0.0
+                    new_coeffs[c_idx] = c
+
             elif self.mode == 'band_scale':
                 new_coeffs = [coeffs[0] * random.uniform(*self.band_scale_approx_range)] + [
                     c * random.uniform(*self.band_scale_detail_range) for c in coeffs[1:]
