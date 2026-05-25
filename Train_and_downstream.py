@@ -2204,7 +2204,7 @@ def run_timedart(skip_train: bool = False,
         def _make_pretrain_loader(which):
             if pretrain_src is None:
                 from data_loaders.data_puller import CSVWindowDatasetTimeDart
-                _csv = DATA_PATHS.get(f"data_path_{pretrain_dataset}", DATA_PATHS.get("data_path", "data/ETTh1.csv"))
+                _csv = get_dataset_info(pretrain_dataset)["csv_path"]
                 ds = CSVWindowDatasetTimeDart(csv_path=_csv, split=which, seq_len=seq_len)
             else:
                 datasets = []
