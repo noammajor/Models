@@ -2107,6 +2107,8 @@ def run_timedart(skip_train: bool = False,
 
     if pretrain_source is not None:
         cfg['pretrain_source'] = pretrain_source
+    elif pretrain_dataset is not None and pretrain_dataset not in ('monash', 'synthetic', 'monash+synthetic'):
+        cfg['pretrain_source'] = None  # force in-domain CSV pretraining
     if encoder_layers is not None:
         cfg['e_layers'] = encoder_layers
     if embed_dim is not None:
@@ -2114,12 +2116,13 @@ def run_timedart(skip_train: bool = False,
     if lr is not None:
         cfg['learning_rate'] = lr
 
-    _src_tag  = f"_{cfg['pretrain_source'].replace('+', '_')}" if cfg.get('pretrain_source', 'monash') != 'monash' else (f"_{pretrain_dataset}" if pretrain_dataset else '')
+    _pretrain_src = _resolve_pretrain_source(cfg)
+    _src_tag = f"_{_pretrain_src.replace('+', '_')}" if _pretrain_src else (f"_{pretrain_dataset}" if pretrain_dataset else '')
     ckpt_dir  = Path(__file__).parent / f"outputs/timedart_pretrain{_src_tag}_layers{cfg['e_layers']}"
     ckpt_file     = ckpt_dir / "monash" / "ckpt_best.pth"
     cls_ckpt_file = ckpt_dir / "monash_cls" / "ckpt_best.pth"
 
-    pretrain_src = _resolve_pretrain_source(cfg)
+    pretrain_src = _pretrain_src
 
     # Always use cuda:0 — CUDA_VISIBLE_DEVICES is already set by the caller
     # to select the physical GPU, so the logical index is always 0.
@@ -2199,20 +2202,31 @@ def run_timedart(skip_train: bool = False,
         min_len    = cfg['monash_min_len']
 
         def _make_pretrain_loader(which):
-            datasets = []
-            if pretrain_src in ('monash', 'monash+synthetic'):
-                datasets.append(MonashWindowDatasetTimeDart(
-                    monash_dir, seq_len=seq_len, which=which, min_len=min_len))
-            if pretrain_src in ('synthetic', 'monash+synthetic'):
-                datasets.append(SyntheticWindowDatasetTimeDart(
-                    synth_dir, seq_len=seq_len, which=which, min_len=min_len))
-            ds = datasets[0] if len(datasets) == 1 else torch.utils.data.ConcatDataset(datasets)
+            if pretrain_src is None:
+                from data_loaders.data_puller import CSVWindowDatasetTimeDart
+                _csv = DATA_PATHS.get(f"data_path_{pretrain_dataset}", DATA_PATHS.get("data_path", "data/ETTh1.csv"))
+                ds = CSVWindowDatasetTimeDart(csv_path=_csv, split=which, seq_len=seq_len)
+            else:
+                datasets = []
+                if pretrain_src in ('monash', 'monash+synthetic'):
+                    datasets.append(MonashWindowDatasetTimeDart(
+                        monash_dir, seq_len=seq_len, which=which, min_len=min_len))
+                if pretrain_src in ('synthetic', 'monash+synthetic'):
+                    datasets.append(SyntheticWindowDatasetTimeDart(
+                        synth_dir, seq_len=seq_len, which=which, min_len=min_len))
+                ds = datasets[0] if len(datasets) == 1 else torch.utils.data.ConcatDataset(datasets)
             return torch.utils.data.DataLoader(
                 ds, batch_size=cfg['batch_size'], shuffle=(which == 'train'),
                 num_workers=cfg.get('num_workers', 4), drop_last=True)
 
         train_loader = _make_pretrain_loader('train')
         val_loader   = _make_pretrain_loader('val')
+
+        if pretrain_src is None:
+            _sample = train_loader.dataset[0][0]
+            _n_vars = _sample.shape[1] if len(_sample.shape) > 1 else 1
+            base_args.enc_in = _n_vars
+            base_args.c_out  = _n_vars
 
         base_args.task_name = "pretrain"
         base_args.data      = "monash" + _src_tag

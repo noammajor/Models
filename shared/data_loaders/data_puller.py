@@ -774,6 +774,31 @@ def _cls_load_dataset(root: Path, which: str, val_fraction: float):
         return X_te, y_te
 
 
+class CSVWindowDatasetTimeDart(Dataset):
+    """
+    In-domain CSV pretraining for TimeDart.
+
+    Wraps PatchTSTPretrainAdapter and returns the same 4-tuple contract as
+    MonashWindowDatasetTimeDart: (batch_x, zeros, zeros, zeros).
+    batch_x shape: (seq_len, n_vars) — caller must set enc_in accordingly.
+    """
+
+    def __init__(self, csv_path: str, split: str, seq_len: int):
+        import torch
+        self._base = PatchTSTPretrainAdapter(csv_path=csv_path, split=split,
+                                             seq_len=seq_len, patch_size=16)
+        seq_x = self._base[0]
+        n_vars = seq_x.shape[1] if hasattr(seq_x, 'shape') else seq_x.size(1)
+        self._zero = torch.zeros(seq_len, n_vars)
+
+    def __len__(self):
+        return len(self._base)
+
+    def __getitem__(self, idx):
+        x = self._base[idx]
+        return x, self._zero, self._zero, self._zero
+
+
 class ClassificationDataPuller(Dataset):
     """
     Elastic classification dataset loader. Supports multiple datasets (concatenated
