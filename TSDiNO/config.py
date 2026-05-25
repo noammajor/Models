@@ -135,12 +135,12 @@ config = {
 
     # ── Teacher view (global crop) ────────────────────────────────────────────
     "global_crops": [
-        {"type": "galilien", "crop_ratio": 1.0},
+        {"type": "dwt_soft_threshold", "crop_ratio": 1.0, "soft_threshold_sigma": 0.3},
     ],
 
     # ── Student view (local crop) ─────────────────────────────────────────────
     "local_crops": [
-        {"type": "lorentz", "crop_ratio": 1.0},
+        {"type": "dwt_high_perturb", "crop_ratio": 1.0, "high_perturb_noise_range": (0.1, 0.3)},
     ],
 
     # ── Patch reconstruction (MAE-style auxiliary loss) ────────────────────────
