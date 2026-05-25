@@ -134,15 +134,13 @@ config = {
     # ─────────────────────────────────────────────────────────────────────────
 
     # ── Teacher view (global crop) ────────────────────────────────────────────
-    # Physical run #2: polar-coordinate warp — uses default warp_range (0.7, 1.3).
     "global_crops": [
-        {"type": "polar", "crop_ratio": 1.0},
+        {"type": "dwt_soft_threshold", "crop_ratio": 1.0, "soft_threshold_sigma": 0.3},
     ],
 
     # ── Student view (local crop) ─────────────────────────────────────────────
-    # Physical run #2: 2-D rotation with time axis — uses default angle_range (0, π/8).
     "local_crops": [
-        {"type": "rotation", "crop_ratio": 1.0},
+        {"type": "dwt_high_perturb", "crop_ratio": 1.0, "high_perturb_noise_range": (0.1, 0.3)},
     ],
 
     # ── Patch reconstruction (MAE-style auxiliary loss) ────────────────────────
