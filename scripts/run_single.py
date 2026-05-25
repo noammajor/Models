@@ -122,6 +122,8 @@ def main():
                         help="Checkpoint epochs to evaluate during forecasting, e.g. --checkpoints 1 3 5 10")
     parser.add_argument("--lr",       type=float, default=None,
                         help="Pretraining LR (default: model-specific)")
+    parser.add_argument("--warmup_epochs", type=int, default=None,
+                        help="Number of LR warmup epochs (DINO only)")
     parser.add_argument("--lr_pred",  type=float, default=None,
                         help="Predictor LR (JEPA only)")
     parser.add_argument("--gpu",      type=int, default=0,
@@ -180,6 +182,8 @@ def main():
         base_cmd += ["--epochs_forecasting", str(args.epochs_forecasting)]
     if args.seed is not None:
         base_cmd += ["--seed", str(args.seed)]
+    if args.warmup_epochs is not None:
+        base_cmd += ["--warmup_epochs", str(args.warmup_epochs)]
     if args.phi is not None:
         base_cmd += ["--phi", str(args.phi)]
 

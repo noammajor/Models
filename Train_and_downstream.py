@@ -284,6 +284,8 @@ def run_dino(skip_train: bool = False,
         dino_cfg['output_dir'] = str(Path(_base).parent / 'classification' / (Path(_base).name + f'_cw{_cw}'))
     if lr is not None:
         dino_cfg['lr'] = lr
+    if warmup_epochs is not None:
+        dino_cfg['warmup_epochs'] = warmup_epochs
     if seed is not None:
         dino_cfg['seed'] = seed
     pretrain_source = _resolve_pretrain_source(dino_cfg)
@@ -2774,6 +2776,7 @@ def run(model: str,
         out_dim: int = None,
         epochs: int = None,
         epochs_forecasting: int = None,
+        warmup_epochs: int = None,
         phi: float = None):
     """
     Unified entry point. Each run handles ONE task.
@@ -2940,6 +2943,8 @@ if __name__ == "__main__":
                         help="Downstream head: 'linear' (single Linear) or 'mlp' (1-hidden-layer MLP)")
     parser.add_argument("--phi", type=float, default=None,
                         help="Hybrid model mixing weight φ∈[0,1] (φ=1 pure LEJEPA, φ=0 pure NTP)")
+    parser.add_argument("--warmup_epochs", type=int, default=None,
+                        help="Number of LR warmup epochs (DINO only)")
     args = parser.parse_args()
     run(model=args.model,
         task=args.task,
@@ -2961,6 +2966,7 @@ if __name__ == "__main__":
         out_dim=args.out_dim,
         epochs=args.epochs,
         epochs_forecasting=args.epochs_forecasting,
+        warmup_epochs=args.warmup_epochs,
         checkpoints=[int(c) if c.isdigit() else c for c in args.checkpoints] if args.checkpoints else None,
         seed=args.seed,
         pretrain_cls_model=args.pretrain_cls_model.lower() == "true",
