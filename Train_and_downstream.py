@@ -225,7 +225,9 @@ def run_dino(skip_train: bool = False,
              epochs: int = None,
              epochs_forecasting: int = None,
              warmup_epochs: int = None,
-             ckpt_tag: str = None):
+             ckpt_tag: str = None,
+             aug_global: str = None,
+             aug_local: str = None):
     dino_dir  = Path(__file__).parent / "TSDiNO"
     shared_dir = Path(__file__).parent / "shared"
     _add_path(dino_dir)
@@ -289,6 +291,10 @@ def run_dino(skip_train: bool = False,
         dino_cfg['lr'] = lr
     if warmup_epochs is not None:
         dino_cfg['warmup_epochs'] = warmup_epochs
+    if aug_global is not None:
+        dino_cfg['global_crops'] = [{"type": aug_global, "crop_ratio": 1.0}]
+    if aug_local is not None:
+        dino_cfg['local_crops']  = [{"type": aug_local,  "crop_ratio": 1.0}]
     if seed is not None:
         dino_cfg['seed'] = seed
     pretrain_source = _resolve_pretrain_source(dino_cfg)
@@ -2781,6 +2787,8 @@ def run(model: str,
         epochs_forecasting: int = None,
         warmup_epochs: int = None,
         ckpt_tag: str = None,
+        aug_global: str = None,
+        aug_local: str = None,
         phi: float = None):
     """
     Unified entry point. Each run handles ONE task.
@@ -2873,6 +2881,8 @@ def run(model: str,
     if 'epochs_forecasting'    in sig.parameters: kwargs['epochs_forecasting']    = epochs_forecasting
     if 'warmup_epochs'         in sig.parameters: kwargs['warmup_epochs']         = warmup_epochs
     if 'ckpt_tag'              in sig.parameters: kwargs['ckpt_tag']              = ckpt_tag
+    if 'aug_global'            in sig.parameters: kwargs['aug_global']            = aug_global
+    if 'aug_local'             in sig.parameters: kwargs['aug_local']             = aug_local
     if 'phi'                   in sig.parameters: kwargs['phi']                   = phi
     return runner(**kwargs)
 
@@ -2953,6 +2963,10 @@ if __name__ == "__main__":
                         help="Number of LR warmup epochs (DINO only)")
     parser.add_argument("--ckpt_tag", type=str, default=None,
                         help="Extra tag appended to checkpoint directory name (e.g. 'wrLR')")
+    parser.add_argument("--aug_global", type=str, default=None,
+                        help="Global (teacher) augmentation type, overrides config (e.g. 'galilien', 'dwt_soft_threshold')")
+    parser.add_argument("--aug_local",  type=str, default=None,
+                        help="Local (student) augmentation type, overrides config (e.g. 'lorentz', 'dwt_high_perturb')")
     args = parser.parse_args()
     run(model=args.model,
         task=args.task,
@@ -2976,6 +2990,8 @@ if __name__ == "__main__":
         epochs_forecasting=args.epochs_forecasting,
         warmup_epochs=args.warmup_epochs,
         ckpt_tag=args.ckpt_tag,
+        aug_global=args.aug_global,
+        aug_local=args.aug_local,
         checkpoints=[int(c) if c.isdigit() else c for c in args.checkpoints] if args.checkpoints else None,
         seed=args.seed,
         pretrain_cls_model=args.pretrain_cls_model.lower() == "true",

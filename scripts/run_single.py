@@ -127,6 +127,10 @@ def main():
                         help="Number of LR warmup epochs (DINO only)")
     parser.add_argument("--ckpt_tag", type=str, default=None,
                         help="Extra tag appended to checkpoint directory name (e.g. 'wrLR')")
+    parser.add_argument("--aug_global", type=str, default=None,
+                        help="Global (teacher) augmentation type, overrides config")
+    parser.add_argument("--aug_local",  type=str, default=None,
+                        help="Local (student) augmentation type, overrides config")
     parser.add_argument("--lr_pred",  type=float, default=None,
                         help="Predictor LR (JEPA only)")
     parser.add_argument("--gpu",      type=int, default=0,
@@ -189,6 +193,10 @@ def main():
         base_cmd += ["--warmup_epochs", str(args.warmup_epochs)]
     if args.ckpt_tag is not None:
         base_cmd += ["--ckpt_tag", args.ckpt_tag]
+    if args.aug_global is not None:
+        base_cmd += ["--aug_global", args.aug_global]
+    if args.aug_local is not None:
+        base_cmd += ["--aug_local", args.aug_local]
     if args.phi is not None:
         base_cmd += ["--phi", str(args.phi)]
 
