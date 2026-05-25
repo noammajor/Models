@@ -73,7 +73,7 @@ def _find_src_checkpoint(model: str, dataset: str, layers: int, out_dim: int = N
         return ROOT / "output_model" / f"Hybrid_{dataset}_layers{layers}" / "best_model.pt"
 
     elif model == "timedart":
-        return ROOT / "outputs" / f"timedart_pretrain_{dataset}_layers{layers}" / "monash" / "ckpt_best.pth"
+        return ROOT / "outputs" / f"timedart_pretrain_{dataset}_layers{layers}" / f"monash_{dataset}" / "ckpt_best.pth"
 
     else:
         raise ValueError(f"Unknown model: {model}")

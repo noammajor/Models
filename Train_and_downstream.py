@@ -2121,7 +2121,7 @@ def run_timedart(skip_train: bool = False,
     _pretrain_src = _resolve_pretrain_source(cfg)
     _src_tag = f"_{_pretrain_src.replace('+', '_')}" if _pretrain_src else (f"_{pretrain_dataset}" if pretrain_dataset else '')
     ckpt_dir  = Path(__file__).parent / f"outputs/timedart_pretrain{_src_tag}_layers{cfg['e_layers']}"
-    ckpt_file     = ckpt_dir / "monash" / "ckpt_best.pth"
+    ckpt_file     = ckpt_dir / ("monash" + _src_tag) / "ckpt_best.pth"
     cls_ckpt_file = ckpt_dir / "monash_cls" / "ckpt_best.pth"
 
     pretrain_src = _pretrain_src
