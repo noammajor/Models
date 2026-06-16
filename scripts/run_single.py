@@ -217,15 +217,15 @@ def main():
 
     # ── pretrain ──────────────────────────────────────────────────────────────
     if not args.skip_pretrain:
+        _pretrain_extra = ["--pretrain_only", "true"]
+        if args.dataset is not None:
+            _pretrain_extra += ["--pretrain_dataset", args.dataset]
         rc = _run(
-            base_cmd + [
-                "--pretrain_only",    "true",
-                "--pretrain_dataset", args.dataset,
-            ],
+            base_cmd + _pretrain_extra,
             args.gpu,
             log_base / "pretrain.log",
             args.dry_run,
-            f"pretrain/{args.model}/{args.dataset}",
+            f"pretrain/{args.model}/{args.dataset or 'global'}",
         )
         if rc != 0:
             print("\nPretraining failed — aborting.")
