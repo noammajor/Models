@@ -228,7 +228,9 @@ def run_dino(skip_train: bool = False,
              ckpt_tag: str = None,
              aug_global: str = None,
              aug_local: str = None,
-             synthetic_data_dir: str = None):
+             synthetic_data_dir: str = None,
+             dwt_wavelet_pool: str = None,
+             dwt_wavelet: str = None):
     dino_dir  = Path(__file__).parent / "TSDiNO"
     shared_dir = Path(__file__).parent / "shared"
     _add_path(dino_dir)
@@ -298,6 +300,10 @@ def run_dino(skip_train: bool = False,
         dino_cfg['local_crops']  = [{"type": aug_local,  "crop_ratio": 1.0}]
     if synthetic_data_dir is not None:
         dino_cfg['synthetic_data_dir'] = synthetic_data_dir
+    if dwt_wavelet_pool is not None:
+        dino_cfg['dwt_wavelet_pool'] = [w.strip() for w in dwt_wavelet_pool.split(',')]
+    if dwt_wavelet is not None:
+        dino_cfg['dwt_wavelet'] = dwt_wavelet
     if seed is not None:
         dino_cfg['seed'] = seed
     pretrain_source = _resolve_pretrain_source(dino_cfg)
@@ -2812,7 +2818,9 @@ def run(model: str,
         aug_global: str = None,
         aug_local: str = None,
         phi: float = None,
-        synthetic_data_dir: str = None):
+        synthetic_data_dir: str = None,
+        dwt_wavelet_pool: str = None,
+        dwt_wavelet: str = None):
     """
     Unified entry point. Each run handles ONE task.
 
@@ -2909,6 +2917,8 @@ def run(model: str,
     if 'aug_local'             in sig.parameters: kwargs['aug_local']             = aug_local
     if 'phi'                   in sig.parameters: kwargs['phi']                   = phi
     if 'synthetic_data_dir'    in sig.parameters: kwargs['synthetic_data_dir']    = synthetic_data_dir
+    if 'dwt_wavelet_pool'      in sig.parameters: kwargs['dwt_wavelet_pool']      = dwt_wavelet_pool
+    if 'dwt_wavelet'           in sig.parameters: kwargs['dwt_wavelet']           = dwt_wavelet
     return runner(**kwargs)
 
 
@@ -2961,6 +2971,10 @@ if __name__ == "__main__":
                         help="Override pretrain data source (dino only)")
     parser.add_argument("--synthetic_data_dir", type=str,  default=None,
                         help="Override synthetic data directory path")
+    parser.add_argument("--dwt_wavelet_pool",   type=str,  default=None,
+                        help="Comma-separated wavelet pool, e.g. db4,db6 (DINO only)")
+    parser.add_argument("--dwt_wavelet",        type=str,  default=None,
+                        help="Fixed wavelet override, e.g. db6 (DINO only)")
     parser.add_argument("--num_patches",      type=int,   default=None,
                         help="Override number of patches (context window = num_patches × patch_size)")
     parser.add_argument("--embed_dim",           type=int, default=None,
@@ -3024,4 +3038,6 @@ if __name__ == "__main__":
         pretrain_cls_model=args.pretrain_cls_model.lower() == "true",
         head_type=args.head,
         phi=args.phi,
-        synthetic_data_dir=args.synthetic_data_dir)
+        synthetic_data_dir=args.synthetic_data_dir,
+        dwt_wavelet_pool=args.dwt_wavelet_pool,
+        dwt_wavelet=args.dwt_wavelet)

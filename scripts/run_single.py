@@ -26,7 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(ROOT))
 
-IN_DOMAIN_DATASETS = ["etth1", "etth2", "ettm1", "ettm2", "weather"]
+IN_DOMAIN_DATASETS = ["etth1", "etth2", "ettm1", "ettm2", "weather", "electricity"]
 ALL_MODELS         = ["dino", "jepa", "lejepa", "patchtst", "ntp", "hybrid", "timedart"]
 
 MODEL_DEFAULT_LR = {
@@ -135,6 +135,10 @@ def main():
                         help="Global (teacher) augmentation type, overrides config")
     parser.add_argument("--aug_local",  type=str, default=None,
                         help="Local (student) augmentation type, overrides config")
+    parser.add_argument("--dwt_wavelet_pool", type=str, default=None,
+                        help="Comma-separated wavelet pool, e.g. db4,db6 (DINO only)")
+    parser.add_argument("--dwt_wavelet",      type=str, default=None,
+                        help="Fixed wavelet override, e.g. db6 (DINO only)")
     parser.add_argument("--pretrain_source", type=str, default=None,
                         choices=["monash", "synthetic", "monash+synthetic"],
                         help="Pretrain data source (DINO only)")
@@ -214,6 +218,10 @@ def main():
         base_cmd += ["--pretrain_source", args.pretrain_source]
     if args.synthetic_data_dir is not None:
         base_cmd += ["--synthetic_data_dir", args.synthetic_data_dir]
+    if args.dwt_wavelet_pool is not None:
+        base_cmd += ["--dwt_wavelet_pool", args.dwt_wavelet_pool]
+    if args.dwt_wavelet is not None:
+        base_cmd += ["--dwt_wavelet", args.dwt_wavelet]
 
     # ── pretrain ──────────────────────────────────────────────────────────────
     if not args.skip_pretrain:
