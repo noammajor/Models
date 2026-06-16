@@ -79,14 +79,15 @@ config = {
     #   finest_levels         – how many of the finest detail levels to perturb (1 = only finest).
     #   high_perturb_noise_range – (min_σ, max_σ) of Gaussian noise added to all detail coeffs.
     #
-    "dwt_wavelet":                  "db4",          # try: "haar", "db4", "sym4", "coif2"
+    "dwt_wavelet":                  "sym4",         # fallback when dwt_wavelet_pool is None
+    "dwt_wavelet_pool":             ["sym4", "sym6", "sym8", "db4", "db6"],  # random per sample; set None for fixed wavelet
     "dwt_level":                    3,              # try: 2, 3, 4
-    "dwt_soft_threshold_sigma":     0.3,            # try: 0.1, 0.3, 0.5
-    "dwt_zero_out_ratio":           0.4,            # bumped: 0.3 → 0.4
-    "dwt_finest_levels":            2,              # bumped: 1 → 2 (perturb two finest bands)
-    "dwt_high_perturb_noise_range": (0.05, 0.12),  # bumped: (0.03,0.08) → (0.05,0.12)
-    "dwt_band_scale_approx_range":  (0.80, 1.20),  # wider: (0.9,1.1) → (0.80,1.20)
-    "dwt_band_scale_detail_range":  (0.40, 1.60),  # wider: (0.6,1.4) → (0.40,1.60)
+    "dwt_soft_threshold_sigma":     0.6,            # bumped: 0.3 → 0.6
+    "dwt_zero_out_ratio":           0.4,
+    "dwt_finest_levels":            3,              # bumped: 2 → 3
+    "dwt_high_perturb_noise_range": (0.2, 0.5),    # gentler student noise
+    "dwt_band_scale_approx_range":  (0.80, 1.20),
+    "dwt_band_scale_detail_range":  (0.40, 1.60),
 
     # ── Non-DWT transform defaults ────────────────────────────────────────────
     # These are global fallbacks; override per-crop with the same key in the spec.

@@ -547,8 +547,10 @@ class DataAugmentationDino:
             for t in types:
                 if t.startswith('dwt_'):
                     mode = t[4:]   # strip leading 'dwt_'
+                    _wavelet_pool = spec.get('wavelet_pool', dwt_cfg.get('dwt_wavelet_pool', None))
                     per_type[t] = aug.DWTAugmentation(
                         wavelet                  = spec.get('wavelet',                    dwt_cfg['dwt_wavelet']),
+                        wavelet_pool             = _wavelet_pool,
                         level                    = spec.get('level',                      dwt_cfg['dwt_level']),
                         mode                     = mode,
                         soft_threshold_sigma     = spec.get('soft_threshold_sigma',       dwt_cfg.get('dwt_soft_threshold_sigma', 0.3)),

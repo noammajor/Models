@@ -13,9 +13,13 @@ class DWTAugmentation:
                  finest_levels=1,
                  high_perturb_noise_range=(0.03, 0.08),
                  band_scale_approx_range=(0.9, 1.1),
-                 band_scale_detail_range=(0.6, 1.4)):
+                 band_scale_detail_range=(0.6, 1.4),
+                 wavelet_pool=None):
         """
         Discrete Wavelet Transform augmentation for time series.
+
+        wavelet_pool: optional list of wavelet names to sample from randomly each call,
+                      e.g. ['db4', 'sym4']. When set, overrides `wavelet`.
 
         mode:
           'low_pass'        – zero all detail coefficients (smooth global view).
@@ -30,6 +34,7 @@ class DWTAugmentation:
           'band_scale'      – randomly scale each frequency band independently.
         """
         self.wavelet                  = wavelet
+        self.wavelet_pool             = wavelet_pool
         self.level                    = level
         self.mode                     = mode
         self.soft_threshold_sigma     = soft_threshold_sigma
@@ -39,6 +44,11 @@ class DWTAugmentation:
         self.band_scale_approx_range  = band_scale_approx_range
         self.band_scale_detail_range  = band_scale_detail_range
 
+    def _pick_wavelet(self):
+        if self.wavelet_pool:
+            return random.choice(self.wavelet_pool)
+        return self.wavelet
+
     def _soft_thresh(self, c, sigma):
         """Adaptive soft thresholding: threshold = sigma * max(|c|)."""
         threshold = sigma * np.abs(c).max() if c.size > 0 else 0.0
@@ -47,12 +57,13 @@ class DWTAugmentation:
     def __call__(self, x):
         # x: [seq_len, n_vars] tensor
         device, dtype = x.device, x.dtype
+        wavelet = self._pick_wavelet()
         x_np = x.cpu().numpy()
         seq_len, n_vars = x_np.shape
         result = np.zeros_like(x_np)
 
         for v in range(n_vars):
-            coeffs = pywt.wavedec(x_np[:, v], self.wavelet, level=self.level)
+            coeffs = pywt.wavedec(x_np[:, v], wavelet, level=self.level)
             # coeffs[0]  = approximation (low-freq)
             # coeffs[1:] = detail levels, finest last (coeffs[-1] = finest)
 
@@ -60,15 +71,12 @@ class DWTAugmentation:
                 new_coeffs = [coeffs[0]] + [np.zeros_like(c) for c in coeffs[1:]]
 
             elif self.mode == 'soft_threshold':
-                # Apply adaptive soft thresholding to every detail level
                 new_coeffs = [coeffs[0]] + [
                     self._soft_thresh(c, self.soft_threshold_sigma)
                     for c in coeffs[1:]
                 ]
 
             elif self.mode == 'zero_out_detail':
-                # Randomly zero out zero_out_ratio of coefficients in the
-                # finest `finest_levels` detail arrays; leave coarser levels intact.
                 new_coeffs = list(coeffs)
                 for c_idx in range(len(coeffs) - self.finest_levels, len(coeffs)):
                     c = new_coeffs[c_idx].copy()
@@ -84,7 +92,6 @@ class DWTAugmentation:
                 ]
 
             elif self.mode == 'high_perturb_zero':
-                # Gaussian noise on all detail coeffs, then zero out finest levels
                 noise_scale = random.uniform(*self.high_perturb_noise_range)
                 new_coeffs = [coeffs[0]] + [
                     c + np.random.randn(*c.shape) * noise_scale
@@ -104,7 +111,7 @@ class DWTAugmentation:
             else:
                 raise ValueError(f"Unknown DWT mode: {self.mode}")
 
-            rec = pywt.waverec(new_coeffs, self.wavelet)
+            rec = pywt.waverec(new_coeffs, wavelet)
             result[:, v] = rec[:seq_len]  # waverec may produce 1 extra sample
 
         return torch.tensor(result, dtype=dtype, device=device)
