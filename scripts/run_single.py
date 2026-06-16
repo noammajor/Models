@@ -135,6 +135,11 @@ def main():
                         help="Global (teacher) augmentation type, overrides config")
     parser.add_argument("--aug_local",  type=str, default=None,
                         help="Local (student) augmentation type, overrides config")
+    parser.add_argument("--pretrain_source", type=str, default=None,
+                        choices=["monash", "synthetic", "monash+synthetic"],
+                        help="Pretrain data source (DINO only)")
+    parser.add_argument("--synthetic_data_dir", type=str, default=None,
+                        help="Override synthetic data directory path")
     parser.add_argument("--lr_pred",  type=float, default=None,
                         help="Predictor LR (JEPA only)")
     parser.add_argument("--gpu",      type=int, default=0,
@@ -203,6 +208,10 @@ def main():
         base_cmd += ["--aug_local", args.aug_local]
     if args.phi is not None:
         base_cmd += ["--phi", str(args.phi)]
+    if args.pretrain_source is not None:
+        base_cmd += ["--pretrain_source", args.pretrain_source]
+    if args.synthetic_data_dir is not None:
+        base_cmd += ["--synthetic_data_dir", args.synthetic_data_dir]
 
     # ── pretrain ──────────────────────────────────────────────────────────────
     if not args.skip_pretrain:
