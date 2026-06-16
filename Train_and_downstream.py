@@ -227,7 +227,8 @@ def run_dino(skip_train: bool = False,
              warmup_epochs: int = None,
              ckpt_tag: str = None,
              aug_global: str = None,
-             aug_local: str = None):
+             aug_local: str = None,
+             synthetic_data_dir: str = None):
     dino_dir  = Path(__file__).parent / "TSDiNO"
     shared_dir = Path(__file__).parent / "shared"
     _add_path(dino_dir)
@@ -295,6 +296,8 @@ def run_dino(skip_train: bool = False,
         dino_cfg['global_crops'] = [{"type": aug_global, "crop_ratio": 1.0}]
     if aug_local is not None:
         dino_cfg['local_crops']  = [{"type": aug_local,  "crop_ratio": 1.0}]
+    if synthetic_data_dir is not None:
+        dino_cfg['synthetic_data_dir'] = synthetic_data_dir
     if seed is not None:
         dino_cfg['seed'] = seed
     pretrain_source = _resolve_pretrain_source(dino_cfg)
@@ -2808,7 +2811,8 @@ def run(model: str,
         ckpt_tag: str = None,
         aug_global: str = None,
         aug_local: str = None,
-        phi: float = None):
+        phi: float = None,
+        synthetic_data_dir: str = None):
     """
     Unified entry point. Each run handles ONE task.
 
@@ -2904,6 +2908,7 @@ def run(model: str,
     if 'aug_global'            in sig.parameters: kwargs['aug_global']            = aug_global
     if 'aug_local'             in sig.parameters: kwargs['aug_local']             = aug_local
     if 'phi'                   in sig.parameters: kwargs['phi']                   = phi
+    if 'synthetic_data_dir'    in sig.parameters: kwargs['synthetic_data_dir']    = synthetic_data_dir
     return runner(**kwargs)
 
 
@@ -2954,6 +2959,8 @@ if __name__ == "__main__":
     parser.add_argument("--pretrain_source",  type=str,   default=None,
                         choices=["monash", "synthetic", "monash+synthetic"],
                         help="Override pretrain data source (dino only)")
+    parser.add_argument("--synthetic_data_dir", type=str,  default=None,
+                        help="Override synthetic data directory path")
     parser.add_argument("--num_patches",      type=int,   default=None,
                         help="Override number of patches (context window = num_patches × patch_size)")
     parser.add_argument("--embed_dim",           type=int, default=None,
@@ -3016,4 +3023,5 @@ if __name__ == "__main__":
         seed=args.seed,
         pretrain_cls_model=args.pretrain_cls_model.lower() == "true",
         head_type=args.head,
-        phi=args.phi)
+        phi=args.phi,
+        synthetic_data_dir=args.synthetic_data_dir)
