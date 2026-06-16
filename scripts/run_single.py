@@ -105,8 +105,8 @@ def main():
     )
     parser.add_argument("--model",    required=True, choices=ALL_MODELS,
                         help="Model to run")
-    parser.add_argument("--dataset",  required=True, choices=IN_DOMAIN_DATASETS,
-                        help="Dataset to pretrain and forecast on")
+    parser.add_argument("--dataset",  required=False, default=None, choices=IN_DOMAIN_DATASETS,
+                        help="Dataset to pretrain and forecast on (optional when using --pretrain_source)")
     parser.add_argument("--name",     required=True,
                         help="Run name — checkpoint saved as Models/{name}/best_chkp_{dataset}.pt")
     parser.add_argument("--layers",   type=int, default=8,
@@ -154,6 +154,8 @@ def main():
                         help="Print commands without executing them")
     args = parser.parse_args()
 
+    if args.dataset is None and args.pretrain_source is None:
+        parser.error("--dataset is required unless --pretrain_source is set")
     lr          = args.lr or MODEL_DEFAULT_LR[args.model]
     target_dir  = ROOT / "Models" / args.name
     target_ckpt = target_dir / f"best_chkp_{args.dataset}.pt"
@@ -230,6 +232,9 @@ def main():
             sys.exit(rc)
 
     # ── copy best checkpoint to unified path ──────────────────────────────────
+    if args.dataset is None:
+        print("\nPretrain-only run (no dataset) — skipping checkpoint copy and forecasting.")
+        sys.exit(0)
     src_ckpt = _find_src_checkpoint(args.model, args.dataset, args.layers, args.out_dim, args.ckpt_tag)
     if not args.dry_run:
         if src_ckpt.exists():
