@@ -227,7 +227,11 @@ def main():
     if not args.skip_pretrain:
         _pretrain_extra = ["--pretrain_only", "true"]
         if args.dataset is not None:
-            _pretrain_extra += ["--pretrain_dataset", args.dataset]
+            # Pin forecast_dataset == pretrain_dataset so in-domain pretraining
+            # doesn't fall back to the config's default forecast dataset (which
+            # would otherwise get mixed into DINO's CSV pretraining set).
+            _pretrain_extra += ["--pretrain_dataset", args.dataset,
+                                "--forecast_dataset", args.dataset]
         rc = _run(
             base_cmd + _pretrain_extra,
             args.gpu,
