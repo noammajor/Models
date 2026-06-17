@@ -12,7 +12,7 @@ config = {
     "context_points":  336,
     "target_points":   96,
     "patch_len":       16,
-    "stride":          16,
+    "stride":          8,
 
     # ── Model ─────────────────────────────────────────────────────────────────
     "n_layers":     3,

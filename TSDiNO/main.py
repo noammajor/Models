@@ -86,7 +86,7 @@ def train_TS_DINO(args):
         if _shared_dir not in sys.path:
             sys.path.insert(0, _shared_dir)
         from data_loaders.data_puller import PatchTSTPretrainAdapter
-        _seq_len = args.num_patches * args.patch_len
+        _seq_len = (args.num_patches - 1) * args.step_size + args.patch_len
         dataset1 = PatchTSTPretrainAdapter(
             csv_path=args.data_path,
             split='train',
@@ -121,7 +121,7 @@ def train_TS_DINO(args):
         val_dataset = PatchTSTPretrainAdapter(
             csv_path  = args.data_path,
             split     = 'val',
-            seq_len   = args.num_patches * args.patch_len,
+            seq_len   = (args.num_patches - 1) * args.step_size + args.patch_len,
             patch_size= args.patch_len,
             transform = dataAugmentationDino,
         )
@@ -682,7 +682,7 @@ def test_run(args):
         )
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    _forecast_num_patch = _SEQ_LEN // args.patch_len   # 336 // 16 = 21
+    _forecast_num_patch = (_SEQ_LEN - args.patch_len) // args.step_size + 1   # (336-16)//8+1 = 41 (overlap)
     model = PatchTST(
         c_in= args.c_in,
         target_dim=args.pred_len,
@@ -699,7 +699,7 @@ def test_run(args):
         head_type='prediction',
         res_attention=False,
         drop_path_rate=args.drop_path_rate,
-        step_size=1,
+        step_size=args.step_size,
         mlp_head=getattr(args, 'mlp_head', False),
         )
     criterion = nn.MSELoss()

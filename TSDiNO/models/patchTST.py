@@ -96,7 +96,7 @@ class PatchTST(nn.Module):
         """
         if self.head_type in ['prediction', 'regression', 'classification', 'CLS_Prediction']:
             z = self.normalization(z, mode='norm')   # instance-normalize before encoder
-            patches_tensor = z.unfold(dimension=1, size=self.patch_len, step=self.patch_len)
+            patches_tensor = z.unfold(dimension=1, size=self.patch_len, step=self.step_size)
         else:
             patches_tensor = z.unfold(dimension=1, size=self.patch_len, step=self.step_size)
         z = self.backbone(patches_tensor, padding_mask=padding_mask)
