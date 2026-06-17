@@ -216,6 +216,7 @@ def run_dino(skip_train: bool = False,
              pretrain_source: str = None,
              checkpoint: str = None,
              num_patches: int = None,
+             step_size: int = None,
              seed: int = None,
              linear_probe: bool = True,
              head_type: str = "linear",
@@ -294,6 +295,13 @@ def run_dino(skip_train: bool = False,
         dino_cfg['lr'] = lr
     if warmup_epochs is not None:
         dino_cfg['warmup_epochs'] = warmup_epochs
+    if step_size is not None:
+        # Override patch stride, recomputing num_patches to hold the context
+        # window constant: window = (num_patches-1)*step_size + patch_len.
+        _patch_len = dino_cfg.get('patch_len', 16)
+        _window = (dino_cfg.get('num_patches', 21) - 1) * dino_cfg.get('step_size', _patch_len) + _patch_len
+        dino_cfg['step_size'] = step_size
+        dino_cfg['num_patches'] = (_window - _patch_len) // step_size + 1
     if aug_global is not None:
         dino_cfg['global_crops'] = [{"type": aug_global, "crop_ratio": 1.0}]
     if aug_local is not None:
@@ -2803,6 +2811,7 @@ def run(model: str,
         pretrain_source: str = None,
         gpu: int = None,
         num_patches: int = None,
+        step_size: int = None,
         seed: int = None,
         pretrain_cls_model: bool = False,
         linear_probe: bool = True,
@@ -2900,6 +2909,7 @@ def run(model: str,
     if 'pretrain_source'        in sig.parameters: kwargs['pretrain_source']        = pretrain_source
     if 'gpu'                    in sig.parameters: kwargs['gpu']                    = gpu
     if 'num_patches'            in sig.parameters: kwargs['num_patches']            = num_patches
+    if 'step_size'              in sig.parameters: kwargs['step_size']              = step_size
     if 'seed'                   in sig.parameters: kwargs['seed']                   = seed
     if 'pretrain_cls_model'     in sig.parameters: kwargs['pretrain_cls_model']     = pretrain_cls_model
     if 'linear_probe'           in sig.parameters: kwargs['linear_probe']           = linear_probe
@@ -2977,6 +2987,8 @@ if __name__ == "__main__":
                         help="Fixed wavelet override, e.g. db6 (DINO only)")
     parser.add_argument("--num_patches",      type=int,   default=None,
                         help="Override number of patches (context window = num_patches × patch_size)")
+    parser.add_argument("--step_size",        type=int,   default=None,
+                        help="Override patch stride (DINO). num_patches is recomputed to keep the same context window. step_size<patch_len = overlapping patches.")
     parser.add_argument("--embed_dim",           type=int, default=None,
                         help="Override embedding dim / d_model for the encoder")
     parser.add_argument("--predictor_embed_dim", type=int, default=None,
@@ -3024,6 +3036,7 @@ if __name__ == "__main__":
         lr_pred=args.lr_pred,
         pretrain_source=args.pretrain_source,
         num_patches=args.num_patches,
+        step_size=args.step_size,
         embed_dim=args.embed_dim,
         predictor_embed_dim=args.predictor_embed_dim,
         out_dim=args.out_dim,

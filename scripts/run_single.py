@@ -111,6 +111,8 @@ def main():
                         help="Run name — checkpoint saved as Models/{name}/best_chkp_{dataset}.pt")
     parser.add_argument("--layers",   type=int, default=8,
                         help="Number of encoder layers (default: 8)")
+    parser.add_argument("--step_size", type=int, default=None,
+                        help="Patch stride override (DINO). num_patches recomputed to keep context window. step_size<patch_len = overlapping patches; omit to use config.py.")
     parser.add_argument("--embed_dim", type=int, default=None,
                         help="Embedding dim / d_model override")
     parser.add_argument("--predictor_embed_dim", type=int, default=None,
@@ -208,6 +210,8 @@ def main():
         base_cmd += ["--warmup_epochs", str(args.warmup_epochs)]
     if args.ckpt_tag is not None:
         base_cmd += ["--ckpt_tag", args.ckpt_tag]
+    if args.step_size is not None:
+        base_cmd += ["--step_size", str(args.step_size)]
     if args.aug_global is not None:
         base_cmd += ["--aug_global", args.aug_global]
     if args.aug_local is not None:
