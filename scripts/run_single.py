@@ -113,6 +113,8 @@ def main():
                         help="Number of encoder layers (default: 8)")
     parser.add_argument("--step_size", type=int, default=None,
                         help="Patch stride override (DINO). num_patches recomputed to keep context window. step_size<patch_len = overlapping patches; omit to use config.py.")
+    parser.add_argument("--koleo_weight", type=float, default=None,
+                        help="KoLeo regularizer weight (DINO). >0 enables it on student CLS features; DINOv2 uses 0.1.")
     parser.add_argument("--embed_dim", type=int, default=None,
                         help="Embedding dim / d_model override")
     parser.add_argument("--predictor_embed_dim", type=int, default=None,
@@ -156,6 +158,8 @@ def main():
                         help="LEJEPA/NTP mixing weight φ∈[0,1] (hybrid model only)")
     parser.add_argument("--skip_pretrain", action="store_true",
                         help="Skip pretraining, go straight to forecasting")
+    parser.add_argument("--finetune", action="store_true",
+                        help="Fine-tune the whole encoder for forecasting instead of linear-probing (default is frozen encoder + linear head).")
     parser.add_argument("--dry_run",       action="store_true",
                         help="Print commands without executing them")
     args = parser.parse_args()
@@ -212,6 +216,10 @@ def main():
         base_cmd += ["--ckpt_tag", args.ckpt_tag]
     if args.step_size is not None:
         base_cmd += ["--step_size", str(args.step_size)]
+    if args.koleo_weight is not None:
+        base_cmd += ["--koleo_weight", str(args.koleo_weight)]
+    if args.finetune:
+        base_cmd += ["--finetune"]
     if args.aug_global is not None:
         base_cmd += ["--aug_global", args.aug_global]
     if args.aug_local is not None:

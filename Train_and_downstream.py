@@ -217,6 +217,7 @@ def run_dino(skip_train: bool = False,
              checkpoint: str = None,
              num_patches: int = None,
              step_size: int = None,
+             koleo_weight: float = None,
              seed: int = None,
              linear_probe: bool = True,
              head_type: str = "linear",
@@ -302,6 +303,8 @@ def run_dino(skip_train: bool = False,
         _window = (dino_cfg.get('num_patches', 21) - 1) * dino_cfg.get('step_size', _patch_len) + _patch_len
         dino_cfg['step_size'] = step_size
         dino_cfg['num_patches'] = (_window - _patch_len) // step_size + 1
+    if koleo_weight is not None:
+        dino_cfg['koleo_weight'] = koleo_weight
     if aug_global is not None:
         dino_cfg['global_crops'] = [{"type": aug_global, "crop_ratio": 1.0}]
     if aug_local is not None:
@@ -2812,6 +2815,7 @@ def run(model: str,
         gpu: int = None,
         num_patches: int = None,
         step_size: int = None,
+        koleo_weight: float = None,
         seed: int = None,
         pretrain_cls_model: bool = False,
         linear_probe: bool = True,
@@ -2910,6 +2914,7 @@ def run(model: str,
     if 'gpu'                    in sig.parameters: kwargs['gpu']                    = gpu
     if 'num_patches'            in sig.parameters: kwargs['num_patches']            = num_patches
     if 'step_size'              in sig.parameters: kwargs['step_size']              = step_size
+    if 'koleo_weight'           in sig.parameters: kwargs['koleo_weight']           = koleo_weight
     if 'seed'                   in sig.parameters: kwargs['seed']                   = seed
     if 'pretrain_cls_model'     in sig.parameters: kwargs['pretrain_cls_model']     = pretrain_cls_model
     if 'linear_probe'           in sig.parameters: kwargs['linear_probe']           = linear_probe
@@ -2989,6 +2994,8 @@ if __name__ == "__main__":
                         help="Override number of patches (context window = num_patches × patch_size)")
     parser.add_argument("--step_size",        type=int,   default=None,
                         help="Override patch stride (DINO). num_patches is recomputed to keep the same context window. step_size<patch_len = overlapping patches.")
+    parser.add_argument("--koleo_weight",     type=float, default=None,
+                        help="KoLeo regularizer weight (DINO). >0 enables it on student CLS features; DINOv2 uses 0.1.")
     parser.add_argument("--embed_dim",           type=int, default=None,
                         help="Override embedding dim / d_model for the encoder")
     parser.add_argument("--predictor_embed_dim", type=int, default=None,
@@ -3010,6 +3017,8 @@ if __name__ == "__main__":
     parser.add_argument("--head", type=str, default="linear",
                         choices=["linear", "mlp"],
                         help="Downstream head: 'linear' (single Linear) or 'mlp' (1-hidden-layer MLP)")
+    parser.add_argument("--finetune", action="store_true",
+                        help="Fine-tune the whole encoder for forecasting instead of linear-probing (frozen encoder + linear head is the default).")
     parser.add_argument("--phi", type=float, default=None,
                         help="Hybrid model mixing weight φ∈[0,1] (φ=1 pure LEJEPA, φ=0 pure NTP)")
     parser.add_argument("--warmup_epochs", type=int, default=None,
@@ -3037,6 +3046,7 @@ if __name__ == "__main__":
         pretrain_source=args.pretrain_source,
         num_patches=args.num_patches,
         step_size=args.step_size,
+        koleo_weight=args.koleo_weight,
         embed_dim=args.embed_dim,
         predictor_embed_dim=args.predictor_embed_dim,
         out_dim=args.out_dim,
@@ -3049,6 +3059,7 @@ if __name__ == "__main__":
         checkpoints=[int(c) if c.isdigit() else c for c in args.checkpoints] if args.checkpoints else None,
         seed=args.seed,
         pretrain_cls_model=args.pretrain_cls_model.lower() == "true",
+        linear_probe=not args.finetune,
         head_type=args.head,
         phi=args.phi,
         synthetic_data_dir=args.synthetic_data_dir,
