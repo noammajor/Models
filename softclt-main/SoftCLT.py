@@ -111,6 +111,7 @@ def build_model(cfg: dict, c_in: int, device: str = "cuda") -> TS2Vec:
         patch_n_layers   = cfg["n_layers"],
         patch_n_heads    = cfg["n_heads"],
         patch_d_ff       = cfg["d_ff"],
+        patch_max_num_patches = cfg["num_patches"],   # keeps W_pos loadable downstream
         lr               = cfg["lr"],
         batch_size       = cfg["batch_size"],
         max_train_length = cfg["patch_len"] * cfg["num_patches"],   # 336

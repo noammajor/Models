@@ -120,8 +120,9 @@ def pretrain_cmd(model: str, seed: int, pretrain_source: str) -> list:
     ]
 
 
-def forecast_cmd(model: str, dataset: str, seed: int, pretrain_source: str, head: str = "linear") -> list:
-    return [
+def forecast_cmd(model: str, dataset: str, seed: int, pretrain_source: str, head: str = "linear",
+                 finetune: bool = False) -> list:
+    cmd = [
         sys.executable, str(ROOT / "Train_and_downstream.py"),
         "--model",           model,
         "--task",            "forecast",
@@ -131,6 +132,10 @@ def forecast_cmd(model: str, dataset: str, seed: int, pretrain_source: str, head
         "--seed",            str(seed),
         "--head",            head,
     ]
+    if finetune:
+        # Full fine-tuning: unfreeze the encoder instead of linear-probing it.
+        cmd.append("--finetune")
+    return cmd
 
 
 def classify_cmd(model: str, dataset: str, seed: int, pretrain_source: str, head: str = "linear") -> list:
@@ -167,7 +172,8 @@ def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
                         phases: set = None, forecast_datasets: list = None,
                         classification_datasets: list = None,
                         anomaly_datasets: list = None,
-                        head: str = "linear"):
+                        head: str = "linear",
+                      finetune: bool = False):
     if phases is None:
         phases = {"pretrain", "forecast", "classify", "anomaly"}
     if forecast_datasets is None:
@@ -197,7 +203,7 @@ def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
 
     if "forecast" in phases:
         for dataset in forecast_datasets:
-            _step(_launch(forecast_cmd(model, dataset, seed, pretrain_source, head=head),
+            _step(_launch(forecast_cmd(model, dataset, seed, pretrain_source, head=head, finetune=finetune),
                           gpu, log_base / f"seed{seed}" / f"forecast_{model}_{dataset}.log",
                           dry_run, f"forecast/{model}/{dataset}/seed{seed}"))
 
@@ -226,7 +232,8 @@ def _run_model_pipeline(model: str, seed: int, gpu: int, pretrain_source: str,
 def run_seed_analysis(seeds, models, gpu_override, skip_pretrain, dry_run,
                       pretrain_source=PRETRAIN_SOURCE, phases=None, forecast_datasets=None,
                       classification_datasets=None, anomaly_datasets=None,
-                      head: str = "linear"):
+                      head: str = "linear",
+                      finetune: bool = False):
     log_base = ROOT / "logs" / "forecasting" / "seed_analysis"
     if phases is None:
         phases = {"pretrain", "forecast", "classify", "anomaly"}
@@ -242,7 +249,7 @@ def run_seed_analysis(seeds, models, gpu_override, skip_pretrain, dry_run,
             gpu = gpu_override if gpu_override is not None else MODEL_GPU[model]
             t = threading.Thread(
                 target=_run_model_pipeline,
-                args=(model, seed, gpu, pretrain_source, skip_pretrain, dry_run, log_base, phases, forecast_datasets, classification_datasets, anomaly_datasets, head),
+                args=(model, seed, gpu, pretrain_source, skip_pretrain, dry_run, log_base, phases, forecast_datasets, classification_datasets, anomaly_datasets, head, finetune),
                 name=f"{model}/seed{seed}",
                 daemon=True,
             )
@@ -288,6 +295,8 @@ def main():
                         help="Run all models on this GPU")
     parser.add_argument("--dry_run",      action="store_true",
                         help="Print commands without running them")
+    parser.add_argument("--finetune", action="store_true",
+                        help="Full fine-tuning for forecasting (unfreeze the encoder) instead of linear probing.")
     parser.add_argument("--head", type=str, default="linear",
                         choices=["linear", "mlp"],
                         help="Downstream head type: 'linear' (single Linear) or 'mlp' (1-hidden-layer MLP)")
@@ -324,6 +333,7 @@ def main():
         classification_datasets=args.classification_datasets,
         anomaly_datasets=args.anomaly_datasets,
         head=args.head,
+        finetune=args.finetune,
     )
 
 

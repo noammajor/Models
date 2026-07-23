@@ -41,6 +41,7 @@ class TS2Vec:
         patch_n_layers=3,
         patch_n_heads=8,
         patch_d_ff=256,
+        patch_max_num_patches=None,  # sizes W_pos; must match the downstream num_patch
     ):
 
         super().__init__()
@@ -55,14 +56,21 @@ class TS2Vec:
         self.patch_len = patch_len
 
         if patch_len is not None:
-            self._net = PatchTransformerWrapper(
+            _wrapper_kwargs = dict(
                 input_dims=input_dims,
                 output_dims=output_dims,
                 patch_len=patch_len,
                 n_layers=patch_n_layers,
                 n_heads=patch_n_heads,
                 d_ff=patch_d_ff,
-            ).to(self.device)
+            )
+            # W_pos is sized from max_num_patches. Leaving it at the wrapper default
+            # (256) makes it [257, d], which the downstream loader's shape guard drops
+            # because the forecaster builds [num_patch+1, d]. Pass the real count so the
+            # pretrained positional encoding actually transfers.
+            if patch_max_num_patches is not None:
+                _wrapper_kwargs['max_num_patches'] = patch_max_num_patches
+            self._net = PatchTransformerWrapper(**_wrapper_kwargs).to(self.device)
         else:
             self._net = TSEncoder(input_dims=input_dims, output_dims=output_dims, hidden_dims=hidden_dims, depth=depth).to(self.device)
         self.net = torch.optim.swa_utils.AveragedModel(self._net)

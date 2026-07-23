@@ -2678,9 +2678,13 @@ def run_softclt(
 
         # Save DINO-compatible checkpoint for downstream.
         # test_run reads checkpoint['teacher'], train_classification reads checkpoint['student'],
-        # both strip the leading 'backbone.' prefix before loading into PatchTST.
+        # and both strip exactly ONE leading 'backbone.' before matching against
+        # PatchTST.state_dict(), whose keys are themselves 'backbone.*' (PatchTST.backbone
+        # is the PatchTSTEncoder). DINO's teacher is TSMultiCropWrapper(PatchTST), so its
+        # keys are 'backbone.backbone.*'. model._net.backbone here is ALREADY the encoder,
+        # one level shallower — so it needs the prefix twice, or nothing matches at all.
         backbone_sd = model._net.backbone.state_dict()
-        dino_sd = {'backbone.' + k: v for k, v in backbone_sd.items()}
+        dino_sd = {'backbone.backbone.' + k: v for k, v in backbone_sd.items()}
         torch.save({'teacher': dino_sd, 'student': dino_sd, 'epoch': cfg['epochs']}, ckpt_path)
         print(f"[SoftCLT] DINO-compatible checkpoint saved → {ckpt_path}")
     else:
