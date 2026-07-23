@@ -373,6 +373,13 @@ def run_dino(skip_train: bool = False,
         print(f"  pretrain: {pretrain_dataset}   forecast: {forecast_dataset}")
         print("="*60)
     if not pretrain_only and forecast_dataset is not None:
+        # test_run builds the train/val/test forecast loaders ALL from
+        # data_path_forecast_training (TSDiNO/main.py:679-695), so it must point at the
+        # forecast dataset. The in-domain branch sets it above, but the global-data
+        # (monash/synthetic) branch does not — without this it falls back to the
+        # config default "data/ETTh1.csv", which both points at a non-existent path and
+        # silently forecasts the wrong dataset.
+        dino_cfg["data_path_forecast_training"]    = ds_fore["csv_path"]
         dino_cfg["data_path_forecast_test"]        = ds_fore["csv_path"]
         dino_cfg["parms_for_training_forecasting"] = ds_fore["columns"]
         dino_cfg["parms_for_testing_forecasting"]  = ds_fore["columns"]
