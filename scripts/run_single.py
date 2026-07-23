@@ -27,7 +27,7 @@ ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(ROOT))
 
 IN_DOMAIN_DATASETS = ["etth1", "etth2", "ettm1", "ettm2", "weather", "electricity"]
-ALL_MODELS         = ["dino", "jepa", "lejepa", "patchtst", "ntp", "hybrid", "timedart"]
+ALL_MODELS         = ["dino", "jepa", "lejepa", "patchtst", "ntp", "hybrid", "timedart", "softclt"]
 
 MODEL_DEFAULT_LR = {
     "dino":     5e-4,
@@ -37,6 +37,7 @@ MODEL_DEFAULT_LR = {
     "ntp":      5e-5,
     "hybrid":   5e-4,
     "timedart": 1e-4,
+    "softclt":  1e-3,
 }
 
 _python = sys.executable
@@ -71,6 +72,11 @@ def _find_src_checkpoint(model: str, dataset: str, layers: int, out_dim: int = N
     elif model == "hybrid":
         # in-domain run: path includes dataset tag
         return ROOT / "output_model" / f"Hybrid_{dataset}_layers{layers}" / "best_model.pt"
+
+    elif model == "softclt":
+        # SoftCLT output_dir is tagged by pretrain source + depth in run_softclt;
+        # in-domain runs (the ones that copy a checkpoint) carry no source tag.
+        return ROOT / f"checkpoints_softclt_layers{layers}" / "checkpoint_best.pth"
 
     elif model == "timedart":
         return ROOT / "outputs" / f"timedart_pretrain_{dataset}_layers{layers}" / f"monash_{dataset}" / "ckpt_best.pth"

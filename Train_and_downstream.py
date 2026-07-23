@@ -2571,11 +2571,20 @@ def run_softclt(
         cfg['output_dir'] = output_dir
     if pretrain_source is not None:
         cfg['pretrain_source'] = pretrain_source
+    elif pretrain_dataset is not None and pretrain_dataset not in ('monash', 'synthetic', 'monash+synthetic'):
+        cfg['pretrain_source'] = None  # force in-domain CSV pretraining
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
     pretrain_source = _resolve_pretrain_source(cfg)
     use_global_data = pretrain_source is not None
+
+    # Tag the checkpoint dir by pretrain source + depth so runs don't collide
+    # (e.g. ./checkpoints_softclt_synthetic_layers8 vs ./checkpoints_softclt_layers8)
+    if output_dir is None:
+        _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source else ''
+        _lay_tag = f"_layers{cfg['n_layers']}"
+        cfg['output_dir'] = cfg.get('output_dir', './checkpoints_softclt').rstrip('/') + _src_tag + _lay_tag
 
     if pretrain_only or classification_only or (anomaly_dataset is not None and forecast_dataset is None):
         forecast_dataset = None
