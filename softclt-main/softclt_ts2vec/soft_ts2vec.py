@@ -15,7 +15,12 @@ from tasks import _eval_protocols as eval_protocols
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import average_precision_score
 
-from torch.utils.tensorboard import SummaryWriter
+# Optional: tensorboard may not be installed, and SummaryWriter is unused here
+# (the only reference below is commented out), so don't make it a hard dependency.
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except ImportError:
+    SummaryWriter = None
 
 
 class TS2Vec:
