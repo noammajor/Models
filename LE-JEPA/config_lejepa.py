@@ -19,15 +19,15 @@ config = {
     "sigreg_num_slices": 1024,
 
     # ── Encoder (same architecture as JEPA) ──────────────────────────────────
-    "encoder_embed_dim": 256,
+    "encoder_embed_dim": 128,
     "nhead": 8,
-    "num_encoder_layers": 5,
+    "num_encoder_layers": 8,
     "mlp_ratio": 4.0,
     "drop_rate": 0.0,
     "attn_drop_rate": 0.0,
     "head_dropout_forecasting": 0.2,
     "patch_size": 16,
-    "ratio_patches": 32,   # 21×16 = 336 timesteps — aligned with forecasting context
+    "ratio_patches": 21,   # 21×16 = 336 timesteps — aligned with forecasting context
     # Required by MonashDataPullerJEPA — mask indices are returned but ignored by LE-JEPA
     "mask_ratio": 0.25,
     "masking_type": "multi_block",

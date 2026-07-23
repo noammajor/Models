@@ -16,9 +16,9 @@ config = {
     "num_blocks": 2,
 
     # encoder 
-    "encoder_embed_dim": 256,
+    "encoder_embed_dim": 128,
     "nhead": 8,
-    "num_encoder_layers": 5,
+    "num_encoder_layers": 8,
     "mlp_ratio": 4.0,
     "qkv_bias": True,
     "qk_scale": None,
@@ -33,7 +33,7 @@ config = {
     "patch_size_forcasting": 16,
 
     # predictor
-    "predictor_embed_dim": 128,
+    "predictor_embed_dim": 64,
     "predictor_nhead": 4,
     "predictor_num_layers":3,
 
@@ -44,7 +44,7 @@ config = {
     # data
     "checkpoint_save": 5000,
     "checkpoint_print": 30,
-    "ratio_patches": 32,  # 21×16 = 336 timesteps — aligned with forecasting context
+    "ratio_patches": 21,  # 21×16 = 336 timesteps — aligned with forecasting context
     "batch_size": 128,
     "num_workers": 4,
 
