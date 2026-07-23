@@ -2556,6 +2556,18 @@ def run_softclt(
     _sys.modules["main"] = dino_main
     _main_spec.loader.exec_module(dino_main)
 
+    # TSDiNO and SoftCLT both define top-level `utils` and `models` packages.
+    # TSDiNO's just won (it is earlier on sys.path), so drop those cached modules
+    # and push SoftCLT's dirs to the front — otherwise SoftCLT's own
+    # `from utils import *` / `from models import TSEncoder` would get TSDiNO's.
+    for _stale in [k for k in list(_sys.modules) if k.split('.')[0] in ('utils', 'models')]:
+        del _sys.modules[_stale]
+    for _p in (softclt_dir / "softclt_ts2vec", softclt_dir):
+        _ps = str(Path(_p).resolve())
+        if _ps in _sys.path:
+            _sys.path.remove(_ps)
+        _sys.path.insert(0, _ps)
+
     # ── Apply overrides ───────────────────────────────────────────────────────
     if encoder_layers is not None:
         cfg['n_layers'] = encoder_layers

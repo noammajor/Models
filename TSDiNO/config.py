@@ -148,6 +148,9 @@ config = {
     # Student encoder sees masked patches → reconstruction head.
     # Teacher encoder sees full input    → reconstruction head.
     # Loss: MSE between the two reconstructions at masked positions.
+    # ── KoLeo regularizer (DINOv2) ────────────────────────────────────────────
+    "koleo_weight": 0.0,   # >0 enables KoLeo on student CLS features (DINOv2 uses 0.1)
+
     "use_reconstruction": False,   # set True to enable
     "recon_mask_ratio":   0.4,    # fraction of patches to mask for student
     "recon_loss_weight":  1.0,    # weight of reconstruction loss relative to DINO loss
