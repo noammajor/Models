@@ -62,7 +62,7 @@ def launch_model(model: str, gpu: int, pretrain_source: str,
                  log_dir: Path, dry_run: bool,
                  encoder_layers: int, predictor_layers: int,
                  num_patches: int, patch_size: int,
-                 log_tag: str = ""):
+                 log_tag: str = "", embed_dim: int = None):
     lr = MODEL_LR[model]
     cw = num_patches * patch_size
     tag_suffix = f"_{log_tag}" if log_tag else ""
@@ -80,6 +80,8 @@ def launch_model(model: str, gpu: int, pretrain_source: str,
         "--lr",               str(lr),
         "--pretrain_source",  pretrain_source,
     ]
+    if embed_dim is not None:
+        cmd += ["--embed_dim", str(embed_dim)]
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -116,6 +118,8 @@ def main():
                         help=f"Predictor depth (default: {DEFAULT_PREDICTOR_LAYERS})")
     parser.add_argument("--num_patches",      type=int, default=DEFAULT_NUM_PATCHES,
                         help=f"Number of patches in the context window (default: {DEFAULT_NUM_PATCHES})")
+    parser.add_argument("--embed_dim",        type=int, default=None,
+                        help="Encoder embedding dim (d_model). Omit to use the model's config default.")
     parser.add_argument("--patch_size",       type=int, default=DEFAULT_PATCH_SIZE,
                         help=f"Patch size (default: {DEFAULT_PATCH_SIZE}). Used for log naming + cw display; "
                              "actual patch size is set by each model's config file.")
@@ -150,7 +154,8 @@ def main():
                             predictor_layers=args.predictor_layers,
                             num_patches=args.num_patches,
                             patch_size=args.patch_size,
-                            log_tag=args.log_tag)
+                            log_tag=args.log_tag,
+                            embed_dim=args.embed_dim)
         if proc is not None:
             procs.append(proc)
 
