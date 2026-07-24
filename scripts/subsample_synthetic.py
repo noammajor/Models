@@ -88,22 +88,38 @@ def main():
     index = []          # (fi, ri, eff_timesteps, n_channels)
     tables = []
     tcols = []
+    shpcols = []        # gluonts '<target>._np_shape' sidecar per file (or None)
     n_multivariate = 0
     for fi, fname in enumerate(files):
         table = _read_table(str(sdir / fname))
         col = _target_col(table)
+        shp_col = f"{col}._np_shape" if f"{col}._np_shape" in table.schema.names else None
         tables.append(table)
         tcols.append(col)
+        shpcols.append(shp_col)
         for ri in range(len(table)):
             arr = table[col][ri].as_py()
             if arr is None:
                 continue
-            a = np.asarray(arr)
-            if a.ndim >= 2:                       # [C, T] — C channel-series of length T
-                C, T = a.shape[0], a.shape[-1]
-                n_multivariate += 1
-            else:                                 # [T] — one univariate series
-                C, T = 1, len(a)
+            # gluonts stores target flattened + a '<target>._np_shape' sidecar, so the
+            # true shape comes from that column, not from the flattened values.
+            if shp_col is not None:
+                shp = table[shp_col][ri].as_py()
+                if not shp:
+                    continue
+                shp = [int(x) for x in shp]
+                if len(shp) >= 2:                 # [C, T] — C channel-series of length T
+                    C, T = shp[0], shp[-1]
+                    n_multivariate += 1
+                else:                             # [T] — one univariate series
+                    C, T = 1, shp[0]
+            else:
+                a = np.asarray(arr)
+                if a.ndim >= 2:
+                    C, T = a.shape[0], a.shape[-1]
+                    n_multivariate += 1
+                else:
+                    C, T = 1, len(a)
             if T >= args.min_len:                 # filter on the per-series length T
                 index.append((fi, ri, C * T, C))
         print(f"  {fname}: {len(table):,} rows", flush=True)
@@ -152,16 +168,23 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
 
     def _records():
+        # Emit ONLY clean {start, target} records. The target is reconstructed to its
+        # real shape from the gluonts '<target>._np_shape' sidecar; ArrowWriter re-adds
+        # that sidecar itself, so we must NOT pass '<target>._np_shape' back as a field
+        # (doing so is what triggered the 'KeyError: target._np_shape' write failure).
         for fi, ri in chosen:
             table = tables[fi]
-            rec = {}
-            for name in table.schema.names:
-                v = table[name][ri].as_py()
-                if name == tcols[fi]:
-                    rec["target"] = np.asarray(v)
-                else:
-                    rec[name] = v
-            if "start" not in rec:
+            col = tcols[fi]
+            shp_col = shpcols[fi]
+            tgt = np.asarray(table[col][ri].as_py())
+            if shp_col is not None:
+                shp = table[shp_col][ri].as_py()
+                if shp:
+                    tgt = tgt.reshape([int(x) for x in shp])
+            rec = {"target": tgt}
+            if "start" in table.schema.names:
+                rec["start"] = table["start"][ri].as_py()
+            else:
                 rec["start"] = np.datetime64("2000-01-01 00:00", "s")
             yield rec
 
