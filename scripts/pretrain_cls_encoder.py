@@ -64,7 +64,8 @@ def launch_model(model: str, gpu: int, pretrain_source: str,
                  log_dir: Path, dry_run: bool,
                  encoder_layers: int, predictor_layers: int,
                  num_patches: int, patch_size: int,
-                 log_tag: str = "", embed_dim: int = None):
+                 log_tag: str = "", embed_dim: int = None,
+                 synthetic_data_dir: str = None):
     lr = MODEL_LR[model]
     cw = num_patches * patch_size
     tag_suffix = f"_{log_tag}" if log_tag else ""
@@ -84,6 +85,8 @@ def launch_model(model: str, gpu: int, pretrain_source: str,
     ]
     if embed_dim is not None:
         cmd += ["--embed_dim", str(embed_dim)]
+    if synthetic_data_dir is not None:
+        cmd += ["--synthetic_data_dir", synthetic_data_dir]
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -122,6 +125,8 @@ def main():
                         help=f"Number of patches in the context window (default: {DEFAULT_NUM_PATCHES})")
     parser.add_argument("--embed_dim",        type=int, default=None,
                         help="Encoder embedding dim (d_model). Omit to use the model's config default.")
+    parser.add_argument("--synthetic_data_dir", type=str, default=None,
+                        help="Override synthetic .arrow directory (e.g. the Monash-sized subset). Omit for the DATA_PATHS default.")
     parser.add_argument("--patch_size",       type=int, default=DEFAULT_PATCH_SIZE,
                         help=f"Patch size (default: {DEFAULT_PATCH_SIZE}). Used for log naming + cw display; "
                              "actual patch size is set by each model's config file.")
@@ -157,7 +162,8 @@ def main():
                             num_patches=args.num_patches,
                             patch_size=args.patch_size,
                             log_tag=args.log_tag,
-                            embed_dim=args.embed_dim)
+                            embed_dim=args.embed_dim,
+                            synthetic_data_dir=args.synthetic_data_dir)
         if proc is not None:
             procs.append(proc)
 
