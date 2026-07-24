@@ -78,13 +78,17 @@ def main():
     if not files:
         sys.exit(f"No .arrow files in {sdir}")
 
-    # 1. Index every eligible row as (file_idx, row_idx, length).
+    # 1. Index every eligible row as (file_idx, row_idx, eff_timesteps, n_channels).
+    #    A row's target is [T] (1 series) or [C, T] (C series — the loaders treat each
+    #    channel as a separate univariate series). The min_len filter applies to T; the
+    #    row's effective size is C * T timesteps and C series — exactly what pretraining
+    #    sees after channel expansion. Matching Monash's univariate timesteps to this
+    #    expanded total is the fair "same amount of data" comparison.
     print(f"Scanning {len(files)} arrow files in {sdir} ...", flush=True)
-    index = []          # (fi, ri, length)
+    index = []          # (fi, ri, eff_timesteps, n_channels)
     tables = []
     tcols = []
     n_multivariate = 0
-    total_all_T = 0
     for fi, fname in enumerate(files):
         table = _read_table(str(sdir / fname))
         col = _target_col(table)
@@ -95,21 +99,22 @@ def main():
             if arr is None:
                 continue
             a = np.asarray(arr)
-            length = a.shape[-1] if a.ndim >= 2 else len(a)
-            if a.ndim >= 2:
+            if a.ndim >= 2:                       # [C, T] — C channel-series of length T
+                C, T = a.shape[0], a.shape[-1]
                 n_multivariate += 1
-            total_all_T += length
-            if length >= args.min_len:
-                index.append((fi, ri, length))
+            else:                                 # [T] — one univariate series
+                C, T = 1, len(a)
+            if T >= args.min_len:                 # filter on the per-series length T
+                index.append((fi, ri, C * T, C))
         print(f"  {fname}: {len(table):,} rows", flush=True)
 
-    if n_multivariate:
-        print(f"  WARNING: {n_multivariate:,} rows are multivariate (ndim>=2). Length uses the "
-              f"time axis (shape[-1]); count_dataset_sizes.py uses len()=channels, so parity "
-              f"under that counter will differ for those rows.", flush=True)
-
-    eligible_T = sum(l for _, _, l in index)
-    print(f"\nEligible rows (len >= {args.min_len}): {len(index):,}  "
+    kind = (f"multivariate ({n_multivariate:,} of the rows have channels)"
+            if n_multivariate else "univariate")
+    eligible_T = sum(t for _, _, t, _ in index)
+    eligible_series = sum(c for _, _, _, c in index)
+    print(f"\nDetected {kind} data.", flush=True)
+    print(f"Eligible rows (T >= {args.min_len}): {len(index):,}  "
+          f"| eligible series (channel-expanded): {eligible_series:,}  "
           f"| eligible timesteps: {eligible_T:,}", flush=True)
     print(f"Target timesteps (Monash): {args.target_timesteps:,}  "
           f"({100*args.target_timesteps/max(eligible_T,1):.1f}% of eligible)", flush=True)
@@ -123,14 +128,17 @@ def main():
     order = rng.permutation(len(index))
     chosen = []
     cum = 0
+    cum_series = 0
     for k in order:
-        fi, ri, length = index[k]
+        fi, ri, eff, C = index[k]
         chosen.append((fi, ri))
-        cum += length
+        cum += eff
+        cum_series += C
         if cum >= args.target_timesteps:
             break
 
-    print(f"\nSelected {len(chosen):,} rows  |  timesteps: {cum:,}  "
+    print(f"\nSelected {len(chosen):,} rows  |  channel-expanded series: {cum_series:,}  "
+          f"|  timesteps: {cum:,}  "
           f"(overshoot {cum - args.target_timesteps:,} = "
           f"{100*(cum-args.target_timesteps)/args.target_timesteps:.3f}%)", flush=True)
 
@@ -159,7 +167,7 @@ def main():
 
     out_path = out / "synthetic_monashsize.arrow"
     ArrowWriter(compression="lz4").write_to_file(_records(), out_path)
-    print(f"\nWrote {len(chosen):,} series → {out_path}", flush=True)
+    print(f"\nWrote {len(chosen):,} rows ({cum_series:,} channel-expanded series) → {out_path}", flush=True)
     print(f"Total timesteps: {cum:,}  (Monash target: {args.target_timesteps:,})", flush=True)
 
 
