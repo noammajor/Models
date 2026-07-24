@@ -2580,6 +2580,11 @@ def run_softclt(
         cfg['n_layers'] = encoder_layers
     if embed_dim is not None:
         cfg['embed_dim'] = embed_dim
+    if num_patches is not None:
+        # Context length = patch_len * num_patches. Used for the 1152-ts
+        # classification encoders (72 x 16); without this the parameter was
+        # accepted and silently ignored, leaving the 336 default in place.
+        cfg['num_patches'] = num_patches
     if lr is not None:
         cfg['lr'] = lr
     if epochs is not None:
@@ -2603,7 +2608,10 @@ def run_softclt(
     if output_dir is None:
         _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source else ''
         _lay_tag = f"_layers{cfg['n_layers']}"
-        cfg['output_dir'] = cfg.get('output_dir', './checkpoints_softclt').rstrip('/') + _src_tag + _lay_tag
+        # Tag the context window too when it was overridden, so a 1152-ts
+        # classification encoder doesn't overwrite the 336-ts forecasting one.
+        _cw_tag = f"_cw{cfg['patch_len'] * cfg['num_patches']}" if num_patches is not None else ''
+        cfg['output_dir'] = cfg.get('output_dir', './checkpoints_softclt').rstrip('/') + _src_tag + _lay_tag + _cw_tag
 
     if pretrain_only or classification_only or (anomaly_dataset is not None and forecast_dataset is None):
         forecast_dataset = None

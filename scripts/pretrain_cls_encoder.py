@@ -44,6 +44,7 @@ MODEL_LR = {
     "patchtst":    5e-5,
     "ntp":         5e-5,
     "timedart":    5e-5,
+    "softclt":     1e-3,
 }
 
 MODEL_GPU = {
@@ -53,6 +54,7 @@ MODEL_GPU = {
     "patchtst":    3,
     "ntp":         4,
     "timedart":    5,
+    "softclt":     7,
 }
 
 ALL_MODELS = list(MODEL_GPU.keys())
