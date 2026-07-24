@@ -61,7 +61,8 @@ def anomaly_detection(args, path_num, anomaly_train, anomaly_test,
                       anomaly_ratio: float = 1.0,
                       checkpoint_path: str = None,
                       linear_probe: bool = True,
-                      mlp_head: bool = False):
+                      mlp_head: bool = False,
+                      point_adjust: bool = True):
     """
     Reconstruction-based anomaly detection with DINO teacher encoder
     (frozen by default; unfrozen if linear_probe=False).
@@ -271,20 +272,11 @@ def anomaly_detection(args, path_num, anomaly_train, anomaly_test,
                               100 - anomaly_ratio)
     pred = (test_energy > threshold).astype(int)
 
-    # ── (5) adjustment + metrics ──────────────────────────────────────────────
-    gt, pred = _adjustment(gt.copy(), pred.copy())
-    accuracy  = accuracy_score(gt, pred)
-    precision, recall, f1, _ = precision_recall_fscore_support(
-        gt, pred, average="binary", zero_division=0)
-
-    print(f"\n{'='*60}")
-    print(f"  [TSDiNO] Anomaly Detection")
-    print(f"  Threshold: {threshold:.6f}  (top {anomaly_ratio}%)")
-    print(f"  Accuracy : {accuracy:.4f}")
-    print(f"  Precision: {precision:.4f}")
-    print(f"  Recall   : {recall:.4f}")
-    print(f"  F1       : {f1:.4f}")
-    print(f"{'='*60}\n")
-
-    return dict(f1=f1, precision=precision, recall=recall,
-                accuracy=accuracy, threshold=threshold)
+    # ── (5) metrics: raw / point-adjusted / event / range / affiliation ───────
+    # EVENT/RANGE/AFFIL are computed WITHOUT point adjustment, so they show whether
+    # an anomaly gain survives once the point-adjustment inflation (Xu et al. 2018)
+    # is removed. See shared/anomaly_metrics.py.
+    from anomaly_metrics import compute_all, format_table   # shared/ is on sys.path at run time
+    m = compute_all(gt, pred, point_adjust=point_adjust)
+    print(format_table(m, title="TSDiNO Anomaly Detection"))
+    return dict(**m, threshold=threshold)

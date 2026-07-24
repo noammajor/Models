@@ -255,19 +255,7 @@ def anomaly_detection(config, checkpoint_path, anomaly_train, anomaly_test,
     pred = (test_energy > threshold).astype(int)
 
     # ── (5) adjustment + metrics ──────────────────────────────────────────────
-    gt, pred = _adjustment(gt.copy(), pred.copy())
-    accuracy  = accuracy_score(gt, pred)
-    precision, recall, f1, _ = precision_recall_fscore_support(
-        gt, pred, average="binary", zero_division=0)
-
-    print(f"\n{'='*60}")
-    print(f"  [PatchTST] Anomaly Detection")
-    print(f"  Threshold: {threshold:.6f}  (top {anomaly_ratio}%)")
-    print(f"  Accuracy : {accuracy:.4f}")
-    print(f"  Precision: {precision:.4f}")
-    print(f"  Recall   : {recall:.4f}")
-    print(f"  F1       : {f1:.4f}")
-    print(f"{'='*60}\n")
-
-    return dict(f1=f1, precision=precision, recall=recall,
-                accuracy=accuracy, threshold=threshold)
+    from anomaly_metrics import compute_all, format_table   # shared/ is on sys.path at run time
+    m = compute_all(gt, pred)
+    print(format_table(m, title="PatchTST Anomaly Detection"))
+    return dict(**m, threshold=threshold)
