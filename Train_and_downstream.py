@@ -99,6 +99,27 @@ def _resolve_pretrain_source(config):
         return 'monash+synthetic' if config.get('synthetic_data_dir') else 'monash'
     return None
 
+
+def _synth_dir_tag(synthetic_data_dir):
+    """'' for the default synthetic dir, else '_<distinctive-suffix>' from its basename.
+
+    Lets a run on a non-default synthetic set (e.g. the Monash-sized subset) write to a
+    separate checkpoint dir instead of overwriting the full-synthetic one. Returns '' for
+    the default dir, so it's a no-op for every existing run.
+    e.g. '/…/synthetic_data_TS_monashsize' -> '_monashsize'.
+    """
+    if not synthetic_data_dir:
+        return ''
+    base = os.path.basename(str(synthetic_data_dir).rstrip('/'))
+    default_base = os.path.basename(str(DATA_PATHS.get('synthetic_data_dir', '')).rstrip('/'))
+    if not base or base == default_base:
+        return ''
+    if default_base and base.startswith(default_base + '_'):
+        base = base[len(default_base) + 1:]        # 'synthetic_data_TS_monashsize' -> 'monashsize'
+    base = ''.join(c if c.isalnum() else '_' for c in base).strip('_')
+    return ('_' + base) if base else ''
+
+
 def _config_to_dino_args(cfg):
     """
     Convert the DINO config dict (TSDINOALT 4/config.py) into the
@@ -533,6 +554,7 @@ def _resolve_jepa_path(p: str, jepa_dir: Path) -> str:
 # ── JEPA ──────────────────────────────────
 
 def run_jepa(skip_train: bool = False,
+                    synthetic_data_dir: str = None,
                     pretrain_dataset: str = None,
                     forecast_dataset: str = None,
                     classification_dataset=None,
@@ -570,6 +592,9 @@ def run_jepa(skip_train: bool = False,
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     config = {**DATA_PATHS, **dict(_mod.config)}
+    if synthetic_data_dir is not None:
+        config['synthetic_data_dir'] = synthetic_data_dir
+    _synth_tag = _synth_dir_tag(synthetic_data_dir)
     if pretrain_source is not None:
         config['pretrain_source'] = pretrain_source
         _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source != 'monash' else ''
@@ -586,7 +611,7 @@ def run_jepa(skip_train: bool = False,
             _src_tag = f"_{pretrain_dataset}"
         else:
             _src_tag = ''
-        config['path_save'] = f'./output_model/JEPA{_src_tag}_layers{encoder_layers}{_SEED_TAG}/'
+        config['path_save'] = f'./output_model/JEPA{_src_tag}{_synth_tag}_layers{encoder_layers}{_SEED_TAG}/'
     if embed_dim is not None:
         config['encoder_embed_dim'] = embed_dim
     if predictor_embed_dim is not None:
@@ -884,7 +909,7 @@ def run_jepa(skip_train: bool = False,
 
 # ── PatchTST ──────────────────────────────────────────────────────────────────
 
-def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
+def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretrain_dataset: str = None, forecast_dataset: str = None,
                  classification_dataset=None, anomaly_dataset: str = None,
                  pretrain_only: bool = False, classification_only: bool = False, pred_lens=None,
                  checkpoints=None, random_encoder: bool = False, encoder_layers: int = None,
@@ -903,6 +928,9 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     cfg = {**DATA_PATHS, **dict(_mod.config)}
+    if synthetic_data_dir is not None:
+        cfg['synthetic_data_dir'] = synthetic_data_dir
+    _synth_tag = _synth_dir_tag(synthetic_data_dir)
     if pretrain_source is not None:
         cfg['pretrain_source'] = pretrain_source
     elif pretrain_dataset is not None and pretrain_dataset not in ('monash', 'synthetic', 'monash+synthetic'):
@@ -984,19 +1012,19 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
         _ptst_save_dir = str(
             patchtst_dir / "saved_models" / "classification" /
             _pretrain_dset / "masked_patchtst" / cfg.get("model_type", "based_model") /
-            f"layers{cfg.get('n_layers', 3)}_cw{_cw}{_SEED_TAG}"
+            f"layers{cfg.get('n_layers', 3)}_cw{_cw}{_SEED_TAG}{_synth_tag}"
         )
     elif _SEED_TAG:
         _ptst_save_dir = str(
             patchtst_dir / "saved_models" / _pretrain_dset /
             "masked_patchtst" / cfg.get("model_type", "based_model") /
-            f"layers{cfg.get('n_layers', 3)}{_SEED_TAG}"
+            f"layers{cfg.get('n_layers', 3)}{_SEED_TAG}{_synth_tag}"
         )
     else:
         _ptst_save_dir = str(
             patchtst_dir / "saved_models" / _pretrain_dset /
             "masked_patchtst" / cfg.get("model_type", "based_model") /
-            f"layers{cfg.get('n_layers', 3)}"
+            f"layers{cfg.get('n_layers', 3)}{_synth_tag}"
         )
     pretrain_cmd += ["--save_dir", _ptst_save_dir]
 
@@ -1151,7 +1179,7 @@ def run_patchtst(skip_train: bool = False, pretrain_dataset: str = None, forecas
 
 # ── NTP (Next-Token-Patch Prediction on PatchTST) ────────────────────────────
 
-def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
+def run_ntp(skip_train: bool = False, synthetic_data_dir: str = None, pretrain_dataset: str = None, forecast_dataset: str = None,
             classification_dataset=None, anomaly_dataset: str = None,
             pretrain_only: bool = False, classification_only: bool = False,
             pred_lens=None,
@@ -1170,6 +1198,9 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     _mod  = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     cfg = {**DATA_PATHS, **dict(_mod.config)}
+    if synthetic_data_dir is not None:
+        cfg['synthetic_data_dir'] = synthetic_data_dir
+    _synth_tag = _synth_dir_tag(synthetic_data_dir)
     if pretrain_source is not None:
         cfg['pretrain_source'] = pretrain_source
     if encoder_layers is not None:
@@ -1229,11 +1260,11 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     if num_patches is not None:
         _cw = num_patches * cfg.get('patch_size', 16)
         _ntp_save_dir_override = str(
-            ntp_dir / "saved_models" / "classification" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}_cw{_cw}{_SEED_TAG}"
+            ntp_dir / "saved_models" / "classification" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}_cw{_cw}{_SEED_TAG}{_synth_tag}"
         )
     elif _SEED_TAG:
         _ntp_save_dir_override = str(
-            ntp_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}{_SEED_TAG}"
+            ntp_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}{_SEED_TAG}{_synth_tag}"
         )
     # Save-path priority: programmatic override > config["path_save"] > default.
     # Mirrors the resolution inside pretrain_ntp() so train/eval read from the same dir.
@@ -1242,7 +1273,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
     elif cfg.get("path_save"):
         _save_dir = Path(cfg["path_save"])
     else:
-        _save_dir = ntp_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}"
+        _save_dir = ntp_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}{_synth_tag}"
     _base_name = _model_fname(cfg)
     _ckpt_epoch = checkpoints[0] if (checkpoints and checkpoints[0] is not None) else None
     _ckpt_filename = f"{_base_name}_epoch{_ckpt_epoch}.pt" if _ckpt_epoch is not None else f"{_base_name}.pt"
@@ -1359,6 +1390,7 @@ def run_ntp(skip_train: bool = False, pretrain_dataset: str = None, forecast_dat
 # ── LE-JEPA ───────────────────────────────────────────────────────────────────
 
 def run_lejepa(skip_train: bool = False,
+               synthetic_data_dir: str = None,
                pretrain_dataset: str = None,
                forecast_dataset: str = None,
                classification_dataset=None,
@@ -1392,6 +1424,9 @@ def run_lejepa(skip_train: bool = False,
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     config = {**DATA_PATHS, **dict(_mod.config)}
+    if synthetic_data_dir is not None:
+        config['synthetic_data_dir'] = synthetic_data_dir
+    _synth_tag = _synth_dir_tag(synthetic_data_dir)
     if pretrain_source is not None:
         config['pretrain_source'] = pretrain_source
         _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source != 'monash' else ''
@@ -1399,7 +1434,7 @@ def run_lejepa(skip_train: bool = False,
     if encoder_layers is not None:
         config['num_encoder_layers'] = encoder_layers
         _src_tag = f"_{config['pretrain_source'].replace('+', '_')}" if config.get('pretrain_source', 'monash') != 'monash' else ''
-        config['path_save'] = f'./output_model/LE-JEPA{_src_tag}_layers{encoder_layers}{_SEED_TAG}/'
+        config['path_save'] = f'./output_model/LE-JEPA{_src_tag}{_synth_tag}_layers{encoder_layers}{_SEED_TAG}/'
     if embed_dim is not None:
         config['encoder_embed_dim'] = embed_dim
     if epochs is not None:
@@ -1691,6 +1726,7 @@ def run_lejepa(skip_train: bool = False,
 # ── Hybrid (LEJEPA + NTP) ─────────────────────────────────────────────────────
 
 def run_hybrid(skip_train: bool = False,
+               synthetic_data_dir: str = None,
                pretrain_dataset: str = None,
                forecast_dataset: str = None,
                classification_dataset=None,
@@ -1733,6 +1769,9 @@ def run_hybrid(skip_train: bool = False,
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     config = {**DATA_PATHS, **dict(_mod.config)}
+    if synthetic_data_dir is not None:
+        config['synthetic_data_dir'] = synthetic_data_dir
+    _synth_tag = _synth_dir_tag(synthetic_data_dir)
 
     if pretrain_source is not None:
         config['pretrain_source'] = pretrain_source
@@ -1749,7 +1788,7 @@ def run_hybrid(skip_train: bool = False,
         config['path_save'] = f'./output_model/Hybrid{_src_tag}/'
     if encoder_layers is not None:
         config['num_encoder_layers'] = encoder_layers
-        config['path_save'] = f'./output_model/Hybrid{_src_tag}_layers{encoder_layers}{_SEED_TAG}/'
+        config['path_save'] = f'./output_model/Hybrid{_src_tag}{_synth_tag}_layers{encoder_layers}{_SEED_TAG}/'
     if embed_dim is not None:
         config['encoder_embed_dim'] = embed_dim
     if phi is not None:
@@ -2092,6 +2131,7 @@ def _patch_timedart_get_data(exp):
 
 
 def run_timedart(skip_train: bool = False,
+                 synthetic_data_dir: str = None,
                  pretrain_dataset: str = None,
                  forecast_dataset: str = None,
                  classification_dataset: str = None,
@@ -2133,6 +2173,9 @@ def run_timedart(skip_train: bool = False,
     _mod  = _ilu.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     cfg = {**DATA_PATHS, **dict(_mod.config)}
+    if synthetic_data_dir is not None:
+        cfg['synthetic_data_dir'] = synthetic_data_dir
+    _synth_tag = _synth_dir_tag(synthetic_data_dir)
 
     if pretrain_source is not None:
         cfg['pretrain_source'] = pretrain_source
@@ -2147,7 +2190,7 @@ def run_timedart(skip_train: bool = False,
 
     _pretrain_src = _resolve_pretrain_source(cfg)
     _src_tag = f"_{_pretrain_src.replace('+', '_')}" if _pretrain_src else (f"_{pretrain_dataset}" if pretrain_dataset else '')
-    ckpt_dir  = Path(__file__).parent / f"outputs/timedart_pretrain{_src_tag}_layers{cfg['e_layers']}"
+    ckpt_dir  = Path(__file__).parent / f"outputs/timedart_pretrain{_src_tag}{_synth_tag}_layers{cfg['e_layers']}"
     ckpt_file     = ckpt_dir / ("monash" + _src_tag) / "ckpt_best.pth"
     cls_ckpt_file = ckpt_dir / "monash_cls" / "ckpt_best.pth"
 
@@ -2534,6 +2577,7 @@ def run_softclt(
     epochs: int = None,
     epochs_forecasting: int = None,
     output_dir: str = None,
+    synthetic_data_dir: str = None,
 ):
     softclt_dir = Path(__file__).parent / "softclt-main"
     dino_dir    = Path(__file__).parent / "TSDiNO"
@@ -2550,6 +2594,9 @@ def run_softclt(
     _mod  = _ilu.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     cfg = {**DATA_PATHS, **dict(_mod.config)}
+    if synthetic_data_dir is not None:
+        cfg['synthetic_data_dir'] = synthetic_data_dir
+    _synth_tag = _synth_dir_tag(synthetic_data_dir)
 
     # ── Load DINO main.py (for test_run / train_classification) ───────────────
     _cfg_spec = _ilu.spec_from_file_location("_dino_config", dino_dir / "config.py")
@@ -2611,7 +2658,7 @@ def run_softclt(
         # Tag the context window too when it was overridden, so a 1152-ts
         # classification encoder doesn't overwrite the 336-ts forecasting one.
         _cw_tag = f"_cw{cfg['patch_len'] * cfg['num_patches']}" if num_patches is not None else ''
-        cfg['output_dir'] = cfg.get('output_dir', './checkpoints_softclt').rstrip('/') + _src_tag + _lay_tag + _cw_tag
+        cfg['output_dir'] = cfg.get('output_dir', './checkpoints_softclt').rstrip('/') + _src_tag + _synth_tag + _lay_tag + _cw_tag
 
     if pretrain_only or classification_only or (anomaly_dataset is not None and forecast_dataset is None):
         forecast_dataset = None
