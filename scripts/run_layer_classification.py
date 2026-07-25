@@ -39,7 +39,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(ROOT))
 
-from Train_and_downstream import run
+from Train_and_downstream import run, _synth_dir_tag
 
 
 def _str2bool(v):
@@ -111,10 +111,13 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                      pretrain_source: str = None,
                      linear_probe: bool = True,
                      head_type: str = "linear",
-                     output_dir: str = None):
-    _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
-    _cw_tag  = f"_cw{num_patches * 16}" if num_patches is not None else ""
-    log_base = ROOT / "logs" / f"layer_classification{_src_tag}{_cw_tag}"
+                     output_dir: str = None,
+                     synthetic_data_dir: str = None,
+                     embed_dim: int = None):
+    _src_tag   = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
+    _cw_tag    = f"_cw{num_patches * 16}" if num_patches is not None else ""
+    _synth_tag = _synth_dir_tag(synthetic_data_dir)
+    log_base = ROOT / "logs" / f"layer_classification{_src_tag}{_synth_tag}{_cw_tag}"
     fieldnames = ["model", "encoder_layers", "num_patches", "dataset", "accuracy", "timestamp"]
 
     existing = set()
@@ -155,6 +158,8 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                     linear_probe=linear_probe,
                     head_type=head_type,
                     output_dir=output_dir,
+                    synthetic_data_dir=synthetic_data_dir,
+                    embed_dim=embed_dim,
                 )
 
                 # Return tuple shapes (when task="classify"):
@@ -199,7 +204,8 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
                   num_patches: int = None, pretrain_source: str = None,
                   linear_probe: bool = True,
                   head_type: str = "linear", log_tag: str = "",
-                  output_dir: str = None):
+                  output_dir: str = None,
+                  synthetic_data_dir: str = None, embed_dim: int = None):
     tag_suffix = f"_{log_tag}" if log_tag else ""
     log_path = log_dir / f"{model}_layers{encoder_layers}{tag_suffix}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -221,6 +227,10 @@ def launch_worker(model: str, encoder_layers: int, gpu: int,
         cmd += ["--pretrain_source", pretrain_source]
     if output_dir is not None:
         cmd += ["--output_dir", output_dir]
+    if synthetic_data_dir is not None:
+        cmd += ["--synthetic_data_dir", synthetic_data_dir]
+    if embed_dim is not None:
+        cmd += ["--embed_dim", str(embed_dim)]
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -246,13 +256,15 @@ def run_classification_sweep(models: list, layer_configs: list, datasets: list,
                               pretrain_source: str = None, out_csv: Path = None,
                               linear_probe: bool = True,
                               head_type: str = "linear", log_tag: str = "",
-                              output_dir: str = None):
+                              output_dir: str = None,
+                              synthetic_data_dir: str = None, embed_dim: int = None):
     _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source and pretrain_source != "monash" else ""
+    _synth_tag = _synth_dir_tag(synthetic_data_dir)
     _cw_tag = f"_cw{num_patches * 16}" if num_patches is not None else ""
     _log_tag = f"_{log_tag}" if log_tag else ""
-    log_dir = ROOT / "logs" / f"layer_classification{_src_tag}{_cw_tag}{_log_tag}"
+    log_dir = ROOT / "logs" / f"layer_classification{_src_tag}{_synth_tag}{_cw_tag}{_log_tag}"
     if out_csv is None:
-        out_csv = ROOT / "results" / f"layer_classification{_src_tag}{_cw_tag}{_log_tag}.csv"
+        out_csv = ROOT / "results" / f"layer_classification{_src_tag}{_synth_tag}{_cw_tag}{_log_tag}.csv"
 
     print(f"Layer classification sweep")
     print(f"  Models:       {models}")
@@ -278,7 +290,8 @@ def run_classification_sweep(models: list, layer_configs: list, datasets: list,
                                  num_patches=num_patches, pretrain_source=pretrain_source,
                                  linear_probe=linear_probe,
                                  head_type=head_type, log_tag=log_tag,
-                                 output_dir=output_dir)
+                                 output_dir=output_dir,
+                                 synthetic_data_dir=synthetic_data_dir, embed_dim=embed_dim)
             if proc is not None:
                 procs.append(proc)
 
@@ -333,6 +346,11 @@ def main():
                         help="Override DINO config's output_dir (base path before _layers/_cw suffixes). "
                              "Use to point at different pretrained backbones without editing config.py "
                              "(e.g. './checkpoints_phys', './checkpoints_physical_2', './checkpoints_physical_3').")
+    parser.add_argument("--synthetic_data_dir", type=str, default=None,
+                        help="Synthetic data dir override; selects the matching pretrained backbone tag "
+                             "(e.g. .../synthetic_data_TS_monashsize → _monashsize checkpoints).")
+    parser.add_argument("--embed_dim",   type=int, default=None,
+                        help="Embedding dim / d_model override (match the pretrained backbone, e.g. 128).")
     parser.add_argument("--dry_run",     action="store_true")
 
     # internal worker mode
@@ -355,6 +373,8 @@ def main():
             linear_probe=args.linear_probe,
             head_type=args.head,
             output_dir=args.output_dir,
+            synthetic_data_dir=args.synthetic_data_dir,
+            embed_dim=args.embed_dim,
         )
         return
 
@@ -371,6 +391,8 @@ def main():
         head_type=args.head,
         log_tag=args.log_tag,
         output_dir=args.output_dir,
+        synthetic_data_dir=args.synthetic_data_dir,
+        embed_dim=args.embed_dim,
     )
 
 
