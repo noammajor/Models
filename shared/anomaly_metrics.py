@@ -161,11 +161,11 @@ except Exception as _e:            # not vendored / not installed
     _AFFIL_ERR = str(_e)
 
 
-# The vendored affiliation_partition is O(|gt_ev| * |pred_ev|) pure Python, so it
-# explodes when predictions fragment into hundreds of thousands of events on the
-# stride-1 flattened arrays. Cap the work so compute_all can never hang; above the
-# cap affiliation is reported as NaN (intractable for the reference implementation).
-_AFFIL_MAX_WORK = 10_000_000
+# affiliation_partition is now O((|gt_ev|+|pred_ev|)*log) via searchsorted (see
+# shared/affiliation/_affiliation_zone.py), and the rest of pr_from_events is
+# ~O(|pred_ev|). This backstop only guards truly pathological event counts so
+# compute_all can never hang; normal runs always compute a real affiliation value.
+_AFFIL_MAX_EVENTS = 3_000_000
 
 
 def affiliation_prf(gt, pred):
@@ -182,7 +182,7 @@ def affiliation_prf(gt, pred):
     pr_ev = [(int(s), int(e)) for s, e in events(pred)]
     if len(gt_ev) == 0 or len(pr_ev) == 0:
         return float("nan"), float("nan"), float("nan")
-    if len(gt_ev) * len(pr_ev) > _AFFIL_MAX_WORK:
+    if len(gt_ev) > _AFFIL_MAX_EVENTS or len(pr_ev) > _AFFIL_MAX_EVENTS:
         return float("nan"), float("nan"), float("nan")
     try:
         Trange = (0, int(np.asarray(gt).size))
