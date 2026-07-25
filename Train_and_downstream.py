@@ -2833,7 +2833,21 @@ def run_softclt(
             cls_train = _mk("train"); cls_val = _mk("val"); cls_test = _mk("test")
             n_classes = cls_train.dataset.n_classes
         args.path_num = "best"
-        cls_acc = dino_main.train_classification(args, cls_train, cls_val, cls_test, n_classes)
+        # train_classification (DINO main.py) does `from models.patchTST import PatchTST`.
+        # SoftCLT has pushed its own `models`/`utils` to the front of sys.path/modules,
+        # so force TSDiNO's dir to sys.path[0] and evict the shadowing modules for the
+        # call, then restore (mirrors the anomaly branch below).
+        _saved_path = list(_sys.path)
+        _evict = ("models", "utils")
+        _saved_mods = {k: _sys.modules.pop(k) for k in list(_sys.modules)
+                       if k in _evict or any(k.startswith(p + ".") for p in _evict)}
+        _sys.path.insert(0, str(dino_dir))
+        try:
+            cls_acc = dino_main.train_classification(args, cls_train, cls_val, cls_test, n_classes)
+        finally:
+            _sys.path[:] = _saved_path
+            for _k, _v in _saved_mods.items():
+                _sys.modules.setdefault(_k, _v)
         print(f"\n{'='*60}")
         print(f"  [SoftCLT] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
