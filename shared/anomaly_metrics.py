@@ -42,27 +42,18 @@ def _prf(tp, fp, fn):
 
 # ── point adjustment (Xu et al. 2018) ────────────────────────────────────────
 def adjustment(gt, pred):
-    """Point-adjust ``pred`` in place-safe copy; returns (gt, adjusted_pred)."""
-    gt = np.asarray(gt).astype(int).copy()
-    pred = np.asarray(pred).astype(int).copy()
-    anomaly_state = False
-    for i in range(len(gt)):
-        if gt[i] == 1 and pred[i] == 1 and not anomaly_state:
-            anomaly_state = True
-            for j in range(i, 0, -1):
-                if gt[j] == 0:
-                    break
-                if pred[j] == 0:
-                    pred[j] = 1
-            for j in range(i, len(gt)):
-                if gt[j] == 0:
-                    break
-                if pred[j] == 0:
-                    pred[j] = 1
-        elif gt[i] == 0:
-            anomaly_state = False
-        if anomaly_state:
-            pred[i] = 1
+    """Point-adjust ``pred``; returns (gt, adjusted_pred).
+
+    Vectorised equivalent of the Xu et al. (2018) rule: any ground-truth event
+    that contains at least one detected point is credited as fully detected.
+    O(sum of GT-event lengths) via numpy slicing instead of a Python loop over
+    every timestep (which is intractable for large flattened arrays, e.g. SWaT).
+    """
+    gt = np.asarray(gt).astype(int).ravel()
+    pred = np.asarray(pred).astype(int).ravel().copy()
+    for s, e in events(gt):
+        if pred[s:e].any():
+            pred[s:e] = 1
     return gt, pred
 
 
@@ -76,19 +67,42 @@ def pointwise_prf(gt, pred):
 
 
 # ── event-wise (segment) F1 ──────────────────────────────────────────────────
+def _starts_ends(ev):
+    """Sorted start/end arrays from an event list (events() is already sorted)."""
+    if not ev:
+        return np.empty(0, int), np.empty(0, int)
+    s = np.fromiter((a[0] for a in ev), int, len(ev))
+    e = np.fromiter((a[1] for a in ev), int, len(ev))
+    return s, e
+
+
+def _overlap_exists(A_s, A_e, b_s, b_e):
+    """For each query interval [b_s[i], b_e[i]), does any A event overlap it?
+    A events are sorted & non-overlapping → overlap iff some A has end > b_s and
+    start < b_e, a contiguous slice found by searchsorted. Fully vectorised."""
+    if A_s.size == 0:
+        return np.zeros(len(b_s), dtype=bool)
+    lo = np.searchsorted(A_e, b_s, side="right")   # first A with end > b_s
+    hi = np.searchsorted(A_s, b_e, side="left")    # first A with start >= b_e
+    return lo < hi
+
+
 def event_wise_prf(gt, pred):
     """A GT event is a true positive if ANY predicted point overlaps it (else a
     false negative); a predicted event overlapping no GT event is a false
-    positive. No point adjustment, no per-point double counting."""
+    positive. No point adjustment, no per-point double counting.
+
+    Vectorised via searchsorted interval sweeps — O((|R|+|P|)·log) instead of the
+    O(|R|·|P|) nested scan, which is intractable when predictions fragment into
+    hundreds of thousands of events (SWaT)."""
     gt_ev = events(gt)
     pr_ev = events(pred)
+    G_s, G_e = _starts_ends(gt_ev)
+    P_s, P_e = _starts_ends(pr_ev)
 
-    def ov(a, b):
-        return a[0] < b[1] and b[0] < a[1]
-
-    tp = sum(1 for g in gt_ev if any(ov(g, p) for p in pr_ev))
+    tp = int(np.count_nonzero(_overlap_exists(P_s, P_e, G_s, G_e))) if gt_ev else 0
     fn = len(gt_ev) - tp
-    fp = sum(1 for p in pr_ev if not any(ov(p, g) for g in gt_ev))
+    fp = int(np.count_nonzero(~_overlap_exists(G_s, G_e, P_s, P_e))) if pr_ev else 0
     return _prf(tp, fp, fn)
 
 
@@ -99,40 +113,38 @@ def range_based_prf(gt, pred, alpha=0.0):
     overlap). Precision has no existence term (alpha applies to recall only)."""
     R = events(gt)
     P = events(pred)
+    R_s, R_e = _starts_ends(R)
+    P_s, P_e = _starts_ends(P)
 
-    def inter(a, b):
-        return max(0, min(a[1], b[1]) - max(a[0], b[0]))
-
-    def length(a):
-        return a[1] - a[0]
-
-    # recall over real ranges
-    if len(R) == 0:
-        rec = 0.0
-    else:
+    def _score(Q_s, Q_e, A_s, A_e, with_existence):
+        """Mean over query ranges Q of reciprocal-cardinality overlap with A
+        ranges (plus optional existence reward). searchsorted finds the
+        contiguous A slice overlapping each Q; intersections are vectorised."""
+        if Q_s.size == 0:
+            return 0.0
         tot = 0.0
-        for Ri in R:
-            hit = [Pj for Pj in P if inter(Ri, Pj) > 0]
-            existence = 1.0 if hit else 0.0
-            if hit:
-                card = 1.0 if len(hit) == 1 else 1.0 / len(hit)
-                overlap = card * sum(inter(Ri, Pj) / length(Ri) for Pj in hit)
+        for qs, qe in zip(Q_s.tolist(), Q_e.tolist()):
+            Ln = qe - qs
+            if A_s.size:
+                lo = np.searchsorted(A_e, qs, side="right")
+                hi = np.searchsorted(A_s, qe, side="left")
+            else:
+                lo = hi = 0
+            k = hi - lo
+            if k > 0:
+                inter = np.minimum(qe, A_e[lo:hi]) - np.maximum(qs, A_s[lo:hi])
+                inter = inter[inter > 0]
+                card = 1.0 if k == 1 else 1.0 / k
+                overlap = card * float(inter.sum()) / Ln
+                existence = 1.0
             else:
                 overlap = 0.0
-            tot += alpha * existence + (1 - alpha) * overlap
-        rec = tot / len(R)
+                existence = 0.0
+            tot += (alpha * existence + (1 - alpha) * overlap) if with_existence else overlap
+        return tot / len(Q_s)
 
-    # precision over predicted ranges
-    if len(P) == 0:
-        prec = 0.0
-    else:
-        tot = 0.0
-        for Pi in P:
-            hit = [Rj for Rj in R if inter(Pi, Rj) > 0]
-            if hit:
-                card = 1.0 if len(hit) == 1 else 1.0 / len(hit)
-                tot += card * sum(inter(Pi, Rj) / length(Pi) for Rj in hit)
-        prec = tot / len(P)
+    rec  = _score(R_s, R_e, P_s, P_e, with_existence=True)    # existence reward on recall only
+    prec = _score(P_s, P_e, R_s, R_e, with_existence=False)
 
     f = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
     return float(prec), float(rec), float(f)
@@ -149,21 +161,31 @@ except Exception as _e:            # not vendored / not installed
     _AFFIL_ERR = str(_e)
 
 
+# The vendored affiliation_partition is O(|gt_ev| * |pred_ev|) pure Python, so it
+# explodes when predictions fragment into hundreds of thousands of events on the
+# stride-1 flattened arrays. Cap the work so compute_all can never hang; above the
+# cap affiliation is reported as NaN (intractable for the reference implementation).
+_AFFIL_MAX_WORK = 10_000_000
+
+
 def affiliation_prf(gt, pred):
     """Affiliation-based precision/recall/F1 via the reference `affiliation`
-    package. Returns (nan, nan, nan) if the package isn't importable, or if
-    there are no ground-truth or no predicted events (affiliation is undefined
-    for an empty event set)."""
+    package. Returns (nan, nan, nan) if the package isn't importable, if there are
+    no ground-truth / no predicted events, or if the event counts make the
+    reference implementation intractable (see _AFFIL_MAX_WORK)."""
     if not _HAVE_AFFIL:
         return float("nan"), float("nan"), float("nan")
-    gt = np.asarray(gt).astype(int).tolist()
-    pred = np.asarray(pred).astype(int).tolist()
+    # events() yields [start, end_exclusive) int tuples — exactly the affiliation
+    # convention (a 1 at index i → interval [i, i+1)). Build from numpy (fast)
+    # instead of a 48M-element .tolist()+convert_vector_to_events scan every call.
+    gt_ev = [(int(s), int(e)) for s, e in events(gt)]
+    pr_ev = [(int(s), int(e)) for s, e in events(pred)]
+    if len(gt_ev) == 0 or len(pr_ev) == 0:
+        return float("nan"), float("nan"), float("nan")
+    if len(gt_ev) * len(pr_ev) > _AFFIL_MAX_WORK:
+        return float("nan"), float("nan"), float("nan")
     try:
-        gt_ev = convert_vector_to_events(gt)
-        pr_ev = convert_vector_to_events(pred)
-        if len(gt_ev) == 0 or len(pr_ev) == 0:
-            return float("nan"), float("nan"), float("nan")
-        Trange = (0, len(gt))
+        Trange = (0, int(np.asarray(gt).size))
         res = pr_from_events(pr_ev, gt_ev, Trange)
         p = float(res["precision"])
         r = float(res["recall"])

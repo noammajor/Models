@@ -530,10 +530,10 @@ def run_dino(skip_train: bool = False,
         p_s      = args.patch_len
         anom_train = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
         anom_test  = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
 
         args.path_num = best_ckpt if best_ckpt is not None else 0
         anom_result = _anom_mod.anomaly_detection(
@@ -895,10 +895,10 @@ def run_jepa(skip_train: bool = False,
         p_s      = config["patch_size_forcasting"]
         anom_train = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
         anom_test  = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
         ckpt_tag   = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
         anom_result = model.anomaly_detection(ckpt_tag, anom_train, anom_test,
                                               anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, config),
@@ -1166,10 +1166,10 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
         p_s      = cfg.get("patch_len", 16)
         anom_train = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
         anom_test  = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
         anom_result = ptst_anomaly(cfg, pretrained_model_path, anom_train, anom_test,
                                    anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg),
                                    linear_probe=linear_probe,
@@ -1376,10 +1376,10 @@ def run_ntp(skip_train: bool = False, synthetic_data_dir: str = None, pretrain_d
         p_s      = cfg["patch_size"]
         anom_train = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
         anom_test  = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
         anom_result = ntp_anomaly(cfg, _ckpt_path, anom_train, anom_test,
                                   anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg),
                                   linear_probe=linear_probe,
@@ -1711,10 +1711,10 @@ def run_lejepa(skip_train: bool = False,
         p_s      = config["patch_size_forcasting"]
         anom_train = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
         anom_test  = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
         ckpt_tag    = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
         anom_result = model.anomaly_detection(ckpt_tag, anom_train, anom_test,
                                               anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, config),
@@ -2069,10 +2069,10 @@ def run_hybrid(skip_train: bool = False,
         p_s      = config["patch_size_forcasting"]
         anom_train = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
         anom_test  = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
         ckpt_tag    = f"_epoch{best_ckpt}" if best_ckpt is not None else ""
         anom_result = model.anomaly_detection(ckpt_tag, anom_train, anom_test,
                                               anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, config),
@@ -2515,10 +2515,10 @@ def run_timedart(skip_train: bool = False,
         p_s      = cfg.get("patch_len", 16)
         anom_train = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
         anom_test  = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
         anom_result = timedart_anomaly(cfg, str(ckpt_file), anom_train, anom_test,
                                        anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, cfg),
                                        linear_probe=linear_probe,
@@ -2842,9 +2842,24 @@ def run_softclt(
     # ── Anomaly detection downstream ──────────────────────────────────────────
     anom_result = None
     if anomaly_dataset is not None:
-        _anom_spec = _ilu.spec_from_file_location("tsdino_anomaly", dino_dir / "Anomaly.py")
-        _anom_mod  = _ilu.module_from_spec(_anom_spec)
-        _anom_spec.loader.exec_module(_anom_mod)
+        # TSDiNO/Anomaly.py does `from models.patchTST import PatchTST` at import
+        # time. SoftCLT has already put its own top-level `models` package on
+        # sys.modules, which shadows TSDiNO's. Force TSDiNO's dir to sys.path[0]
+        # and evict the conflicting `models` module during exec, then restore.
+        import sys as _sys
+        _saved_path   = list(_sys.path)
+        _evict = ("models", "utils")
+        _saved_models = {k: _sys.modules.pop(k) for k in list(_sys.modules)
+                         if k in _evict or any(k.startswith(p + ".") for p in _evict)}
+        _sys.path.insert(0, str(dino_dir))
+        try:
+            _anom_spec = _ilu.spec_from_file_location("tsdino_anomaly", dino_dir / "Anomaly.py")
+            _anom_mod  = _ilu.module_from_spec(_anom_spec)
+            _anom_spec.loader.exec_module(_anom_mod)
+        finally:
+            _sys.path[:] = _saved_path
+            for _k, _v in _saved_models.items():
+                _sys.modules.setdefault(_k, _v)
 
         from data_loaders.data_puller import AnomalyDataPuller
         anom_dir = cfg["anomaly_data_dir"]
@@ -2852,10 +2867,10 @@ def run_softclt(
         p_s      = cfg['patch_len']
         anom_train = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="train"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
         anom_test  = torch.utils.data.DataLoader(
             AnomalyDataPuller(anom_dir, anomaly_dataset, p_s, which="test"),
-            batch_size=anom_bs, shuffle=False)
+            batch_size=max(anom_bs, 512), shuffle=False, num_workers=6, pin_memory=True)
         args.path_num = "best"
         anom_result = _anom_mod.anomaly_detection(
             args, args.path_num, anom_train, anom_test,
