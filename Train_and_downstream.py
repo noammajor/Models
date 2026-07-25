@@ -2606,10 +2606,25 @@ def run_softclt(
     _sys.modules["config"] = _cfg_mod
 
     _sys.modules.pop("main", None)
-    _main_spec = _ilu.spec_from_file_location("_dino_main", dino_dir / "main.py")
-    dino_main  = _ilu.module_from_spec(_main_spec)
-    _sys.modules["main"] = dino_main
-    _main_spec.loader.exec_module(dino_main)
+    # main.py does `from models.patchTST import PatchTST` at import time. On repeat
+    # calls (classification loops datasets in one process) SoftCLT has already pushed
+    # its own models/utils to the front of sys.path/modules, so this exec would
+    # resolve SoftCLT's `models` (no patchTST) and fail. Force TSDiNO's dir to
+    # sys.path[0] and evict the shadowing modules for the exec, then restore.
+    _saved_path0 = list(_sys.path)
+    _evict0 = ("models", "utils")
+    _saved_mods0 = {k: _sys.modules.pop(k) for k in list(_sys.modules)
+                    if k in _evict0 or any(k.startswith(p + ".") for p in _evict0)}
+    _sys.path.insert(0, str(dino_dir))
+    try:
+        _main_spec = _ilu.spec_from_file_location("_dino_main", dino_dir / "main.py")
+        dino_main  = _ilu.module_from_spec(_main_spec)
+        _sys.modules["main"] = dino_main
+        _main_spec.loader.exec_module(dino_main)
+    finally:
+        _sys.path[:] = _saved_path0
+        for _k, _v in _saved_mods0.items():
+            _sys.modules.setdefault(_k, _v)
 
     # TSDiNO and SoftCLT both define top-level `utils` and `models` packages.
     # TSDiNO's just won (it is earlier on sys.path), so drop those cached modules
