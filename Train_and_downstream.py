@@ -108,16 +108,25 @@ def _synth_dir_tag(synthetic_data_dir):
     the default dir, so it's a no-op for every existing run.
     e.g. '/…/synthetic_data_TS_monashsize' -> '_monashsize'.
     """
-    if not synthetic_data_dir:
-        return ''
-    base = os.path.basename(str(synthetic_data_dir).rstrip('/'))
-    default_base = os.path.basename(str(DATA_PATHS.get('synthetic_data_dir', '')).rstrip('/'))
-    if not base or base == default_base:
-        return ''
-    if default_base and base.startswith(default_base + '_'):
-        base = base[len(default_base) + 1:]        # 'synthetic_data_TS_monashsize' -> 'monashsize'
-    base = ''.join(c if c.isalnum() else '_' for c in base).strip('_')
-    return ('_' + base) if base else ''
+    tag = ''
+    if synthetic_data_dir:
+        base = os.path.basename(str(synthetic_data_dir).rstrip('/'))
+        default_base = os.path.basename(str(DATA_PATHS.get('synthetic_data_dir', '')).rstrip('/'))
+        if base and base != default_base:
+            if default_base and base.startswith(default_base + '_'):
+                base = base[len(default_base) + 1:]    # 'synthetic_data_TS_monashsize' -> 'monashsize'
+            base = ''.join(c if c.isalnum() else '_' for c in base).strip('_')
+            if base:
+                tag = '_' + base
+    # Optional checkpoint tag (set by run() from --ckpt_tag). Applies to EVERY source
+    # incl. Monash (where synthetic_data_dir is None), so a run can write to a separate
+    # checkpoint dir without overwriting existing ones.
+    _ct = os.environ.get('TS_CKPT_TAG', '')
+    if _ct:
+        _ct = ''.join(c if c.isalnum() else '_' for c in _ct).strip('_')
+        if _ct:
+            tag = f"{tag}_{_ct}"
+    return tag
 
 
 def _config_to_dino_args(cfg):
@@ -306,7 +315,7 @@ def run_dino(skip_train: bool = False,
         else:
             _src_tag = ''
         _outdim_tag = f"_outdim{dino_cfg['out_dim']}" if dino_cfg.get('out_dim') is not None else ''
-        _ckpt_tag = f"_{ckpt_tag}" if ckpt_tag else ''
+        _ckpt_tag = ''   # ckpt_tag now folded into _synth_tag via TS_CKPT_TAG (see _synth_dir_tag)
         _synth_tag = _synth_dir_tag(synthetic_data_dir)
         dino_cfg['output_dir'] = dino_cfg.get('output_dir', './checkpoints').rstrip('/') + f'{_src_tag}{_synth_tag}_layers{encoder_layers}{_outdim_tag}{_ckpt_tag}' + _SEED_TAG
     if num_patches is not None:
@@ -2985,6 +2994,11 @@ def run(model: str,
         run(model="jepa", skip_train=False)
         run(model="jepa", pretrain_only=True)
     """
+    # Propagate --ckpt_tag to _synth_dir_tag (used by every runner's checkpoint
+    # path) via env, so it works for ALL models/sources — incl. Monash — without
+    # threading the arg through each runner signature.
+    os.environ['TS_CKPT_TAG'] = str(ckpt_tag) if ckpt_tag else ''
+
     # ── resolve task → old flags (backwards compat) ───────────────────────────
     classification_only = False
     if task is not None:
