@@ -160,7 +160,7 @@ config = {
          "contrast_range": (0.6, 1.4), "brightness_range": (-0.2, 0.2), "jitter_range": (0.0, 0.1)},
     ],
     "local_crops": [
-        {"type": "gaussiancrop", "crop_ratio": 0.4, "count": 8, "std_range": (0.05, 0.2)},
+        {"type": "gaussiancrop", "crop_ratio": 0.4, "count": 6, "std_range": (0.05, 0.2)},
     ],
 
     # ── Patch reconstruction (MAE-style auxiliary loss) ────────────────────────
