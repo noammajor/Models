@@ -255,11 +255,19 @@ class MonashDataPuller(Dataset):
 
     def __init__(self, data_dir, split='train', transform=None,
                  batch_size=32, patch_size=12, step_size=12,
-                 min_len=512, val_prec=0.1, test_prec=0.1):
+                 min_len=512, val_prec=0.1, test_prec=0.1, share_from=None):
         self.window_size = (batch_size - 1) * step_size + patch_size
         self.step_size   = step_size
         self.transform   = transform
         self.which       = split
+
+        # `_load_all` already builds all three splits in one pass, so a second
+        # split (e.g. 'val') can reuse an already-parsed instance instead of
+        # re-reading every .tsf from disk. Pass share_from=<train puller>.
+        if share_from is not None:
+            self._series = share_from._series
+            self._index  = share_from._index
+            return
 
         self._series = {'train': [], 'val': [], 'test': []}
         self._index  = {'train': [], 'val': [], 'test': []}

@@ -79,6 +79,7 @@ def train_TS_DINO(args):
         print("Using Monash dataset for DINO pretraining")
         combined_dataset = dpuller.MonashDataPuller(
             data_dir = cfg['monash_data_dir'], **_shared_kwargs)
+        _monash_train_puller = combined_dataset   # keep for val reuse (survives ConcatDataset wrap)
         if _pretrain_source == 'monash+synthetic':
             print("Using Monash + Synthetic (mix) datasets for DINO pretraining")
             _mix_dir = cfg.get('synthetic_mix_data_dir', cfg['synthetic_data_dir'])
@@ -134,7 +135,10 @@ def train_TS_DINO(args):
     # ── val dataset (same source, split='val') ────────────────────────────────
     _val_kwargs = dict(_shared_kwargs, split='val')
     if _pretrain_source in ('monash', 'monash+synthetic'):
-        val_dataset = dpuller.MonashDataPuller(data_dir=cfg['monash_data_dir'], **_val_kwargs)
+        # Reuse the already-parsed train puller (holds all 3 splits) — avoids a
+        # second full re-read of every .tsf from disk.
+        val_dataset = dpuller.MonashDataPuller(
+            data_dir=cfg['monash_data_dir'], **_val_kwargs, share_from=_monash_train_puller)
         if _pretrain_source == 'monash+synthetic':
             _val_synth_kwargs = dict(_val_kwargs, window_step=cfg.get('window_step', None))
             syn_val = dpuller.SyntheticArrowDataPuller(data_dir=cfg['synthetic_data_dir'], **_val_synth_kwargs)

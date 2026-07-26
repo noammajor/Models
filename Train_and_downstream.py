@@ -328,12 +328,14 @@ def run_dino(skip_train: bool = False,
     if warmup_epochs is not None:
         dino_cfg['warmup_epochs'] = warmup_epochs
     if step_size is not None:
-        # Override patch stride, recomputing num_patches to hold the context
-        # window constant: window = (num_patches-1)*step_size + patch_len.
         _patch_len = dino_cfg.get('patch_len', 16)
-        _window = (dino_cfg.get('num_patches', 21) - 1) * dino_cfg.get('step_size', _patch_len) + _patch_len
+        # If the caller pinned num_patches this call, honor both literally
+        # (window = (num_patches-1)*step_size + patch_len). Only when num_patches
+        # was NOT given do we rescale it to hold the prior context window constant.
+        if num_patches is None:
+            _window = (dino_cfg.get('num_patches', 21) - 1) * dino_cfg.get('step_size', _patch_len) + _patch_len
+            dino_cfg['num_patches'] = (_window - _patch_len) // step_size + 1
         dino_cfg['step_size'] = step_size
-        dino_cfg['num_patches'] = (_window - _patch_len) // step_size + 1
     if koleo_weight is not None:
         dino_cfg['koleo_weight'] = koleo_weight
     if aug_global is not None:
