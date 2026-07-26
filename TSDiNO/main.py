@@ -26,9 +26,31 @@ import matplotlib.pyplot as plt
 from torch.utils.data import ConcatDataset
 
 
+def _expand_crop_specs(specs):
+    """Expand crop specs so you can set the *number* of global/local crops without
+    repeating dict entries: each spec may carry an optional integer ``count``
+    (default 1), replicating that view that many times.
+
+    e.g. ``{"type": "gaussiancrop", "crop_ratio": 0.5, "count": 6}`` → 6 local crops.
+    """
+    out = []
+    for s in specs:
+        n = max(1, int(s.get('count', 1)))
+        base = {k: v for k, v in s.items() if k != 'count'}
+        out.extend(dict(base) for _ in range(n))
+    return out
+
+
 def train_TS_DINO(args):
     utils.init_distributed_mode(args)
     utils.fix_random_seeds(args.seed)
+
+    # Expand crop 'count' fields once so every downstream len(cfg['global_crops'])
+    # / len(cfg['local_crops']) and the transform builder see the full crop set.
+    if not cfg.get('_crops_expanded'):
+        cfg['global_crops'] = _expand_crop_specs(cfg['global_crops'])
+        cfg['local_crops']  = _expand_crop_specs(cfg['local_crops'])
+        cfg['_crops_expanded'] = True
     #print("git:\n  {}\n".format(utils.get_sha()))
     #print("\n".join("%s: %s" % (k, str(v)) for k, v in sorted(dict(vars(args)).items())))
     #cudnn.benchmark = True
@@ -357,6 +379,30 @@ def train_TS_DINO(args):
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
 
+class KoLeoLoss(nn.Module):
+    """Kozachenko-Leonenko differential-entropy regularizer (DINOv2).
+
+    Encourages a uniform spread of features within the batch by maximizing the
+    distance to each sample's nearest neighbor. Operates on L2-normalized
+    embeddings; runs in fp32 for numerical stability.
+    """
+    def __init__(self):
+        super().__init__()
+        self.pdist = nn.PairwiseDistance(2, eps=1e-8)
+
+    def forward(self, x, eps=1e-8):
+        # x: [N, d] backbone features
+        with torch.cuda.amp.autocast(enabled=False):
+            x = F.normalize(x.float(), eps=eps, p=2, dim=-1)
+            dots = torch.mm(x, x.t())
+            n = x.shape[0]
+            dots.view(-1)[:: (n + 1)].fill_(-1)          # mask self-similarity
+            nn_idx = torch.max(dots, dim=1)[1]            # nearest neighbor per row
+            distances = self.pdist(x, x[nn_idx])          # NN distances
+            loss = -torch.log(distances + eps).mean()
+        return loss
+
+
 def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loader, optimizer, epoch, fp16_scaler, lr_schedule, wd_schedule, momentum_schedule, args, student_recon=None, teacher_recon_decoder=None):
     student_without_ddp = student.module if hasattr(student, 'module') else student
     student.train()
@@ -371,6 +417,8 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
     n_global = len(cfg['global_crops'])
     n_dino   = n_global + len(cfg['local_crops'])
     recon_loss_weight = cfg.get('recon_loss_weight', 0.5)
+    koleo_weight = cfg.get('koleo_weight', 0.0)
+    koleo_reg = KoLeoLoss() if koleo_weight > 0 else None
     for it, batch in enumerate(metric_logger.log_every(data_loader, 10, header)):
         samples = batch
         samples = [s.to(device, non_blocking=True) for s in samples]
@@ -389,6 +437,15 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
             teacher_output = teacher(dino_samples[:n_global])
             student_output = student(dino_samples)
             loss = dino_loss(student_output, teacher_output, epoch)
+
+            # ── KoLeo regularizer on student global-crop CLS features ───────────
+            if koleo_reg is not None:
+                feat = student_without_ddp.backbone_feat   # [n_dino*bs*nvars, d_model]
+                _per_crop = feat.shape[0] // n_dino
+                global_feat = feat[: n_global * _per_crop]  # global crops only
+                koleo = koleo_reg(global_feat)
+                loss = loss + koleo_weight * koleo
+                metric_logger.update(koleo=koleo.item())
 
             # ── Reconstruction loss (MAE-style, original data only) ────────────
             if use_recon_this:
@@ -543,6 +600,10 @@ class DataAugmentationDino:
         'lorentz':          aug.lorentz_transformation,
         'hyperbolic_warp':  aug.hyperbolic_amplitude_warp,
         'hyperbolic_geom':  aug.HyperBolicGeometry,
+        'gaussian_blur':    aug.gaussian_blur,
+        'gaussian_noise':   aug.gaussian_noise,
+        'gaussiancrop':     aug.gaussiancrop,
+        'jitter_contrast':  aug.jitter_contrast,
     }
 
     def _build_transforms(self, all_specs, dwt_cfg):
@@ -584,6 +645,15 @@ class DataAugmentationDino:
                         kwargs['warp_range']     = spec.get('warp_range',     dwt_cfg.get('hyperbolic_warp_range',  (0.5, 1.5)))
                     elif t == 'hyperbolic_geom':
                         kwargs['shift_magnitude']= spec.get('shift_magnitude',dwt_cfg.get('hyperbolic_shift_magnitude', 0.3))
+                    elif t == 'gaussian_blur':
+                        kwargs['sigma_range']    = spec.get('sigma_range',    dwt_cfg.get('gaussian_blur_sigma_range', (0.1, 2.0)))
+                        kwargs['truncate']       = spec.get('truncate',       dwt_cfg.get('gaussian_blur_truncate',    3.0))
+                    elif t in ('gaussian_noise', 'gaussiancrop'):
+                        kwargs['std_range']      = spec.get('std_range',      dwt_cfg.get('gaussian_noise_std_range',  (0.05, 0.2)))
+                    elif t == 'jitter_contrast':
+                        kwargs['jitter_range']     = spec.get('jitter_range',     dwt_cfg.get('jitter_range',     (0.0, 0.1)))
+                        kwargs['contrast_range']   = spec.get('contrast_range',   dwt_cfg.get('contrast_range',   (0.7, 1.3)))
+                        kwargs['brightness_range'] = spec.get('brightness_range', dwt_cfg.get('brightness_range', (-0.2, 0.2)))
                     per_type[t] = cls(**kwargs)
                 else:
                     raise ValueError(f"Unknown augmentation type '{t}'. DWT types must start with 'dwt_'. "

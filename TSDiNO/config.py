@@ -111,6 +111,11 @@ config = {
     # Each entry is a dict:
     #   "type"       str | list[str]  – if list, one is drawn at random per sample
     #   "crop_ratio" float            – fraction of seq_len to keep (1.0 = no crop)
+    #   "count"      int (optional)   – replicate this view N times (default 1).
+    #                                   Lets you set the NUMBER of global/local crops
+    #                                   without repeating the dict, e.g. DINO's many
+    #                                   local crops: {"type": "gaussiancrop",
+    #                                   "crop_ratio": 0.5, "count": 6}.
     #   Per-crop param overrides are also accepted (e.g. "v_range", "zero_out_ratio").
     #
     # ── Available aug types ───────────────────────────────────────────────────
@@ -131,6 +136,13 @@ config = {
     #   "boost"            — additive linear time trend.  Override: b_range
     #   "hyperbolic_warp"  — tanh amplitude warp.         Override: warp_range
     #   "hyperbolic_geom"  — Poincaré-disk Möbius shift.  Override: shift_magnitude
+    #
+    #  Vision-style types (1D adaptations):
+    #   "gaussian_blur"    — Gaussian smoothing along time. Overrides: sigma_range, truncate
+    #   "gaussian_noise"   — additive N(0,std^2) noise.      Override: std_range
+    #   "gaussiancrop"     — random crop (crop_ratio) + additive noise. Override: std_range
+    #   "jitter_contrast"  — contrast/brightness/jitter.     Overrides: jitter_range,
+    #                        contrast_range, brightness_range
     #
     # ─────────────────────────────────────────────────────────────────────────
 
