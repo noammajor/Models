@@ -146,14 +146,21 @@ config = {
     #
     # ─────────────────────────────────────────────────────────────────────────
 
-    # ── Teacher view (global crop) ────────────────────────────────────────────
+    # ── Classic DINO (vision-style) multi-crop ────────────────────────────────
+    # 2 global crops (teacher + student) + 8 small local crops (student only),
+    # mirroring Caron et al. 2021: global view 1 = strong Gaussian blur, global
+    # view 2 = colour-jitter analog; local crops = short sub-windows + noise.
+    #
+    # To revert to the DWT recipe, swap these two back to:
+    #   "global_crops": [{"type": "dwt_soft_threshold", "crop_ratio": 1.0}],
+    #   "local_crops":  [{"type": "dwt_high_perturb",   "crop_ratio": 1.0}],
     "global_crops": [
-        {"type": "dwt_soft_threshold", "crop_ratio": 1.0},
+        {"type": "gaussian_blur",   "crop_ratio": 1.0, "sigma_range": (0.5, 2.0)},
+        {"type": "jitter_contrast", "crop_ratio": 1.0,
+         "contrast_range": (0.6, 1.4), "brightness_range": (-0.2, 0.2), "jitter_range": (0.0, 0.1)},
     ],
-
-    # ── Student view (local crop) ─────────────────────────────────────────────
     "local_crops": [
-        {"type": "dwt_high_perturb", "crop_ratio": 1.0},
+        {"type": "gaussiancrop", "crop_ratio": 0.4, "count": 8, "std_range": (0.05, 0.2)},
     ],
 
     # ── Patch reconstruction (MAE-style auxiliary loss) ────────────────────────
