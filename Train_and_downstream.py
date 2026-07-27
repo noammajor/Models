@@ -3161,6 +3161,8 @@ if __name__ == "__main__":
                         help="Override number of forecasting fine-tune epochs (DINO)")
     parser.add_argument("--checkpoints", nargs="+", default=None,
                         help="Checkpoint epochs to evaluate during forecasting, e.g. --checkpoints 1 3 5 10 best")
+    parser.add_argument("--pred_lens", nargs="+", type=int, default=None,
+                        help="Forecast horizons to run (default 96 192 336 720). e.g. --pred_lens 720")
     parser.add_argument("--seed",             type=int,   default=None,
                         help="Random seed (also suffixes checkpoint paths with _seedN)")
     parser.add_argument("--pretrain_cls_model", type=str, default="false",
@@ -3215,4 +3217,5 @@ if __name__ == "__main__":
         phi=args.phi,
         synthetic_data_dir=args.synthetic_data_dir,
         dwt_wavelet_pool=args.dwt_wavelet_pool,
+        pred_lens=args.pred_lens,
         dwt_wavelet=args.dwt_wavelet)
