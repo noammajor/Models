@@ -927,7 +927,8 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
                  checkpoints=None, random_encoder: bool = False, encoder_layers: int = None,
                  predictor_layers: int = None, lr: float = None, pretrain_source: str = None,
                  num_patches: int = None, seed: int = None, linear_probe: bool = True,
-                 head_type: str = "linear", embed_dim: int = None, epochs: int = None):
+                 head_type: str = "linear", embed_dim: int = None, epochs: int = None,
+                 step_size: int = None):
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
     patchtst_dir = Path(__file__).parent / "PatchTST_self_supervised"
@@ -954,6 +955,8 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
         cfg['d_model'] = embed_dim
     if num_patches is not None:
         cfg['context_points'] = num_patches * cfg.get('patch_len', 16)
+    if step_size is not None:
+        cfg['stride'] = step_size   # drives both the checkpoint filename (…_stride{N}…) and the encoder patching
 
     pretrain_source = _resolve_pretrain_source(cfg)
     _pretrain_dset  = pretrain_dataset or cfg.get("pretrain_dataset", "ettm1")
