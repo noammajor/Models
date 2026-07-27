@@ -2202,7 +2202,7 @@ def run_timedart(skip_train: bool = False,
 
     _pretrain_src = _resolve_pretrain_source(cfg)
     _src_tag = f"_{_pretrain_src.replace('+', '_')}" if _pretrain_src else (f"_{pretrain_dataset}" if pretrain_dataset else '')
-    ckpt_dir  = Path(__file__).parent / f"outputs/timedart_pretrain{_src_tag}{_synth_tag}_layers{cfg['e_layers']}"
+    ckpt_dir  = Path(__file__).parent / f"outputs/timedart_pretrain{_src_tag}{_synth_tag}_layers{cfg['e_layers']}{_SEED_TAG}"
     ckpt_file     = ckpt_dir / ("monash" + _src_tag) / "ckpt_best.pth"
     cls_ckpt_file = ckpt_dir / "monash_cls" / "ckpt_best.pth"
 
@@ -2685,7 +2685,7 @@ def run_softclt(
         # Tag the context window too when it was overridden, so a 1152-ts
         # classification encoder doesn't overwrite the 336-ts forecasting one.
         _cw_tag = f"_cw{cfg['patch_len'] * cfg['num_patches']}" if num_patches is not None else ''
-        cfg['output_dir'] = cfg.get('output_dir', './checkpoints_softclt').rstrip('/') + _src_tag + _synth_tag + _lay_tag + _cw_tag
+        cfg['output_dir'] = cfg.get('output_dir', './checkpoints_softclt').rstrip('/') + _src_tag + _synth_tag + _lay_tag + _cw_tag + _SEED_TAG
 
     if pretrain_only or classification_only or (anomaly_dataset is not None and forecast_dataset is None):
         forecast_dataset = None
