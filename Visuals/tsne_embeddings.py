@@ -750,11 +750,16 @@ CLASS_NAMES = {
 def _class_label(ds_name: str, cls_id: int, class_names=None) -> str:
     """Resolve cls_id → human-readable label via the dataset's class_names list."""
     mapping = CLASS_NAMES.get(ds_name)
-    if mapping is not None and class_names is not None \
-            and 0 <= int(cls_id) < len(class_names):
-        raw = str(class_names[int(cls_id)])
-        if raw in mapping:
-            return mapping[raw]
+    if mapping is not None:
+        # 1) via the raw label string, when the loader exposes class_names
+        if class_names is not None and 0 <= int(cls_id) < len(class_names):
+            raw = str(class_names[int(cls_id)])
+            if raw in mapping:
+                return mapping[raw]
+        # 2) fallback: map by class index (0-indexed cls_id, or 1-indexed key)
+        for key in (str(int(cls_id)), str(int(cls_id) + 1)):
+            if key in mapping:
+                return mapping[key]
     return f"Class {int(cls_id)}"
 
 
