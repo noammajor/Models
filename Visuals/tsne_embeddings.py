@@ -714,6 +714,7 @@ MODEL_DISPLAY = {
     "patchtst":    "MAE",
     "ntp":         "NTP",
     "timedart":    "Diffusion",
+    "softclt":     "SoftCLT",
 }
 
 # Human-readable class labels keyed by the dataset's RAW label string
@@ -773,7 +774,7 @@ def plot_combined(all_results: dict, output_dir: Path, datasets: list,
     })
 
     n_cols = 3
-    n_rows = 2  # always 2 rows of 3
+    n_rows = max(1, -(-len(models) // n_cols))  # ceil(len(models)/n_cols) — fits all models
 
     for ds_name in datasets:
         fig, axes = plt.subplots(n_rows, n_cols,
