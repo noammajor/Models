@@ -733,6 +733,17 @@ CLASS_NAMES = {
         "9":  '8 ("Thamaniya")',
         "10": '9 ("Tis\'a")',
     },
+    # UWaveGestureLibrary: 8 gestures in the uWave vocabulary (raw labels 1..8).
+    "UWaveGestureLibrary": {
+        "1": "Gesture 1",
+        "2": "Gesture 2",
+        "3": "Gesture 3",
+        "4": "Gesture 4",
+        "5": "Gesture 5",
+        "6": "Gesture 6",
+        "7": "Gesture 7",
+        "8": "Gesture 8",
+    },
 }
 
 
