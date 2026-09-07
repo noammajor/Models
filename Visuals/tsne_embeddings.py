@@ -34,7 +34,7 @@ PATCH_SIZE  = 16
 NUM_PATCHES = 72       # same as CLS_NUM_PATCHES in run_seed_analysis.py
 CW          = NUM_PATCHES * PATCH_SIZE  # 1152
 
-ALL_MODELS = ["dino", "jepa", "lejepa", "patchtst", "ntp", "timedart"]
+ALL_MODELS = ["dino", "jepa", "lejepa", "patchtst", "ntp", "timedart", "softclt"]
 
 DEFAULT_CLS_DIR = "/home/shared/datasets/Classification_TS"
 
@@ -152,22 +152,29 @@ def _ckpt_path(model: str, encoder_layers: int, seed: int, pretrain_source: str)
         cfg['n_layers']            = encoder_layers
         cfg['pretrained_model_id'] = encoder_layers
         cfg['context_points']      = NUM_PATCHES * cfg.get('patch_len', PATCH_SIZE)
-        n_ep    = cfg.get("n_epochs_pretrain", 10)
         ctx     = cfg.get("context_points", 512)
-        p_len   = cfg.get("patch_len", 12)
-        stride  = cfg.get("stride", 12)
-        m_ratio = cfg.get("mask_ratio", 0.4)
+        p_len   = cfg.get("patch_len", 16)
         m_id    = cfg.get("pretrained_model_id", 1)
-        fname   = (f"patchtst_pretrained_cw{ctx}_patch{p_len}_stride{stride}"
-                   f"_epochs-pretrain{n_ep}_mask{m_ratio}_model{m_id}.pth")
+        # classification backbone is saved at stride16 / epochs-pretrain20
+        fname   = (f"patchtst_pretrained_cw{ctx}_patch{p_len}_stride16"
+                   f"_epochs-pretrain20_mask0.4_model{m_id}.pth")
         mtype   = cfg.get("model_type", "based_model")
         return (patchtst_dir / "saved_models" / "classification" / src /
-                "masked_patchtst" / mtype / f"layers{encoder_layers}_cw{CW}" / fname)
+                "masked_patchtst" / mtype / f"layers{encoder_layers}_cw{CW}{_seed_tag}" / fname)
 
     if model == "timedart":
         cfg = _load_config(ROOT / "TimeDART-main" / "config_timedart.py")
+        if seed is not None:
+            # seeded backbone: outputs/timedart_pretrain_monash_layers8_seed{S}/monash_monash/ckpt_best.pth
+            return (ROOT / f"outputs/timedart_pretrain_{src.replace('+','_')}_layers{cfg['e_layers']}{_seed_tag}" /
+                    f"{src.replace('+','_')}_{src.replace('+','_')}" / "ckpt_best.pth")
         return (ROOT / f"outputs/timedart_pretrain{_src_tag}_layers{cfg['e_layers']}" /
                 f"monash{_src_tag}" / "ckpt_best.pth")
+
+    if model == "softclt":
+        return (ROOT /
+                f"checkpoints_softclt_{src.replace('+','_')}_layers{encoder_layers}_cw{CW}{_seed_tag}" /
+                "checkpoint_best.pth")
 
     raise ValueError(f"Unknown model: {model}")
 
@@ -593,6 +600,7 @@ _EXTRACTORS = {
     "lejepa":      _extract_lejepa,
     "ntp":         _extract_ntp,
     "patchtst":    _extract_patchtst,
+    "softclt":     _extract_patchtst,   # softclt backbone is a PatchTST encoder (state dict)
     "timedart":    _extract_timedart,
 }
 
@@ -856,6 +864,8 @@ def main():
                         choices=ALL_MODELS,  metavar="MODEL",
                         help="Models to plot (default: all)")
     parser.add_argument("--encoder_layers",  type=int, default=8)
+    parser.add_argument("--seed",            type=int, default=None,
+                        help="Seed-tagged backbone to load (e.g. 1337). Omit for the pooled/seedless checkpoint.")
     parser.add_argument("--pretrain_source", type=str, default="monash+synthetic",
                         choices=["monash", "synthetic", "monash+synthetic"])
     parser.add_argument("--cls_dir",         type=str, default=DEFAULT_CLS_DIR,
@@ -896,7 +906,7 @@ def main():
         print(f"  MODEL: {model_name}")
         print(f"{'='*60}")
 
-        ckpt = _ckpt_path(model_name, args.encoder_layers, None, args.pretrain_source)
+        ckpt = _ckpt_path(model_name, args.encoder_layers, args.seed, args.pretrain_source)
         print(f"  Checkpoint: {ckpt}")
 
         extractor      = _EXTRACTORS[model_name]
