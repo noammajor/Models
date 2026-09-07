@@ -141,6 +141,31 @@ def cosine_drift(zc: np.ndarray, zp: np.ndarray) -> float:
     return float(np.mean(1.0 - num / den))
 
 
+# Patch-token axis in each extractor's flattened embedding, so we can mean-pool over
+# patches (order-free) and remove the token-slot permutation effect from shift drift.
+#   last  : [.., P]         (dino/ntp/patchtst/timedart -> C*d_model*P)
+#   mid   : [C, P, E]       (jepa/lejepa -> C*P*embed_dim)
+#   first : [P, ..]         (softclt -> P*C*d_model)
+POOL_LAYOUT = {"dino":"last","ntp":"last","patchtst":"last","timedart":"last",
+               "jepa":"mid","lejepa":"mid","softclt":"first"}
+
+def mean_pool(emb: np.ndarray, model: str, C: int, P: int) -> np.ndarray:
+    """Mean over the P patch tokens -> order-free per-window vector."""
+    N, tot = emb.shape
+    layout = POOL_LAYOUT.get(model, "last")
+    try:
+        if layout == "last":
+            return emb.reshape(N, tot // P, P).mean(2)
+        if layout == "first":
+            return emb.reshape(N, P, tot // P).mean(1)
+        if layout == "mid":
+            E = tot // (C * P)
+            return emb.reshape(N, C, P, E).mean(2).reshape(N, -1)
+    except Exception:
+        pass
+    return emb  # fallback: no pooling
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -188,34 +213,33 @@ def main():
                 reset_model_imports()
                 ckpt = T._ckpt_path(m, args.encoder_layers, args.seed, args.pretrain_source)
                 print(f"    [{ctx}/{ds}] {m}: {ckpt}")
+                Cn = W.shape[2]; Pn = np_
                 try:
                     zc = run_extractor(m, ckpt, ArrLoader(clean_patches, args.batch_size),
                                        args.encoder_layers, device)
                 except Exception as e:
                     print(f"      ERROR loading {m}: {e}")
                     continue
-                # shifts
+                zc_pool = mean_pool(zc, m, Cn, Pn)
+                def record(pert, sev, Wp):
+                    zp = run_extractor(m, ckpt, ArrLoader(Wp, args.batch_size),
+                                       args.encoder_layers, device)
+                    zp_pool = mean_pool(zp, m, Cn, Pn)
+                    rows.append(dict(context=ctx, dataset=ds, model=m, rep="flat",
+                                     perturbation=pert, severity=sev,
+                                     drift=cosine_drift(zc, zp)))
+                    rows.append(dict(context=ctx, dataset=ds, model=m, rep="pooled",
+                                     perturbation=pert, severity=sev,
+                                     drift=cosine_drift(zc_pool, zp_pool)))
                 for k in args.shifts:
-                    if k == 0:
-                        continue
-                    Wp = patchify(perturb_shift(W, k), PATCH)
-                    zp = run_extractor(m, ckpt, ArrLoader(Wp, args.batch_size),
-                                       args.encoder_layers, device)
-                    rows.append(dict(context=ctx, dataset=ds, model=m,
-                                     perturbation="shift", severity=k,
-                                     drift=cosine_drift(zc, zp)))
-                # masks
+                    if k == 0: continue
+                    record("shift", k, patchify(perturb_shift(W, k), PATCH))
                 for p in args.mask_p:
-                    if p == 0:
-                        continue
-                    Wp = patchify(perturb_mask(W, p, rng), PATCH)
-                    zp = run_extractor(m, ckpt, ArrLoader(Wp, args.batch_size),
-                                       args.encoder_layers, device)
-                    rows.append(dict(context=ctx, dataset=ds, model=m,
-                                     perturbation="mask", severity=p,
-                                     drift=cosine_drift(zc, zp)))
+                    if p == 0: continue
+                    record("mask", p, patchify(perturb_mask(W, p, rng), PATCH))
 
     df = pd.DataFrame(rows)
+    if 'rep' not in df.columns: df['rep']='flat'
     csv_path = outdir / f"latent_drift_{args.pretrain_source}_seed{args.seed}.csv"
     df.to_csv(csv_path, index=False)
     print(f"\nSaved {csv_path}  ({len(df)} rows)")
@@ -225,7 +249,7 @@ def main():
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        sh = df[df.perturbation == "shift"]
+        sh = df[(df.perturbation == "shift") & (df.rep == "flat")]
         panels = sh[["context", "dataset"]].drop_duplicates().values.tolist()
         ncol = len(panels) or 1
         fig, axes = plt.subplots(1, ncol, figsize=(4.2 * ncol, 3.6), squeeze=False)
@@ -248,7 +272,7 @@ def main():
     # ── console summary table (mean drift at shift=8 and mask=0.2) ──
     def cell(ctx, m, pert, sev):
         s = df[(df.context == ctx) & (df.model == m) & (df.perturbation == pert)
-               & (np.isclose(df.severity, sev))]
+               & (df.rep == "flat") & (np.isclose(df.severity, sev))]
         return f"{s.drift.mean():.3f}" if len(s) else "--"
     print("\n=== mean latent drift (avg over datasets) ===")
     for ctx in args.context:
