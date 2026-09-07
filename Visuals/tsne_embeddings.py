@@ -166,9 +166,9 @@ def _ckpt_path(model: str, encoder_layers: int, seed: int, pretrain_source: str)
         cfg = _load_config(ROOT / "TimeDART-main" / "config_timedart.py")
         if seed is not None:
             # seeded backbone: outputs/timedart_pretrain_monash_layers8_seed{S}/monash_monash/ckpt_best.pth
-            return (ROOT / f"outputs/timedart_pretrain_{src.replace('+','_')}_layers{cfg['e_layers']}{_seed_tag}" /
+            return (ROOT / f"outputs/timedart_pretrain_{src.replace('+','_')}_layers{encoder_layers}{_seed_tag}" /
                     f"{src.replace('+','_')}_{src.replace('+','_')}" / "ckpt_best.pth")
-        return (ROOT / f"outputs/timedart_pretrain{_src_tag}_layers{cfg['e_layers']}" /
+        return (ROOT / f"outputs/timedart_pretrain{_src_tag}_layers{encoder_layers}" /
                 f"monash{_src_tag}" / "ckpt_best.pth")
 
     if model == "softclt":
@@ -592,6 +592,59 @@ def _extract_timedart(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
     return np.concatenate(all_embs), np.concatenate(all_labels)
 
 
+@torch.no_grad()
+def _extract_softclt(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
+    """SoftCLT encoder = PatchTransformerWrapper (backbone.backbone.* in the EMA 'student')."""
+    softclt_dir = ROOT / "softclt-main"
+    _add_path(str(softclt_dir), str(softclt_dir / "softclt_ts2vec"))
+    from softclt_ts2vec.models.patch_transformer import PatchTransformerWrapper
+
+    cfg = _load_config(softclt_dir / "config_softclt.py")
+    sample_patches, _, _ = next(iter(loader))
+    n_p   = sample_patches.shape[1]
+    p_len = sample_patches.shape[2]
+    n_v   = sample_patches.shape[-1]
+
+    model = PatchTransformerWrapper(
+        input_dims=n_v,
+        output_dims=cfg.get("embed_dim", 128),
+        patch_len=p_len,
+        max_num_patches=n_p,
+        n_layers=encoder_layers,
+        n_heads=cfg.get("n_heads", 16),
+        d_ff=cfg.get("d_ff", 512),
+        dropout=cfg.get("dropout", 0.1),
+    ).to(device)
+
+    if ckpt.exists():
+        raw = torch.load(ckpt, map_location="cpu", weights_only=False)
+        if isinstance(raw, dict) and "student" in raw:
+            st = raw["student"]
+        else:
+            st = raw.get("model", raw) if isinstance(raw, dict) else raw
+        md  = model.state_dict()
+        new = {}
+        for k, v in st.items():
+            nk = k[len("backbone."):] if k.startswith("backbone.backbone.") else k
+            if nk in md and md[nk].shape == v.shape:
+                new[nk] = v
+        model.load_state_dict(new, strict=False)
+        print(f"  [softclt] loaded {len(new)}/{len(md)} params from {ckpt.name}")
+    else:
+        print(f"  [softclt] WARNING: checkpoint not found at {ckpt}")
+
+    model.eval()
+    all_embs, all_labels = [], []
+    for patches, labels, padding_mask in loader:
+        B, P, PL, C = patches.shape
+        x = patches.reshape(B, P * PL, C).float().to(device)   # (B, T, C)
+        z = model(x)                    # (B, P, C*d_model)
+        z = z.reshape(B, -1)            # flatten
+        all_embs.append(z.cpu().numpy())
+        all_labels.append(labels.numpy())
+    return np.concatenate(all_embs), np.concatenate(all_labels)
+
+
 # ── dispatch table ─────────────────────────────────────────────────────────────
 
 _EXTRACTORS = {
@@ -600,7 +653,7 @@ _EXTRACTORS = {
     "lejepa":      _extract_lejepa,
     "ntp":         _extract_ntp,
     "patchtst":    _extract_patchtst,
-    "softclt":     _extract_patchtst,   # softclt backbone is a PatchTST encoder (state dict)
+    "softclt":     _extract_softclt,
     "timedart":    _extract_timedart,
 }
 
