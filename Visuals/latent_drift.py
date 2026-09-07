@@ -35,6 +35,19 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "Visuals"))
 import tsne_embeddings as T   # reuse _ckpt_path, _EXTRACTORS, globals
 
+# Each model dir ships its own generic package names (models/, src/, utils/, …);
+# they collide in sys.modules when we load several models in one process. Reset
+# them before every model so each extractor's imports resolve against its own dir.
+_BASE_SYS_PATH = list(sys.path)
+_COLLIDING_TOP = {"models", "src", "utils", "data", "data_loaders", "layers",
+                  "configs", "config", "model", "shared", "TimeDART", "exp", "dataset"}
+
+def reset_model_imports():
+    for name in list(sys.modules):
+        if name.split(".")[0] in _COLLIDING_TOP:
+            sys.modules.pop(name, None)
+    sys.path[:] = _BASE_SYS_PATH
+
 PATCH = 16
 CONTEXT_NP = {"forecast": 21, "classify": 72}   # num_patches per context (× PATCH = 336 / 1152)
 
@@ -172,6 +185,7 @@ def main():
             print(f"  {ds}: {W.shape[0]} windows × L{L} × C{W.shape[2]}")
 
             for m in args.models:
+                reset_model_imports()
                 ckpt = T._ckpt_path(m, args.encoder_layers, args.seed, args.pretrain_source)
                 print(f"    [{ctx}/{ds}] {m}: {ckpt}")
                 try:

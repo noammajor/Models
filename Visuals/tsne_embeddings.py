@@ -116,9 +116,16 @@ def _ckpt_path(model: str, encoder_layers: int, seed: int, pretrain_source: str)
     _seed_tag = f'_seed{seed}' if seed is not None else ''
 
     if model == "dino":
-        return (ROOT / "classification" /
-                f"checkpoints{_src_tag}_layers{encoder_layers}{_seed_tag}_cw{CW}" /
+        base = ROOT / "classification"
+        cand = (base / f"checkpoints{_src_tag}_layers{encoder_layers}{_seed_tag}_cw{CW}" /
                 "checkpoint_best.pth")
+        if not cand.exists():
+            # forecast/anomaly context uses out_dim=1024 → different dir tag
+            alt = (base / f"checkpoints{_src_tag}_layers{encoder_layers}_outdim1024{_seed_tag}_cw{CW}" /
+                   "checkpoint_best.pth")
+            if alt.exists():
+                return alt
+        return cand
 
     if model == "jepa":
         return (ROOT / "output_model" / "classification" /
