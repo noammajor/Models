@@ -1223,6 +1223,8 @@ def run_ntp(skip_train: bool = False, synthetic_data_dir: str = None, pretrain_d
     _synth_tag = _synth_dir_tag(synthetic_data_dir)
     if pretrain_source is not None:
         cfg['pretrain_source'] = pretrain_source
+    elif pretrain_dataset is not None and pretrain_dataset not in ('monash', 'synthetic', 'monash+synthetic'):
+        cfg['pretrain_source'] = None  # force in-domain CSV pretraining
     if encoder_layers is not None:
         cfg['n_layers'] = encoder_layers
         cfg['pretrained_model_id'] = encoder_layers  # unique checkpoint per layer config
@@ -1451,9 +1453,17 @@ def run_lejepa(skip_train: bool = False,
         config['pretrain_source'] = pretrain_source
         _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source != 'monash' else ''
         config['path_save'] = f'./output_model/LE-JEPA{_src_tag}/'
+    elif pretrain_dataset is not None and pretrain_dataset not in ('monash', 'synthetic', 'monash+synthetic'):
+        config.pop('pretrain_source', None)  # force in-domain CSV pretraining
     if encoder_layers is not None:
         config['num_encoder_layers'] = encoder_layers
-        _src_tag = f"_{config['pretrain_source'].replace('+', '_')}" if config.get('pretrain_source', 'monash') != 'monash' else ''
+        _psrc = config.get('pretrain_source')
+        if _psrc and _psrc != 'monash':
+            _src_tag = f"_{_psrc.replace('+', '_')}"
+        elif not _psrc and pretrain_dataset:
+            _src_tag = f"_{pretrain_dataset}"   # in-domain: tag by dataset
+        else:
+            _src_tag = ''
         config['path_save'] = f'./output_model/LE-JEPA{_src_tag}{_synth_tag}_layers{encoder_layers}{_SEED_TAG}/'
     if embed_dim is not None:
         config['encoder_embed_dim'] = embed_dim
@@ -2693,7 +2703,10 @@ def run_softclt(
     # Tag the checkpoint dir by pretrain source + depth so runs don't collide
     # (e.g. ./checkpoints_softclt_synthetic_layers8 vs ./checkpoints_softclt_layers8)
     if output_dir is None:
-        _src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source else ''
+        # In-domain (pretrain_source None) tags by the CSV dataset so runs on
+        # different datasets don't overwrite each other.
+        _src_tag = (f"_{pretrain_source.replace('+', '_')}" if pretrain_source
+                    else (f"_{pretrain_dataset}" if pretrain_dataset else ''))
         _lay_tag = f"_layers{cfg['n_layers']}"
         # Tag the context window too when it was overridden, so a 1152-ts
         # classification encoder doesn't overwrite the 336-ts forecasting one.
