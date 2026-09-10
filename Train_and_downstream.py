@@ -2779,7 +2779,7 @@ def run_softclt(
                 parts.append(load_synthetic_windows(cfg['synthetic_data_dir'], seq_len, min_len))
             train_arr = np.concatenate(parts, axis=0) if len(parts) > 1 else parts[0]
         else:
-            train_arr = load_csv_train_data(ds_pre["csv_path"], ds_pre.get("timestamp_col", "date"))
+            train_arr = load_csv_train_data(ds_pre["csv_path"], ds_pre.get("timestamp_col", "date"), seq_len)
 
         c_in = train_arr.shape[2]
         print(f"[SoftCLT] Pretrain array: {train_arr.shape}  c_in={c_in}")

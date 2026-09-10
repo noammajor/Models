@@ -26,11 +26,18 @@ from soft_ts2vec import TS2Vec
 
 # ── data loading helpers ──────────────────────────────────────────────────────
 
-def load_csv_train_data(csv_path: str, timestamp_col: str = "date") -> np.ndarray:
+def load_csv_train_data(csv_path: str, timestamp_col: str = "date",
+                        seq_len: int = 336) -> np.ndarray:
     """
     Load a CSV forecasting dataset, scale it, and return the training split as
-    (1, T_train, C) float32.  TS2Vec.fit() will slice it into
-    max_train_length=336 windows internally.
+    (N, seq_len, C) float32 windows.
+
+    We window here (rather than returning (1, T_train, C)) because TS2Vec.fit()
+    would otherwise split the long series into equal sections with
+    split_with_nan(), padding the tail with NaN. The dilated-conv encoder masks
+    NaNs, but the PatchTransformerWrapper backbone does not, so the NaN padding
+    propagates into the loss (loss=nan). Fixed-length windows keep each instance
+    exactly seq_len long, so fit() never splits and no NaN padding is introduced.
     """
     import pandas as pd
     from sklearn.preprocessing import StandardScaler
@@ -42,8 +49,16 @@ def load_csv_train_data(csv_path: str, timestamp_col: str = "date") -> np.ndarra
     T, C      = data.shape
     train_len = int(T * 0.6)
     scaler    = StandardScaler()
-    train     = scaler.fit_transform(data[:train_len])
-    return train[np.newaxis]   # (1, T_train, C)
+    train     = scaler.fit_transform(data[:train_len])   # (T_train, C)
+
+    stride  = max(1, seq_len // 2)   # 50% overlap → more instances for CL
+    windows = [train[i:i + seq_len]
+               for i in range(0, len(train) - seq_len + 1, stride)]
+    if not windows:                                       # series shorter than seq_len
+        windows = [np.pad(train, ((0, seq_len - len(train)), (0, 0)), mode="edge")]
+    arr = np.stack(windows).astype(np.float32)            # (N, seq_len, C)
+    print(f"[SoftCLT] CSV windows: {arr.shape}")
+    return arr
 
 
 def load_monash_windows(monash_dir: str, seq_len: int, min_len: int = 512) -> np.ndarray:
