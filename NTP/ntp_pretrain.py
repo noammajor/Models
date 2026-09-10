@@ -154,13 +154,13 @@ def pretrain_ntp(config, save_dir_override: str = None):
         ds = get_dataset_info(pretrain_dset)
         n_groups = len(ds['jepa_groups'])
         _cfg = dict(config,
-                    path_data         = [ds['csv_path']] * n_groups,
-                    timestampcols     = [ds['timestamp_col']] * n_groups,
+                    data_paths        = [ds['csv_path']] * n_groups,
+                    timestamp_cols    = [ds['timestamp_col']] * n_groups,
                     input_variables   = ds['jepa_groups'],
                     stride            = config.get('stride', config['patch_size']))
         train_dataset = DataPullerDJepa(**{k: _cfg[k] for k in [
-            'path_data', 'patch_size', 'batch_size', 'ratio_patches',
-            'mask_ratio', 'masking_type', 'input_variables', 'timestampcols',
+            'data_paths', 'patch_size', 'batch_size', 'ratio_patches',
+            'mask_ratio', 'masking_type', 'input_variables', 'timestamp_cols',
         ]}, type_data='train',
             val_prec=config.get('val_prec', 0.1),
             test_prec=config.get('test_prec', 0.1),
