@@ -316,8 +316,13 @@ def run_dino(skip_train: bool = False,
             _src_tag = ''
         _outdim_tag = f"_outdim{dino_cfg['out_dim']}" if dino_cfg.get('out_dim') is not None else ''
         _ckpt_tag = ''   # ckpt_tag now folded into _synth_tag via TS_CKPT_TAG (see _synth_dir_tag)
+        # Epoch tag: only when pretraining epochs differ from the default (20), so a
+        # non-standard budget (e.g. 40 epochs) writes to its own dir instead of
+        # overwriting the standard backbone. No-op for every existing 20-epoch run.
+        _ep = dino_cfg.get('epochs')
+        _ep_tag = f"_ep{int(_ep)}" if _ep and int(_ep) != 20 else ''
         _synth_tag = _synth_dir_tag(synthetic_data_dir)
-        dino_cfg['output_dir'] = dino_cfg.get('output_dir', './checkpoints').rstrip('/') + f'{_src_tag}{_synth_tag}_layers{encoder_layers}{_outdim_tag}{_ckpt_tag}' + _SEED_TAG
+        dino_cfg['output_dir'] = dino_cfg.get('output_dir', './checkpoints').rstrip('/') + f'{_src_tag}{_synth_tag}_layers{encoder_layers}{_outdim_tag}{_ckpt_tag}{_ep_tag}' + _SEED_TAG
     if num_patches is not None:
         dino_cfg['num_patches'] = num_patches
         _cw = num_patches * dino_cfg.get('patch_len', 16)
@@ -2205,7 +2210,12 @@ def run_timedart(skip_train: bool = False,
 
     _pretrain_src = _resolve_pretrain_source(cfg)
     _src_tag = f"_{_pretrain_src.replace('+', '_')}" if _pretrain_src else (f"_{pretrain_dataset}" if pretrain_dataset else '')
-    ckpt_dir  = Path(__file__).parent / f"outputs/timedart_pretrain{_src_tag}{_synth_tag}_layers{cfg['e_layers']}{_SEED_TAG}"
+    # Epoch tag: only when pretraining epochs differ from the default (20), so a
+    # non-standard budget (e.g. 40 epochs) writes to its own dir instead of
+    # overwriting the standard backbone. No-op for every existing 20-epoch run.
+    _ep = epochs if epochs is not None else cfg.get('train_epochs', 20)
+    _ep_tag = f"_ep{int(_ep)}" if _ep and int(_ep) != 20 else ''
+    ckpt_dir  = Path(__file__).parent / f"outputs/timedart_pretrain{_src_tag}{_synth_tag}_layers{cfg['e_layers']}{_ep_tag}{_SEED_TAG}"
     ckpt_file     = ckpt_dir / ("monash" + _src_tag) / "ckpt_best.pth"
     cls_ckpt_file = ckpt_dir / "monash_cls" / "ckpt_best.pth"
 
