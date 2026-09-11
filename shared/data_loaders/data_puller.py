@@ -79,10 +79,15 @@ class DataPullerDJepa(Dataset):
             'test': []
         }
         sizee = 0
+        _csv_cache = {}   # avoid re-parsing the same CSV once per variable-group
         for path, t_col, input_vars in zip(data_paths, timestamp_cols, input_variables):
-            df = pd.read_csv(path, parse_dates=[t_col], low_memory=False, sep=',')          
-            fcols = df.select_dtypes("float").columns.tolist()
-            df[fcols] = df[fcols].apply(pd.to_numeric, downcast="float")
+            if path in _csv_cache:
+                df = _csv_cache[path].copy()
+            else:
+                df = pd.read_csv(path, parse_dates=[t_col], low_memory=False, sep=',')
+                fcols = df.select_dtypes("float").columns.tolist()
+                df[fcols] = df[fcols].apply(pd.to_numeric, downcast="float")
+                _csv_cache[path] = df.copy()
             processed_dfs.append(df)
             icols = df.select_dtypes("integer").columns
             df[icols] = df[icols].apply(pd.to_numeric, downcast="integer")
