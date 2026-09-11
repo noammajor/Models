@@ -1464,7 +1464,10 @@ def run_lejepa(skip_train: bool = False,
             _src_tag = f"_{pretrain_dataset}"   # in-domain: tag by dataset
         else:
             _src_tag = ''
-        config['path_save'] = f'./output_model/LE-JEPA{_src_tag}{_synth_tag}_layers{encoder_layers}{_SEED_TAG}/'
+        # Epoch tag: only when epochs differ from the default (20), so a 40-epoch
+        # run writes to its own dir instead of overwriting the standard backbone.
+        _ep_tag = f"_ep{int(epochs)}" if epochs and int(epochs) != 20 else ''
+        config['path_save'] = f'./output_model/LE-JEPA{_src_tag}{_synth_tag}_layers{encoder_layers}{_ep_tag}{_SEED_TAG}/'
     if embed_dim is not None:
         config['encoder_embed_dim'] = embed_dim
     if epochs is not None:
