@@ -34,7 +34,7 @@ PATCH_SIZE  = 16
 NUM_PATCHES = 72       # same as CLS_NUM_PATCHES in run_seed_analysis.py
 CW          = NUM_PATCHES * PATCH_SIZE  # 1152
 
-ALL_MODELS = ["dino", "jepa", "lejepa", "patchtst", "ntp", "timedart", "softclt"]
+ALL_MODELS = ["random", "dino", "jepa", "lejepa", "patchtst", "ntp", "timedart", "softclt"]
 
 DEFAULT_CLS_DIR = "/home/shared/datasets/Classification_TS"
 
@@ -114,6 +114,9 @@ def _ckpt_path(model: str, encoder_layers: int, seed: int, pretrain_source: str)
     src       = pretrain_source
     _src_tag  = f"_{src.replace('+', '_')}" if src != 'monash' else ''
     _seed_tag = f'_seed{seed}' if seed is not None else ''
+
+    if model == "random":
+        return Path("__random_no_ckpt__")   # never loaded; encoder stays random-init
 
     if model == "dino":
         base = ROOT / "classification"
@@ -654,7 +657,15 @@ def _extract_softclt(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
 
 # ── dispatch table ─────────────────────────────────────────────────────────────
 
+@torch.no_grad()
+def _extract_random(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
+    """Randomly-initialized patch-Transformer encoder (no pre-training)."""
+    print("  [random] randomly-initialized encoder (no checkpoint loaded)")
+    return _extract_patchtst(Path("__random_no_ckpt__"), loader, encoder_layers, device)
+
+
 _EXTRACTORS = {
+    "random":      _extract_random,
     "dino":        _extract_dino,
     "jepa": _extract_jepa,
     "lejepa":      _extract_lejepa,
@@ -708,6 +719,7 @@ def _reduce(embeddings: np.ndarray, method: str = "tsne",
 
 
 MODEL_DISPLAY = {
+    "random":      "Random",
     "jepa": "JEPA",
     "lejepa":      "LE-JEPA",
     "dino":        "DINO",
