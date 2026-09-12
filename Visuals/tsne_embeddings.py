@@ -34,6 +34,12 @@ PATCH_SIZE  = 16
 NUM_PATCHES = 72       # same as CLS_NUM_PATCHES in run_seed_analysis.py
 CW          = NUM_PATCHES * PATCH_SIZE  # 1152
 
+# When True, the extractors return per-patch embeddings [N_patches, D] (each patch
+# token is one D-dim sample) instead of the flattened per-window vectors used for
+# t-SNE. Used by e4_isotropy.py to measure effective rank / participation ratio in
+# the representation space the forecasting head consumes. Set via the module global.
+RETURN_PATCH_EMB = False
+
 ALL_MODELS = ["random", "dino", "jepa", "lejepa", "patchtst", "ntp", "timedart", "softclt"]
 
 DEFAULT_CLS_DIR = "/home/shared/datasets/Classification_TS"
@@ -248,6 +254,11 @@ def _extract_dino(ckpt: Path, loader, device) -> tuple:
         pm = padding_mask.to(device)
         z = model.backbone(x, padding_mask=pm)   # [B, C, d_model, P]
         B_, C_, D_, P_ = z.shape
+        if RETURN_PATCH_EMB:
+            pp = z.permute(0, 1, 3, 2).reshape(-1, D_)   # [B*C*P, d_model]
+            all_embs.append(pp.cpu().numpy())
+            all_labels.append(np.zeros(pp.shape[0], dtype=int))
+            continue
         z = z.reshape(B_, C_ * D_ * P_)          # [B, C*d_model*P]
         all_embs.append(z.cpu().numpy())
         all_labels.append(labels.numpy())
@@ -311,6 +322,11 @@ def _extract_jepa(ckpt: Path, loader, encoder_layers: int, device,
         ctx_norm, _, _ = _instance_norm(patches)
         out = encoder(ctx_norm, padding_mask=padding_mask)
         enc = out["data_patches"]            # [B*C, P, embed_dim]
+        if RETURN_PATCH_EMB:
+            pp = enc.reshape(-1, embed_dim)  # [B*C*P, embed_dim]
+            all_embs.append(pp.cpu().numpy())
+            all_labels.append(np.zeros(pp.shape[0], dtype=int))
+            continue
         enc = enc.reshape(B, C * P * embed_dim)  # [B, C*P*embed_dim]
         all_embs.append(enc.cpu().numpy())
         all_labels.append(labels.numpy())
@@ -373,6 +389,11 @@ def _extract_lejepa(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         ctx_norm, _, _ = _instance_norm(patches)
         out = encoder(ctx_norm, padding_mask=padding_mask)
         enc = out["data_patches"]            # [B*C, P, embed_dim]
+        if RETURN_PATCH_EMB:
+            pp = enc.reshape(-1, embed_dim)  # [B*C*P, embed_dim]
+            all_embs.append(pp.cpu().numpy())
+            all_labels.append(np.zeros(pp.shape[0], dtype=int))
+            continue
         enc = enc.reshape(B, C * P * embed_dim)  # [B, C*P*embed_dim]
         all_embs.append(enc.cpu().numpy())
         all_labels.append(labels.numpy())
@@ -435,6 +456,11 @@ def _extract_ntp(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         padding_mask = padding_mask.to(device)
         z = backbone.backbone(x, padding_mask=padding_mask)  # [B, C, d_model, P]
         B_, C_, D_, P_ = z.shape
+        if RETURN_PATCH_EMB:
+            pp = z.permute(0, 1, 3, 2).reshape(-1, D_)       # [B*C*P, d_model]
+            all_embs.append(pp.cpu().numpy())
+            all_labels.append(np.zeros(pp.shape[0], dtype=int))
+            continue
         z = z.reshape(B_, C_ * D_ * P_)                      # [B, C*d_model*P]
         all_embs.append(z.cpu().numpy())
         all_labels.append(labels.numpy())
@@ -496,6 +522,11 @@ def _extract_patchtst(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         padding_mask = padding_mask.to(device)
         z = model.backbone(x, padding_mask=padding_mask)  # [B, C, d_model, P]
         B_, C_, D_, P_ = z.shape
+        if RETURN_PATCH_EMB:
+            pp = z.permute(0, 1, 3, 2).reshape(-1, D_)     # [B*C*P, d_model]
+            all_embs.append(pp.cpu().numpy())
+            all_labels.append(np.zeros(pp.shape[0], dtype=int))
+            continue
         z = z.reshape(B_, C_ * D_ * P_)                    # [B, C*d_model*P]
         all_embs.append(z.cpu().numpy())
         all_labels.append(labels.numpy())
@@ -595,6 +626,11 @@ def _extract_timedart(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         padding_mask = padding_mask.to(device)
         z = _encode(x, padding_mask)          # [B, C, d_model, P]
         B_, C_, D_, P_ = z.shape
+        if RETURN_PATCH_EMB:
+            pp = z.permute(0, 1, 3, 2).reshape(-1, D_)   # [B*C*P, d_model]
+            all_embs.append(pp.cpu().numpy())
+            all_labels.append(np.zeros(pp.shape[0], dtype=int))
+            continue
         z = z.reshape(B_, C_ * D_ * P_)       # [B, C*d_model*P]
         all_embs.append(z.cpu().numpy())
         all_labels.append(labels.numpy())
@@ -648,7 +684,12 @@ def _extract_softclt(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
     for patches, labels, padding_mask in loader:
         B, P, PL, C = patches.shape
         x = patches.reshape(B, P * PL, C).float().to(device)   # (B, T, C)
-        z = model(x)                    # (B, P, C*d_model)
+        z = model(x)                    # (B, P, repr_dim)
+        if RETURN_PATCH_EMB:
+            pp = z.reshape(-1, z.shape[-1])   # [B*P, repr_dim]
+            all_embs.append(pp.cpu().numpy())
+            all_labels.append(np.zeros(pp.shape[0], dtype=int))
+            continue
         z = z.reshape(B, -1)            # flatten
         all_embs.append(z.cpu().numpy())
         all_labels.append(labels.numpy())
