@@ -151,7 +151,7 @@ def _config_to_dino_args(cfg):
         data_path_forecast_test     = cfg.get("data_path_forecast_test", ""),
         data_path_classification    = cfg.get("data_path_classification", "UCI HAR Dataset"),
         num_workers                 = int(os.environ.get("TS_NUM_WORKERS", cfg.get("num_workers", 4))),
-        batch_size_per_gpu          = cfg.get("batch_size_per_gpu", 64),
+        batch_size_per_gpu          = int(os.environ.get("TS_DINO_BS", cfg.get("batch_size_per_gpu", 64))),
         batch_size_forecast         = _get_forecast_bs(cfg, 256),
 
         # ── model architecture ────────────────────────────────────────────
