@@ -569,9 +569,15 @@ def _extract_timedart(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
     patch_len = cfg.get("patch_len", PATCH_SIZE)
     stride    = cfg.get("stride", patch_len)
 
+    # Backbones are pre-trained with embed_dim=128 (Train_and_downstream sets
+    # cfg['d_model']=embed_dim), so build at 128 — config_timedart.py's 256 default
+    # is stale and would mis-load the checkpoint (transfer_weights skips mismatches).
+    _td_dmodel = cfg.get("d_model", 256)
+    if _td_dmodel != 128:
+        _td_dmodel = 128
     args = SimpleNamespace(
         input_len    = 512,
-        d_model      = cfg.get("d_model", 256),
+        d_model      = _td_dmodel,
         n_heads      = cfg.get("n_heads", 8),
         d_ff         = cfg.get("d_ff", 512),
         dropout      = cfg.get("dropout", 0.1),
@@ -601,7 +607,7 @@ def _extract_timedart(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         print(f"  [timedart] WARNING: checkpoint not found at {ckpt}")
 
     model.eval()
-    d_model = cfg.get("d_model", 256)
+    d_model = _td_dmodel
 
     def _encode(x, padding_mask=None):
         """x: [B,T,C] -> [B, C, d_model, P]"""
