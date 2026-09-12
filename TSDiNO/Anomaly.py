@@ -17,6 +17,19 @@ from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 from models.patchTST import PatchTST
 
 
+def _instance_norm(x, eps=1e-6):
+    """Per-window RevIN on patches [B, P, PL, C]: zero-mean/unit-std over (P, PL).
+
+    Applied to the encoder input only (the reconstruction target stays raw), matching
+    the JEPA/Le-JEPA anomaly path. Without this the bare backbone would see
+    StandardScaler-scaled data with no per-window normalization, unlike forecasting/
+    classification which route through PatchTST.forward's RevIN.
+    """
+    mean = x.mean(dim=(1, 2), keepdim=True)
+    std  = x.std(dim=(1, 2),  keepdim=True) + eps
+    return (x - mean) / std
+
+
 class _LinearReconDecoder(nn.Module):
     """[B, P, nvars, d_model] → [B, T, nvars]"""
     def __init__(self, d_model: int, patch_len: int, mlp_head: bool = False, hidden_dim: int = 512):
@@ -171,6 +184,7 @@ def anomaly_detection(args, path_num, anomaly_train, anomaly_test,
         if patches.dim() == 3:
             patches = patches.unsqueeze(-1)
         patches = patches.to(device)
+        patches = _instance_norm(patches)  # RevIN on encoder input (target stays raw)
         x = patches.permute(0, 1, 3, 2)   # [B, P, C, patch_len]
         z = backbone(x)                    # [B, P+1, C, d_model]
         return z[:, 1:, :, :]             # drop CLS → [B, P, C, d_model]

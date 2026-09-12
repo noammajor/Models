@@ -82,7 +82,7 @@ def _build_model_args(config, n_vars, device):
         device       = device,
         task_name    = "pretrain",
         pred_len     = 0,
-        use_norm     = False,   # data already StandardScaler-normalised by AnomalyDataPuller
+        use_norm     = True,    # per-window RevIN on encoder input (match forecast/classify/other models)
         patch_len    = patch_len,
         stride       = stride,
         time_steps   = config.get("time_steps", 1000),
@@ -102,6 +102,12 @@ def _encode(model, x):
     returns: [B, C, d_model, P]
     """
     B, T, C = x.shape
+    if model.use_norm:
+        # per-window RevIN on encoder input (reconstruction target stays raw)
+        means  = x.mean(dim=1, keepdim=True).detach()
+        x      = x - means
+        stdevs = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-5).detach()
+        x      = x / stdevs
     x = model.channel_independence(x)   # [B*C, T, 1]
     x = model.patch(x)                  # [B*C, P, patch_len]
     P = x.shape[1]

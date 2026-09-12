@@ -23,6 +23,18 @@ for _p in [_DIR, _ROOT, _SHARED]:
 from src.models.patchTST import PatchTST
 
 
+def _instance_norm(x, eps=1e-6):
+    """Per-window RevIN on patches [B, P, PL, n_vars]: zero-mean/unit-std over (P, PL).
+
+    PatchTST pretraining/forecasting apply RevIN (via RevInCB); the classification head
+    does not route through RevInCB, so we instance-normalize here to match the other
+    models' classification protocol.
+    """
+    mean = x.mean(dim=(1, 2), keepdim=True)
+    std  = x.std(dim=(1, 2),  keepdim=True) + eps
+    return (x - mean) / std
+
+
 def classification(config, checkpoint_path, classification_train,
                    classification_val, classification_test, n_classes,
                    linear_probe=True, mlp_head: bool = False):
@@ -128,6 +140,7 @@ def classification(config, checkpoint_path, classification_train,
         model.train()
         correct, total = 0, 0
         for patches, labels, padding_mask in classification_train:
+            patches      = _instance_norm(patches)   # RevIN before encoder
             # PatchTST expects [B, P, n_vars, PL]
             x            = patches.permute(0, 1, 3, 2).to(device)
             labels       = labels.to(device)
@@ -147,6 +160,7 @@ def classification(config, checkpoint_path, classification_train,
     tc, tt = 0, 0
     with torch.no_grad():
         for patches, labels, padding_mask in classification_test:
+            patches      = _instance_norm(patches)   # RevIN before encoder
             x            = patches.permute(0, 1, 3, 2).to(device)
             labels       = labels.to(device)
             padding_mask = padding_mask.to(device)

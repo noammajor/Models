@@ -26,6 +26,18 @@ for _p in [_DIR, _ROOT, _SHARED]:
 from src.models.patchTST import PatchTST
 
 
+def _instance_norm(x, eps=1e-6):
+    """Per-window RevIN on patches [B, P, PL, n_vars]: zero-mean/unit-std over (P, PL).
+
+    Applied to the encoder input only (reconstruction target stays raw). PatchTST
+    pretraining/forecasting use RevIN (RevInCB); this anomaly path uses the bare
+    backbone, so we instance-normalize here to match.
+    """
+    mean = x.mean(dim=(1, 2), keepdim=True)
+    std  = x.std(dim=(1, 2),  keepdim=True) + eps
+    return (x - mean) / std
+
+
 class _LinearReconDecoder(nn.Module):
     """[B, n_vars, d_model, n_patches] → [B, T, n_vars]"""
     def __init__(self, d_model: int, patch_size: int, n_vars: int, mlp_head: bool = False, hidden_dim: int = 512):
@@ -158,7 +170,8 @@ def anomaly_detection(config, checkpoint_path, anomaly_train, anomaly_test,
 
     def _encode(patches):
         """patches [B, P, PL, n_vars] → z [B, n_vars, d_model, P]"""
-        x = patches.permute(0, 1, 3, 2).to(device)    # [B, P, n_vars, PL]
+        patches = _instance_norm(patches.to(device))  # RevIN on encoder input (target stays raw)
+        x = patches.permute(0, 1, 3, 2)               # [B, P, n_vars, PL]
         return backbone.backbone(x)                     # [B, n_vars, d_model, P]
 
     # ── (1) train decoder (with validation + early stopping) ─────────────────

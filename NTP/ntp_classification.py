@@ -23,6 +23,17 @@ for _p in [_NTP_DIR, _ROOT_DIR, _SHARED_DIR]:
 from models.patchTST import PatchTST, ClassificationHead
 
 
+def _instance_norm(x, eps=1e-6):
+    """Per-window RevIN on patches [B, P, PL, n_vars]: zero-mean/unit-std over (P, PL).
+
+    Matches the per-window instance-norm NTP applies in forecasting/pretraining, so the
+    encoder sees the same input distribution downstream as the other models' classification.
+    """
+    mean = x.mean(dim=(1, 2), keepdim=True)
+    std  = x.std(dim=(1, 2),  keepdim=True) + eps
+    return (x - mean) / std
+
+
 def _build_backbone(config, c_in, num_patch, device):
     """Build PatchTST backbone with pretrain head (weights will be loaded)."""
     return PatchTST(
@@ -135,6 +146,7 @@ def classification(config, checkpoint_path, classification_train,
             patches      = patches.to(device)       # [B, P, PL, n_vars]
             labels       = labels.to(device)
             padding_mask = padding_mask.to(device)  # [B, P] bool
+            patches = _instance_norm(patches)        # RevIN before encoder
             # PatchTST expects [B, P, n_vars, PL]
             x = patches.permute(0, 1, 3, 2)
             optimizer.zero_grad()
@@ -157,6 +169,7 @@ def classification(config, checkpoint_path, classification_train,
             patches      = patches.to(device)
             labels       = labels.to(device)
             padding_mask = padding_mask.to(device)
+            patches = _instance_norm(patches)        # RevIN before encoder
             x   = patches.permute(0, 1, 3, 2)
             enc = backbone.backbone(x, padding_mask=padding_mask)
             logits = cls_head(enc)
