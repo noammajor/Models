@@ -1152,3 +1152,41 @@ class AnomalyDataPuller(Dataset):
                 label = np.pad(label, (0, self.padded_T - len(label)))
             return torch.tensor(patches), torch.tensor(label)
         return torch.tensor(patches)
+
+
+# ── In-domain pretraining on classification / anomaly datasets ────────────────
+def load_indomain_windows(kind, dataset, seq_len, cls_dir=None, anom_dir=None,
+                          stride=None):
+    """
+    Return (N, seq_len, C) float32 windows from the *train* split of a
+    classification (UEA) or anomaly dataset, for in-domain SSL pretraining.
+
+    kind: "classification" -> reads UEA train split via _cls_load_dataset
+          "anomaly"        -> reads AnomalyDataPuller(...).data (train series)
+    Both sources are already StandardScaler-normalized. Windows use 50% overlap.
+    """
+    if stride is None:
+        stride = max(1, seq_len // 2)
+
+    def _window_series(s):                 # s: (T, C) -> list of (seq_len, C)
+        T = s.shape[0]
+        if T >= seq_len:
+            return [s[i:i + seq_len] for i in range(0, T - seq_len + 1, stride)]
+        return [np.pad(s, ((0, seq_len - T), (0, 0)), mode="edge")]
+
+    wins = []
+    if kind == "classification":
+        X, _ = _cls_load_dataset(Path(cls_dir) / dataset, "train", 0.1)  # (N, T, C)
+        for s in X:
+            wins.extend(_window_series(np.asarray(s, dtype=np.float32)))
+    elif kind == "anomaly":
+        ap = AnomalyDataPuller(anom_dir, dataset, patch_size=16, which="train")
+        wins.extend(_window_series(np.asarray(ap.data, dtype=np.float32)))
+    else:
+        raise ValueError(f"kind must be 'classification' or 'anomaly', got {kind}")
+
+    if not wins:
+        raise RuntimeError(f"No windows produced for {kind}/{dataset} (seq_len={seq_len})")
+    arr = np.stack(wins).astype(np.float32)
+    print(f"[in-domain] {kind}/{dataset}: {arr.shape} windows (seq_len={seq_len})")
+    return arr

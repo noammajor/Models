@@ -2703,13 +2703,24 @@ def run_softclt(
     pretrain_source = _resolve_pretrain_source(cfg)
     use_global_data = pretrain_source is not None
 
+    # In-domain pretraining on a classification (UEA) or anomaly dataset, signalled
+    # via TS_INDOMAIN="classification:<name>" or "anomaly:<name>". Both the pretrain
+    # and the downstream call must set the same env so the tagged path matches.
+    _indomain = os.environ.get("TS_INDOMAIN", "")
+    _id_kind = _id_ds = None
+    if ":" in _indomain:
+        _id_kind, _id_ds = _indomain.split(":", 1)
+
     # Tag the checkpoint dir by pretrain source + depth so runs don't collide
     # (e.g. ./checkpoints_softclt_synthetic_layers8 vs ./checkpoints_softclt_layers8)
     if output_dir is None:
         # In-domain (pretrain_source None) tags by the CSV dataset so runs on
         # different datasets don't overwrite each other.
-        _src_tag = (f"_{pretrain_source.replace('+', '_')}" if pretrain_source
-                    else (f"_{pretrain_dataset}" if pretrain_dataset else ''))
+        if _id_ds:
+            _src_tag = f"_id{_id_kind[:3]}_{_id_ds}"
+        else:
+            _src_tag = (f"_{pretrain_source.replace('+', '_')}" if pretrain_source
+                        else (f"_{pretrain_dataset}" if pretrain_dataset else ''))
         _lay_tag = f"_layers{cfg['n_layers']}"
         # Tag the context window too when it was overridden, so a 1152-ts
         # classification encoder doesn't overwrite the 336-ts forecasting one.
@@ -2752,6 +2763,11 @@ def run_softclt(
         else:
             print(f"  pretrain: {_src_label}   forecast: {forecast_dataset}")
         print("="*60)
+    elif _id_ds:
+        print("\n" + "="*60)
+        print(f"  MODEL: SoftCLT")
+        print(f"  pretrain: in-domain {_id_kind} ({_id_ds})")
+        print("="*60)
     else:
         pretrain_dataset = pretrain_dataset or cfg.get("pretrain_dataset")
         forecast_dataset = forecast_dataset or pretrain_dataset
@@ -2778,7 +2794,13 @@ def run_softclt(
         seq_len = cfg['patch_len'] * cfg['num_patches']   # 336
         min_len = cfg.get('monash_min_len', 512)
 
-        if use_global_data:
+        if _id_ds:
+            from data_loaders.data_puller import load_indomain_windows
+            train_arr = load_indomain_windows(
+                _id_kind, _id_ds, seq_len,
+                cls_dir=cfg.get('classification_data_dir'),
+                anom_dir=cfg.get('anomaly_data_dir'))
+        elif use_global_data:
             parts = []
             if pretrain_source in ('monash', 'monash+synthetic'):
                 parts.append(load_monash_windows(cfg['monash_data_dir'], seq_len, min_len))
