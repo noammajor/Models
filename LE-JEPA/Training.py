@@ -4,7 +4,7 @@ import copy
 import torch
 import torch.nn.functional as F
 
-from losses import _sigreg_loss
+from losses import _sigreg_loss, _vicreg_terms
 
 
 def _embedding_stats(z: torch.Tensor) -> dict:
@@ -47,14 +47,30 @@ def compute_lejepa_loss(self, patches, global_step, batch_idx=0, epoch=0):
 
     pred_loss = F.mse_loss(z1, z2)
 
-    n_slices = self.config.get("sigreg_num_slices", 512)
-    sigreg = 0.5 * (
-        _sigreg_loss(z1, global_step, n_slices) +
-        _sigreg_loss(z2, global_step, n_slices)
-    )
-
-    lambd = self.config.get("lambda_sigreg", 0.05)
-    total_loss = (1.0 - lambd) * pred_loss + lambd * sigreg
+    # Regularizer: SIGReg (isotropic-Gaussianity, default) or the VICReg var/cov
+    # regularizer (Eq. 9). The VICReg swap holds the encoder, augmentations, and
+    # the MSE invariance term fixed, isolating SIGReg's isotropy constraint.
+    reg_type = self.config.get("reg_type", "sigreg").lower()
+    if reg_type == "vicreg":
+        v1, c1 = _vicreg_terms(z1)
+        v2, c2 = _vicreg_terms(z2)
+        var_loss = 0.5 * (v1 + v2)
+        cov_loss = 0.5 * (c1 + c2)
+        w_inv = self.config.get("invar", 1.0)
+        w_var = self.config.get("vigreg_var", 1.0)
+        w_cov = self.config.get("vigreg_cov", 0.04)
+        total_loss = w_inv * pred_loss + w_var * var_loss + w_cov * cov_loss
+        reg      = w_var * var_loss + w_cov * cov_loss
+        reg_name = "VICReg"
+    else:
+        n_slices = self.config.get("sigreg_num_slices", 512)
+        reg = 0.5 * (
+            _sigreg_loss(z1, global_step, n_slices) +
+            _sigreg_loss(z2, global_step, n_slices)
+        )
+        lambd = self.config.get("lambda_sigreg", 0.05)
+        total_loss = (1.0 - lambd) * pred_loss + lambd * reg
+        reg_name = "SIGReg"
 
     if batch_idx % 5 == 0:
         stats = _embedding_stats(z1)
@@ -62,13 +78,13 @@ def compute_lejepa_loss(self, patches, global_step, batch_idx=0, epoch=0):
             f"Epoch {epoch}, Batch {batch_idx} — "
             f"Loss: {total_loss.item():.4f}  "
             f"MSE: {pred_loss.item():.4f}  "
-            f"SIGReg: {sigreg.item():.4f}  "
+            f"{reg_name}: {reg.item():.4f}  "
             f"emb_mean: {stats['emb_mean']:.3f}  "
             f"emb_std: {stats['emb_std']:.3f}  "
             f"rank: {stats['eff_rank']:.1f}"
         )
 
-    return total_loss, {"pred_loss": pred_loss.item(), "sigreg": sigreg.item()}
+    return total_loss, {"pred_loss": pred_loss.item(), "sigreg": reg.item()}
 
 
 def evaluate(self, val_loader, global_step, epoch):

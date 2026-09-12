@@ -33,3 +33,27 @@ def _sigreg_loss(x: torch.Tensor, global_step: int, num_slices: int = 256) -> to
     err  = (ecf - exp_f).abs().square() * exp_f  # [M, T]
     loss = torch.trapz(err.real, t, dim=1) * N   # [M]
     return loss.mean()
+
+
+def _vicreg_terms(x: torch.Tensor, eps: float = 1e-4):
+    """VICReg variance + covariance regularizer (Eq. 9), as used by JEPA.
+
+    Computed on the SAME per-patch embedding population SIGReg operates on —
+    x: [B*C, P, D]. This is the drop-in isotropy-vs-VICReg swap: replacing
+    _sigreg_loss with these terms (holding the encoder, augmentations, and the
+    MSE invariance term fixed) isolates SIGReg's isotropic-Gaussianity
+    constraint from Le-JEPA's augmentation stack.
+
+    Returns (var_loss, cov_loss):
+      - var_loss: hinge on per-position std across patches (prevents collapse)
+      - cov_loss: off-diagonal covariance Frobenius penalty / D (decorrelation)
+    """
+    x = x.float()
+    D = x.shape[-1]
+    std_pos  = torch.sqrt(x.var(dim=1, unbiased=True) + eps)   # [B*C, D]
+    var_loss = torch.mean(F.relu(1.0 - std_pos))
+    x_flat   = x.reshape(-1, D)
+    xc       = x_flat - x_flat.mean(dim=0)
+    cov      = (xc.T @ xc) / (x_flat.shape[0] - 1)
+    cov_loss = (cov.pow(2).sum() - torch.diagonal(cov).pow(2).sum()) / D
+    return var_loss, cov_loss

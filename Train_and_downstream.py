@@ -1479,6 +1479,14 @@ def run_lejepa(skip_train: bool = False,
         _cw = num_patches * config.get('patch_size', 16)
         _p = Path(config['path_save'].rstrip('/'))
         config['path_save'] = str(_p.parent / 'classification' / (_p.name + f'_cw{_cw}')) + '/'
+    # Regularizer swap: TS_LEJEPA_REG=vicreg replaces SIGReg with the Eq. 9 var/cov
+    # regularizer. Tag the checkpoint dir so the VICReg backbone never overwrites
+    # the default SIGReg one (isolation experiment for the Le-JEPA forecasting gap).
+    _reg_type = os.environ.get("TS_LEJEPA_REG", config.get("reg_type", "sigreg")).lower()
+    config["reg_type"] = _reg_type
+    if _reg_type != "sigreg":
+        _pr = Path(config['path_save'].rstrip('/'))
+        config['path_save'] = str(_pr.parent / (_pr.name + f'_{_reg_type}')) + '/'
     if lr is not None:
         config['lr_adamw'] = lr
 
