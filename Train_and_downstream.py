@@ -1487,6 +1487,13 @@ def run_lejepa(skip_train: bool = False,
     if _reg_type != "sigreg":
         _pr = Path(config['path_save'].rstrip('/'))
         config['path_save'] = str(_pr.parent / (_pr.name + f'_{_reg_type}')) + '/'
+    # SIGReg strength sweep: TS_LEJEPA_LAMBDA overrides lambda_sigreg and tags the
+    # checkpoint dir so each lambda writes its own backbone (lambda=0 => pure MSE).
+    _lam = os.environ.get("TS_LEJEPA_LAMBDA")
+    if _lam is not None:
+        config["lambda_sigreg"] = float(_lam)
+        _pl = Path(config['path_save'].rstrip('/'))
+        config['path_save'] = str(_pl.parent / (_pl.name + f"_lam{_lam}")) + '/'
     if lr is not None:
         config['lr_adamw'] = lr
 
