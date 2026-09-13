@@ -40,6 +40,19 @@ CW          = NUM_PATCHES * PATCH_SIZE  # 1152
 # the representation space the forecasting head consumes. Set via the module global.
 RETURN_PATCH_EMB = False
 
+
+def _pp_dmodel(z, d_model: int = 128):
+    """Per-patch embeddings [N, d_model] from a 4-D encoder output, robust to axis
+    order: dino/ntp emit [B, patch, nvars, d_model] (d_model last) while
+    patchtst/timedart emit [B, C, d_model, P] (d_model second-to-last). Pick whichever
+    of the last two axes equals d_model so the feature dimension is always d_model."""
+    import torch as _t
+    if z.shape[-1] == d_model:
+        return z.reshape(-1, d_model)
+    if z.shape[-2] == d_model:
+        return z.permute(0, 1, 3, 2).reshape(-1, d_model)
+    return z.reshape(-1, z.shape[-1])
+
 ALL_MODELS = ["random", "dino", "jepa", "lejepa", "patchtst", "ntp", "timedart", "softclt"]
 
 DEFAULT_CLS_DIR = "/home/shared/datasets/Classification_TS"
@@ -255,7 +268,7 @@ def _extract_dino(ckpt: Path, loader, device) -> tuple:
         z = model.backbone(x, padding_mask=pm)   # [B, C, d_model, P]
         B_, C_, D_, P_ = z.shape
         if RETURN_PATCH_EMB:
-            pp = z.permute(0, 1, 3, 2).reshape(-1, D_)   # [B*C*P, d_model]
+            pp = _pp_dmodel(z)   # [B*C*P, d_model]
             all_embs.append(pp.cpu().numpy())
             all_labels.append(np.zeros(pp.shape[0], dtype=int))
             continue
@@ -457,7 +470,7 @@ def _extract_ntp(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         z = backbone.backbone(x, padding_mask=padding_mask)  # [B, C, d_model, P]
         B_, C_, D_, P_ = z.shape
         if RETURN_PATCH_EMB:
-            pp = z.permute(0, 1, 3, 2).reshape(-1, D_)       # [B*C*P, d_model]
+            pp = _pp_dmodel(z)       # [B*C*P, d_model]
             all_embs.append(pp.cpu().numpy())
             all_labels.append(np.zeros(pp.shape[0], dtype=int))
             continue
@@ -523,7 +536,7 @@ def _extract_patchtst(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         z = model.backbone(x, padding_mask=padding_mask)  # [B, C, d_model, P]
         B_, C_, D_, P_ = z.shape
         if RETURN_PATCH_EMB:
-            pp = z.permute(0, 1, 3, 2).reshape(-1, D_)     # [B*C*P, d_model]
+            pp = _pp_dmodel(z)     # [B*C*P, d_model]
             all_embs.append(pp.cpu().numpy())
             all_labels.append(np.zeros(pp.shape[0], dtype=int))
             continue
@@ -633,7 +646,7 @@ def _extract_timedart(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         z = _encode(x, padding_mask)          # [B, C, d_model, P]
         B_, C_, D_, P_ = z.shape
         if RETURN_PATCH_EMB:
-            pp = z.permute(0, 1, 3, 2).reshape(-1, D_)   # [B*C*P, d_model]
+            pp = _pp_dmodel(z)   # [B*C*P, d_model]
             all_embs.append(pp.cpu().numpy())
             all_labels.append(np.zeros(pp.shape[0], dtype=int))
             continue
@@ -692,7 +705,7 @@ def _extract_softclt(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         x = patches.reshape(B, P * PL, C).float().to(device)   # (B, T, C)
         z = model(x)                    # (B, P, repr_dim)
         if RETURN_PATCH_EMB:
-            pp = z.reshape(-1, z.shape[-1])   # [B*P, repr_dim]
+            pp = z.reshape(-1, 128)           # [B*P*C, d_model] (unmix channels)
             all_embs.append(pp.cpu().numpy())
             all_labels.append(np.zeros(pp.shape[0], dtype=int))
             continue
