@@ -104,15 +104,18 @@ def rank_metrics(X: np.ndarray, max_samples: int = 40000):
         idx = np.random.RandomState(0).choice(X.shape[0], max_samples, replace=False)
         X = X[idx]
     X = X - X.mean(axis=0, keepdims=True)
-    # singular values of centered X → eigenvalues of covariance ∝ s²
     s = np.linalg.svd(X, compute_uv=False)
-    ev = s ** 2
-    tot = ev.sum()
-    if tot <= 0:
+    if s.sum() <= 0:
         return float("nan"), float("nan"), X.shape[1]
-    p = ev / tot
-    p_nz = p[p > 0]
-    eff_rank = float(np.exp(-(p_nz * np.log(p_nz)).sum()))
+    # Effective rank (Roy & Vetterli): entropy of the normalized SINGULAR values
+    # s/Σs — NOT the squared/eigenvalue form. This matches LE-JEPA/Training.py's
+    # _embedding_stats (the isotropy-table convention), so a single effective-rank
+    # number is comparable across the paper.
+    ps = s / s.sum()
+    ps = ps[ps > 0]
+    eff_rank = float(np.exp(-(ps * np.log(ps)).sum()))
+    # Participation ratio is an eigenvalue-spectrum quantity (uses s²), kept as-is.
+    ev = s ** 2
     participation = float((ev.sum() ** 2) / (ev ** 2).sum())
     return eff_rank, participation, X.shape[1]
 
