@@ -187,14 +187,18 @@ class AugmentationPipeline:
         aug_v2 = AugmentationPipeline(config, dwt_mode=config["view2_dwt_mode"])
     """
 
-    def __init__(self, config: dict, dwt_mode: str = None):
+    def __init__(self, config: dict, dwt_mode: str = None, phys_mode: str = None):
         self.augs = [
             GaussianJitter(noise_std=config.get("aug_noise_std", 0.05)),
             AmplitudeScaling(scale_range=config.get("aug_amplitude_range", (0.8, 1.2))),
             ChannelDropout(p=config.get("aug_channel_drop_p", 0.2)),
             FrequencyMasking(mask_ratio=config.get("aug_freq_mask_ratio", 0.3)),
         ]
-        if dwt_mode is not None:
+        if phys_mode is not None:
+            # Physics-inspired transform replaces DWT for this view (Le-JEPA analog
+            # of DINO's --aug_global/--aug_local physics ablation).
+            self.augs.append(PhysicsAugmentation(phys_mode))
+        elif dwt_mode is not None:
             if not _HAS_PYWT:
                 print("[LE-JEPA] Warning: dwt_mode set but pywt not installed — DWT disabled.")
             else:
@@ -216,3 +220,72 @@ class AugmentationPipeline:
             if random.random() < 0.5:
                 x = aug(x)
         return x
+
+
+# ── Physics-inspired augmentations (ported from TSDiNO, batched over B) ─────────
+# Each _Phys* operates on a single [T, C] window with the same math as TSDiNO's
+# data_agumentation.py; PhysicsAugmentation applies it per-sample across [B, T, C].
+
+class _PhysPolar:
+    def __init__(self, warp_range=(0.7, 1.3)): self.warp_range = warp_range
+    def __call__(self, x):
+        seq_len, n_vars = x.shape
+        wf = random.uniform(*self.warp_range)
+        t = torch.linspace(0, 1, steps=seq_len, device=x.device).unsqueeze(1).expand(-1, n_vars)
+        r = torch.sqrt(t ** 2 + x ** 2)
+        theta = torch.atan2(x, t) * wf
+        return r * torch.sin(theta)
+
+
+class _PhysGalilien:
+    def __init__(self, a_range=(0.8, 1.2)): self.a_range = a_range
+    def __call__(self, x): return x * random.uniform(*self.a_range)
+
+
+class _PhysLorentz:
+    def __init__(self, v_range=(0.2, 0.6)): self.v_range = v_range
+    def __call__(self, x):
+        seq_len, n_vars = x.shape
+        v = random.uniform(*self.v_range)
+        gamma = 1.0 / torch.sqrt(torch.tensor(1 - v ** 2, device=x.device))
+        t = torch.linspace(0, 1, steps=seq_len, device=x.device).unsqueeze(1)
+        return gamma * (x - v * t)
+
+
+class _PhysHypWarp:
+    def __init__(self, warp_range=(0.5, 1.5)): self.warp_range = warp_range
+    def __call__(self, x): return torch.tanh(x * random.uniform(*self.warp_range))
+
+
+class _PhysHypGeom:
+    def __init__(self, shift_magnitude=0.3, eps=1e-8):
+        self.shift_magnitude = shift_magnitude; self.eps = eps
+    def __call__(self, x):
+        seq_len, n_vars = x.shape
+        t = torch.linspace(-0.9, 0.9, steps=seq_len, device=x.device).unsqueeze(1).expand(-1, n_vars)
+        y_min = x.min(dim=0, keepdim=True)[0]; y_max = x.max(dim=0, keepdim=True)[0]
+        y = 1.8 * (x - y_min) / (y_max - y_min + self.eps) - 0.9
+        z0 = torch.randn(2, 1, device=x.device)
+        z0 = self.shift_magnitude * z0 / (z0.norm() + self.eps)
+        u0, v0 = z0[0], z0[1]
+        norm_z0_sq = u0 ** 2 + v0 ** 2
+        norm_z_sq = t ** 2 + y ** 2
+        inner = u0 * t + v0 * y
+        denom = 1 + 2 * inner + norm_z0_sq * norm_z_sq
+        num_v = (1 + 2 * inner + norm_z_sq) * v0 + (1 - norm_z0_sq) * y
+        return num_v / (denom + self.eps)
+
+
+_PHYS = {'polar': _PhysPolar, 'galilien': _PhysGalilien, 'lorentz': _PhysLorentz,
+         'hyperbolic_warp': _PhysHypWarp, 'hyperbolic_geom': _PhysHypGeom}
+
+
+class PhysicsAugmentation:
+    """Apply a TSDiNO physics transform per-sample over a [B, T, C] batch."""
+    def __init__(self, mode, **kw):
+        if mode not in _PHYS:
+            raise ValueError(f"unknown physics aug '{mode}'; choices: {list(_PHYS)}")
+        self.mode = mode
+        self.fn = _PHYS[mode](**kw)
+    def __call__(self, x):
+        return torch.stack([self.fn(x[b]) for b in range(x.shape[0])], dim=0)

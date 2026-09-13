@@ -1494,6 +1494,19 @@ def run_lejepa(skip_train: bool = False,
         config["lambda_sigreg"] = float(_lam)
         _pl = Path(config['path_save'].rstrip('/'))
         config['path_save'] = str(_pl.parent / (_pl.name + f"_lam{_lam}")) + '/'
+    # Physics-augmentation ablation: TS_LEJEPA_AUG=<family> swaps the two views' DWT
+    # for physics transforms (Le-JEPA analog of DINO's aug ablation) and tags the ckpt.
+    #   galilean -> (galilien, lorentz);  polar -> (polar, polar);
+    #   hyperbolic -> (hyperbolic_warp, hyperbolic_geom);  dwt -> default DWT.
+    _aug = os.environ.get("TS_LEJEPA_AUG")
+    if _aug:
+        _fam = {'galilean': ('galilien', 'lorentz'), 'polar': ('polar', 'polar'),
+                'hyperbolic': ('hyperbolic_warp', 'hyperbolic_geom'), 'dwt': (None, None)}
+        _v1, _v2 = _fam.get(_aug.lower(), (_aug, _aug))
+        if _v1: config['view1_phys'] = _v1
+        if _v2: config['view2_phys'] = _v2
+        _pa = Path(config['path_save'].rstrip('/'))
+        config['path_save'] = str(_pa.parent / (_pa.name + f"_aug{_aug.lower()}")) + '/'
     if lr is not None:
         config['lr_adamw'] = lr
 

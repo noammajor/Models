@@ -78,8 +78,10 @@ class LeJEPA(nn.Module):
         # ── Augmentation pipelines — two views, different DWT modes (like DINO) ─
         # view 1: smooth global view (soft_threshold)
         # view 2: perturbed local view (high_perturb)
-        self.augment_v1 = AugmentationPipeline(config, dwt_mode=config.get("view1_dwt_mode", "soft_threshold"))
-        self.augment_v2 = AugmentationPipeline(config, dwt_mode=config.get("view2_dwt_mode", "high_perturb"))
+        self.augment_v1 = AugmentationPipeline(config, dwt_mode=config.get("view1_dwt_mode", "soft_threshold"),
+                                               phys_mode=config.get("view1_phys"))
+        self.augment_v2 = AugmentationPipeline(config, dwt_mode=config.get("view2_dwt_mode", "high_perturb"),
+                                               phys_mode=config.get("view2_phys"))
 
         # ── Optimizer: AdamW or SGD — controlled by config["optimizer"] ─────
         opt_name = config.get("optimizer", "adamw").lower()
