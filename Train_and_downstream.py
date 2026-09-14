@@ -356,6 +356,11 @@ def run_dino(skip_train: bool = False,
         _nlc = int(_nlc)
         for _c in dino_cfg.get('local_crops', []):
             _c['count'] = _nlc
+    # Speed knob: TS_DINO_FP16=1 enables mixed-precision (AMP) pretraining. Off by
+    # default; a large speedup on high-dimensional in-domain data (electricity/traffic).
+    _fp16 = os.environ.get("TS_DINO_FP16")
+    if _fp16 is not None:
+        dino_cfg['use_fp16'] = _fp16 not in ('0', 'false', 'False', '')
     if synthetic_data_dir is not None:
         dino_cfg['synthetic_data_dir'] = synthetic_data_dir
     if dwt_wavelet_pool is not None:
