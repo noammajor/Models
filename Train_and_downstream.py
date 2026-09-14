@@ -1593,8 +1593,11 @@ def run_lejepa(skip_train: bool = False,
         config["path_data_forcasting"]       = [str((lejepa_dir / ds_fore["csv_path"]).resolve())]
 
     # ── data ──────────────────────────────────────────────────────────────────
-    if skip_train and use_global_data:
-        print("\n[LE-JEPA] skip_train=True + global pretrain: skipping pretrain data load.")
+    if skip_train:
+        # Skip the pretrain dataset entirely (in-domain too, e.g. electricity's 321
+        # channel-groups). input_dim/num_patches are channel-independent per-patch
+        # quantities from config.
+        print("\n[LE-JEPA] skip_train=True: skipping pretrain data load.")
         input_dim   = config["patch_size"]
         num_patches = config["ratio_patches"]
         train_loader = val_loader = test_loader = None
