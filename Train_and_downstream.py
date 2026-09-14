@@ -347,6 +347,15 @@ def run_dino(skip_train: bool = False,
         dino_cfg['global_crops'] = [{"type": aug_global, "crop_ratio": 1.0}]
     if aug_local is not None:
         dino_cfg['local_crops']  = [{"type": aug_local,  "crop_ratio": 1.0}]
+    # Speed knob: TS_DINO_LOCAL_CROPS overrides the local-crop replication count.
+    # Fewer local crops => fewer student forward passes per step (big win on very
+    # high-dimensional in-domain data like electricity/traffic where each crop
+    # processes hundreds of channels). Default config uses count=6.
+    _nlc = os.environ.get("TS_DINO_LOCAL_CROPS")
+    if _nlc is not None:
+        _nlc = int(_nlc)
+        for _c in dino_cfg.get('local_crops', []):
+            _c['count'] = _nlc
     if synthetic_data_dir is not None:
         dino_cfg['synthetic_data_dir'] = synthetic_data_dir
     if dwt_wavelet_pool is not None:
