@@ -709,10 +709,14 @@ def run_jepa(skip_train: bool = False,
         config["path_data_forcasting"]       = [_resolve_jepa_path(ds_fore["csv_path"], jepa_dir)]
 
     # ── data ─────────────────────────────────────────────────────────────────
-    if skip_train and use_global_data:
-        # Skip loading pretrain data entirely — only need forecasting loaders
-        print("\n[JEPA] skip_train=True + global pretrain: skipping pretrain data load.")
-        input_dim       = config["patch_size"]  # univariate: input_dim = patch_size
+    if skip_train:
+        # Skip building the pretrain dataset entirely — only forecasting loaders are
+        # needed. This also avoids constructing one DataPullerDJepa per channel-group
+        # for in-domain (e.g. electricity's 321 groups) just to throw it away.
+        # input_dim/num_patches are per-patch quantities (channel-independent), so they
+        # come from config, not from a pretrain loader.
+        print("\n[JEPA] skip_train=True: skipping pretrain data load.")
+        input_dim       = config["patch_size"]      # per-patch input_dim = patch_size
         num_patches     = config["ratio_patches"]
         train_loader = val_loader = test_loader = None
     else:
