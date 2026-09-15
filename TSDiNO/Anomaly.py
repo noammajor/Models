@@ -184,9 +184,9 @@ def anomaly_detection(args, path_num, anomaly_train, anomaly_test,
         if patches.dim() == 3:
             patches = patches.unsqueeze(-1)
         patches = patches.to(device)
-        # RevIN on encoder input (target stays raw). TS_ANOM_NO_REVIN=1 disables it,
-        # reproducing the pre-fix bare-backbone behavior for an ablation.
-        if os.environ.get("TS_ANOM_NO_REVIN") not in ('1', 'true', 'True'):
+        # RevIN on encoder input (target stays raw). OFF by default (bare backbone,
+        # matching the published anomaly tables); set TS_ANOM_REVIN=1 to enable it.
+        if os.environ.get("TS_ANOM_REVIN") in ('1', 'true', 'True'):
             patches = _instance_norm(patches)
         x = patches.permute(0, 1, 3, 2)   # [B, P, C, patch_len]
         z = backbone(x)                    # [B, P+1, C, d_model]

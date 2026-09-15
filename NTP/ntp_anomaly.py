@@ -164,7 +164,11 @@ def anomaly_detection(config, checkpoint_path, anomaly_train, anomaly_test,
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
 
     def _encode(patches):
-        patches = _instance_norm(patches.to(device))   # RevIN on encoder input (target stays raw)
+        patches = patches.to(device)
+        # RevIN on encoder input (target stays raw). OFF by default (matches published
+        # anomaly tables); set TS_ANOM_REVIN=1 to enable it.
+        if os.environ.get("TS_ANOM_REVIN") in ('1', 'true', 'True'):
+            patches = _instance_norm(patches)
         x = patches.permute(0, 1, 3, 2)
         return backbone.backbone(x)
 

@@ -9,7 +9,7 @@ config = {
     # model: "PatchTST" uses a bidirectional encoder; "TimeDART" uses CausalTransformer
     "model":       "TimeDART",
     "e_layers":    3,
-    "d_model":     256,    # matches embed_dim used across JEPA / LE-JEPA / DINO
+    "d_model":     128,    # matches embed_dim used across JEPA / LE-JEPA / DINO
     "n_heads":     8,
     "d_ff":        512,    # matches d_ff used across other models
     "patch_len":   16,     # matches patch_size used across JEPA / LE-JEPA

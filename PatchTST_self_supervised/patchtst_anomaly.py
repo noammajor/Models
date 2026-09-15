@@ -170,7 +170,11 @@ def anomaly_detection(config, checkpoint_path, anomaly_train, anomaly_test,
 
     def _encode(patches):
         """patches [B, P, PL, n_vars] → z [B, n_vars, d_model, P]"""
-        patches = _instance_norm(patches.to(device))  # RevIN on encoder input (target stays raw)
+        patches = patches.to(device)
+        # RevIN on encoder input (target stays raw). OFF by default (matches published
+        # anomaly tables); set TS_ANOM_REVIN=1 to enable it.
+        if os.environ.get("TS_ANOM_REVIN") in ('1', 'true', 'True'):
+            patches = _instance_norm(patches)
         x = patches.permute(0, 1, 3, 2)               # [B, P, n_vars, PL]
         return backbone.backbone(x)                     # [B, n_vars, d_model, P]
 

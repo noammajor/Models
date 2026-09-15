@@ -136,7 +136,11 @@ class TSMultiCropWrapper(nn.Module):
             output = torch.cat((output, _out))
             start_idx = end_idx
         output = output.reshape(-1, output.shape[-1])  # [bs*n_views*n_vars, d_model]
-        
+
+        # Stash pre-head backbone features so the training loop can apply the
+        # KoLeo regularizer on the CLS embeddings (DINOv2-style).
+        self.backbone_feat = output
+
         return self.head(output)
 
 def has_batchnorms(model):

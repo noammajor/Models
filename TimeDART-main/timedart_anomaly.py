@@ -82,7 +82,7 @@ def _build_model_args(config, n_vars, device):
         device       = device,
         task_name    = "pretrain",
         pred_len     = 0,
-        use_norm     = True,    # per-window RevIN on encoder input (match forecast/classify/other models)
+        use_norm     = os.environ.get("TS_ANOM_REVIN") in ('1', 'true', 'True'),   # per-window RevIN on encoder input; OFF by default (set TS_ANOM_REVIN=1)
         patch_len    = patch_len,
         stride       = stride,
         time_steps   = config.get("time_steps", 1000),

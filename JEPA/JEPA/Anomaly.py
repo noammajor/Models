@@ -6,6 +6,7 @@ normal data only. Anomaly score = per-timestep reconstruction MSE.
 Threshold = percentile of combined train+test energy.
 """
 
+import os
 import numpy as np
 import torch
 import torch.nn as nn
@@ -122,8 +123,11 @@ def anomaly_detection(self, path, anomaly_train, anomaly_test,
         B, P, PL, C = patches.shape
         # normalise per-channel then reshape back to 4D for JEPA encoder
         flat = patches.permute(0, 3, 1, 2).reshape(B * C, P, PL)
-        norm_flat, _, _ = _instance_norm(flat)
-        norm4d = norm_flat.reshape(B, C, P, PL).permute(0, 2, 3, 1)  # [B, P, PL, C]
+        # RevIN on encoder input. OFF by default (matches published anomaly tables);
+        # set TS_ANOM_REVIN=1 to enable it.
+        if os.environ.get("TS_ANOM_REVIN") in ('1', 'true', 'True'):
+            flat, _, _ = _instance_norm(flat)
+        norm4d = flat.reshape(B, C, P, PL).permute(0, 2, 3, 1)  # [B, P, PL, C]
         enc_out = self.encoder_for(norm4d)                             # expects [B, P, PL, C]
         z = enc_out["data_patches"]                                    # [B*C, P, embed_dim]
         return z.reshape(B, C, P, embed_dim).mean(dim=1)              # [B, P, embed_dim]
