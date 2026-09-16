@@ -1041,7 +1041,10 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
         "--head_dropout",        str(cfg.get("head_dropout",        0.2)),
         "--mask_ratio",          str(cfg.get("mask_ratio",          0.4)),
         "--n_epochs_pretrain",   str(epochs if epochs is not None else cfg.get("n_epochs_pretrain", 10)),
-        "--batch_size",          str(cfg.get("batch_size",          64)),
+        # Pretrain batch: TS_PATCHTST_BS env overrides config (mirrors TS_FORECAST_BS /
+        # TS_CLS_BS). Needed for high-channel in-domain sets — PatchTST is
+        # channel-independent, so traffic (862 ch) OOMs at the default 64.
+        "--batch_size",          str(int(os.environ.get("TS_PATCHTST_BS", cfg.get("batch_size", 64)))),
         "--revin",               str(int(cfg.get("revin",           True))),
         "--pretrained_model_id", str(cfg.get("pretrained_model_id", 1)),
         "--seed",                str(seed if seed is not None else GLOBAL_SEED),
