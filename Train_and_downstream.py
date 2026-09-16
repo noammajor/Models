@@ -373,6 +373,7 @@ def run_dino(skip_train: bool = False,
     use_global_data = pretrain_source is not None
 
     # Resolve forecast dataset (always needed for downstream)
+    _forecast_explicit = forecast_dataset is not None   # was --forecast_dataset passed by the caller?
     if not (anomaly_dataset is not None and forecast_dataset is None):
         forecast_dataset = forecast_dataset or dino_cfg.get("forecast_dataset")
     dino_cfg["lr_forecasting"] = _get_forecast_lr(dino_cfg, "lr_forecasting")
@@ -412,7 +413,16 @@ def run_dino(skip_train: bool = False,
         print("="*60)
     else:
         pretrain_dataset = pretrain_dataset or dino_cfg.get("pretrain_dataset")
-        forecast_dataset = forecast_dataset or pretrain_dataset
+        # In-domain: the forecast dataset follows the pretrain dataset unless the caller
+        # explicitly passed --forecast_dataset. Otherwise the config default (etth1) leaks
+        # in and DINO concatenates a second, mismatched-channel forecast-training adapter
+        # (TSDiNO/main.py builds dataset2 whenever data_path_forecast_training != data_path),
+        # which crashes the collate for any non-7-channel pretrain set (electricity 321,
+        # traffic 862, weather 21).
+        if not _forecast_explicit:
+            forecast_dataset = pretrain_dataset
+        else:
+            forecast_dataset = forecast_dataset or pretrain_dataset
         if pretrain_dataset is None:
             raise ValueError("pretrain_dataset not set — specify via run() or config.py")
         ds_pre  = get_dataset_info(pretrain_dataset)
