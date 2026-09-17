@@ -2351,7 +2351,10 @@ def run_timedart(skip_train: bool = False,
         num_classes        = 6,
         num_workers        = cfg.get('num_workers', 4),
         train_epochs       = epochs if epochs is not None else cfg.get('train_epochs', 20),
-        batch_size         = cfg.get('batch_size', 128),
+        # Pretrain batch: TS_TIMEDART_BS env overrides config (mirrors TS_PATCHTST_BS /
+        # TS_SOFTCLT_BS). Needed for high-channel in-domain sets — the traffic (862 ch)
+        # in-domain pretrain OOMs at the default 128.
+        batch_size         = int(os.environ.get("TS_TIMEDART_BS", cfg.get('batch_size', 128))),
         learning_rate      = cfg['learning_rate'],
         patience           = cfg.get('patience', 3),
         load_checkpoints   = None,
@@ -2389,7 +2392,7 @@ def run_timedart(skip_train: bool = False,
                         synth_dir, seq_len=seq_len, which=which, min_len=min_len))
                 ds = datasets[0] if len(datasets) == 1 else torch.utils.data.ConcatDataset(datasets)
             return torch.utils.data.DataLoader(
-                ds, batch_size=cfg['batch_size'], shuffle=(which == 'train'),
+                ds, batch_size=int(os.environ.get("TS_TIMEDART_BS", cfg['batch_size'])), shuffle=(which == 'train'),
                 num_workers=cfg.get('num_workers', 4), drop_last=True)
 
         train_loader = _make_pretrain_loader('train')
@@ -2755,6 +2758,11 @@ def run_softclt(
         cfg['epochs_forecasting'] = epochs_forecasting
     if output_dir is not None:
         cfg['output_dir'] = output_dir
+    # Pretrain batch: TS_SOFTCLT_BS env overrides config (mirrors TS_PATCHTST_BS /
+    # TS_FORECAST_BS). Needed for high-channel in-domain sets — the traffic (862 ch)
+    # in-domain pretrain OOMs at the default 128.
+    if os.environ.get("TS_SOFTCLT_BS"):
+        cfg['batch_size'] = int(os.environ["TS_SOFTCLT_BS"])
     if pretrain_source is not None:
         cfg['pretrain_source'] = pretrain_source
     elif pretrain_dataset is not None and pretrain_dataset not in ('monash', 'synthetic', 'monash+synthetic'):
