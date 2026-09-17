@@ -8,7 +8,7 @@ config = {
     # pretrained W_pos no longer fits. Keep it equal to patch_len.
     "step_size":    16,
     "embed_dim":    128,
-    "n_layers":     5,
+    "n_layers":     8,
     "n_heads":      16,
     "d_ff":         512,
     "dropout":      0.1,

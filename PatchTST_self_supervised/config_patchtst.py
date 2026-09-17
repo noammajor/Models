@@ -12,10 +12,10 @@ config = {
     "context_points":  336,
     "target_points":   96,
     "patch_len":       16,
-    "stride":          8,
+    "stride":          16,   # =patch_len → non-overlapping, 336/16 = 21 patches (overlap experiment: 8)
 
     # ── Model ─────────────────────────────────────────────────────────────────
-    "n_layers":     3,
+    "n_layers":     8,
     "n_heads":      16,
     "d_model":      128,
     "d_ff":         512,

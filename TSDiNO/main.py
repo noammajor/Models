@@ -762,7 +762,7 @@ def test_run(args):
         )
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    _forecast_num_patch = (_SEQ_LEN - args.patch_len) // args.step_size + 1   # (336-16)//8+1 = 41 (overlap)
+    _forecast_num_patch = (_SEQ_LEN - args.patch_len) // args.step_size + 1   # (336-16)//16+1 = 21 (default, non-overlapping); 41 with step_size=8
     model = PatchTST(
         c_in= args.c_in,
         target_dim=args.pred_len,

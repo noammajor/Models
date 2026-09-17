@@ -26,10 +26,10 @@ config = {
     # ── Model architecture ────────────────────────────────────────────────────
     "c_in": 7,          # number of input variables  (9 for UCI HAR)
     "patch_len": 16,
-    "step_size": 8,     # stride between patches within window (overlap: <patch_len); window=(41-1)*8+16=336
+    "step_size": 16,    # stride between patches within window; =patch_len → non-overlapping. window=(21-1)*16+16=336. (overlap experiment: 8 / 41)
     "window_step": 336, # stride between windows; =window_size for non-overlapping
-    "num_patches": 41,  # window length in patches → (41-1)*8+16 = 336 timesteps (50% overlap)
-    "n_layers": 5,
+    "num_patches": 21,  # window length in patches → (21-1)*16+16 = 336 timesteps (cw336, the standard forecast context)
+    "n_layers": 8,
     "n_heads": 16,
     "embed_dim": 128,
     "d_ff": 512,
