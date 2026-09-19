@@ -10,7 +10,7 @@ config = {
     "model":       "TimeDART",
     "e_layers":    8,
     "d_model":     128,    # matches embed_dim used across JEPA / LE-JEPA / DINO
-    "n_heads":     8,
+    "n_heads":     16,
     "d_ff":        512,    # matches d_ff used across other models
     "patch_len":   16,     # matches patch_size used across JEPA / LE-JEPA
     "stride":      16,

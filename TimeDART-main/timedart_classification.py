@@ -64,7 +64,7 @@ def _build_model_args(config, n_vars, device):
     return SimpleNamespace(
         input_len    = input_len,
         d_model      = config.get("d_model",   256),
-        n_heads      = config.get("n_heads",   8),
+        n_heads      = config.get("n_heads",   16),
         d_ff         = config.get("d_ff",      512),
         dropout      = config.get("dropout",   0.1),
         head_dropout = config.get("head_dropout", 0.1),

@@ -20,7 +20,7 @@ config = {
 
     # ── Encoder (same architecture as JEPA) ──────────────────────────────────
     "encoder_embed_dim": 128,
-    "nhead": 8,
+    "nhead": 16,
     "num_encoder_layers": 8,
     "mlp_ratio": 4.0,
     "drop_rate": 0.0,
