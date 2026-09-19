@@ -146,22 +146,24 @@ config = {
     #
     # ─────────────────────────────────────────────────────────────────────────
 
-    # ── Classic DINO (vision-style) multi-crop ────────────────────────────────
-    # 2 global crops (teacher + student) + 8 small local crops (student only),
-    # mirroring Caron et al. 2021: global view 1 = strong Gaussian blur, global
-    # view 2 = colour-jitter analog; local crops = short sub-windows + noise.
+    # ── Wavelet (DWT) views — default ─────────────────────────────────────────
+    # Reference view (teacher + student): soft-threshold the detail coeffs, keeping
+    # the low-frequency approximation. Perturbed view (student only): Gaussian noise
+    # on the detail coeffs. Same two-view recipe as Le-JEPA (view1/view2_dwt_mode).
+    "global_crops": [{"type": "dwt_soft_threshold", "crop_ratio": 1.0}],
+    "local_crops":  [{"type": "dwt_high_perturb",   "crop_ratio": 1.0}],
     #
-    # To revert to the DWT recipe, swap these two back to:
-    #   "global_crops": [{"type": "dwt_soft_threshold", "crop_ratio": 1.0}],
-    #   "local_crops":  [{"type": "dwt_high_perturb",   "crop_ratio": 1.0}],
-    "global_crops": [
-        {"type": "gaussian_blur",   "crop_ratio": 1.0, "sigma_range": (0.5, 2.0)},
-        {"type": "jitter_contrast", "crop_ratio": 1.0,
-         "contrast_range": (0.6, 1.4), "brightness_range": (-0.2, 0.2), "jitter_range": (0.0, 0.1)},
-    ],
-    "local_crops": [
-        {"type": "gaussiancrop", "crop_ratio": 0.4, "count": 6, "std_range": (0.05, 0.2)},
-    ],
+    # Classic DINO (vision-style) multi-crop — was the default 2026-07-26 → 2026-09-19.
+    # 2 global crops (blur, colour-jitter analog) + 6 local sub-window crops with noise,
+    # mirroring Caron et al. 2021. To use it, swap the two lists above for:
+    #   "global_crops": [
+    #       {"type": "gaussian_blur",   "crop_ratio": 1.0, "sigma_range": (0.5, 2.0)},
+    #       {"type": "jitter_contrast", "crop_ratio": 1.0,
+    #        "contrast_range": (0.6, 1.4), "brightness_range": (-0.2, 0.2), "jitter_range": (0.0, 0.1)},
+    #   ],
+    #   "local_crops": [
+    #       {"type": "gaussiancrop", "crop_ratio": 0.4, "count": 6, "std_range": (0.05, 0.2)},
+    #   ],
 
     # ── Patch reconstruction (MAE-style auxiliary loss) ────────────────────────
     # Student encoder sees masked patches → reconstruction head.
