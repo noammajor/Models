@@ -2282,6 +2282,10 @@ def run_timedart(skip_train: bool = False,
         cfg['d_model'] = embed_dim
     if lr is not None:
         cfg['learning_rate'] = lr
+    # Attention heads: TS_TIMEDART_NHEADS overrides the config value, so a run can pick
+    # the head count without editing config_timedart.py (shared by concurrent runs).
+    if os.environ.get('TS_TIMEDART_NHEADS'):
+        cfg['n_heads'] = int(os.environ['TS_TIMEDART_NHEADS'])
 
     _pretrain_src = _resolve_pretrain_source(cfg)
     _src_tag = f"_{_pretrain_src.replace('+', '_')}" if _pretrain_src else (f"_{pretrain_dataset}" if pretrain_dataset else '')
@@ -2304,7 +2308,8 @@ def run_timedart(skip_train: bool = False,
     print("\n" + "="*60)
     print(f"  MODEL: TimeDart  (backbone={cfg.get('model','PatchTST')})")
     print(f"  pretrain: {pretrain_src or pretrain_dataset}   forecast: {forecast_dataset or '(none)'}")
-    print(f"  e_layers={cfg['e_layers']}  d_model={cfg['d_model']}  patch_len={cfg['patch_len']}")
+    print(f"  e_layers={cfg['e_layers']}  d_model={cfg['d_model']}  n_heads={cfg['n_heads']}  patch_len={cfg['patch_len']}")
+    print(f"  checkpoint: {ckpt_file}")
     print("="*60)
 
     seq_len   = cfg['seq_len']
