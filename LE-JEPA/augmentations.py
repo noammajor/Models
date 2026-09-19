@@ -188,19 +188,19 @@ class AugmentationPipeline:
     """
 
     def __init__(self, config: dict, dwt_mode: str = None, phys_mode: str = None):
-        self.augs = [
-            GaussianJitter(noise_std=config.get("aug_noise_std", 0.05)),
-            AmplitudeScaling(scale_range=config.get("aug_amplitude_range", (0.8, 1.2))),
-            ChannelDropout(p=config.get("aug_channel_drop_p", 0.2)),
-            FrequencyMasking(mask_ratio=config.get("aug_freq_mask_ratio", 0.3)),
-        ]
+        # Each view is exactly one transform: its DWT view (or, for the physics ablation,
+        # a physics transform). No generic jitter / amplitude scaling / channel dropout /
+        # frequency masking is stacked on top, so Le-JEPA's views are identical to DINO's
+        # DWT views. (Those four classes are still defined above but no longer used here.)
+        self.augs = []
         if phys_mode is not None:
             # Physics-inspired transform replaces DWT for this view (Le-JEPA analog
             # of DINO's --aug_global/--aug_local physics ablation).
             self.augs.append(PhysicsAugmentation(phys_mode))
         elif dwt_mode is not None:
             if not _HAS_PYWT:
-                print("[LE-JEPA] Warning: dwt_mode set but pywt not installed — DWT disabled.")
+                raise ImportError("[LE-JEPA] dwt_mode is set but pywt is not installed; "
+                                  "the two views would be identical. Install PyWavelets.")
             else:
                 self.augs.append(DWTAugmentation(
                     wavelet                  = config.get("dwt_wavelet", "db4"),
@@ -213,11 +213,13 @@ class AugmentationPipeline:
                     band_scale_approx_range  = config.get("dwt_band_scale_approx_range", (0.80, 1.20)),
                     band_scale_detail_range  = config.get("dwt_band_scale_detail_range", (0.40, 1.60)),
                 ))
+        if not self.augs:
+            raise ValueError("[LE-JEPA] AugmentationPipeline needs dwt_mode or phys_mode; "
+                             "with no transform both views would be identical.")
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        # x: [B, T, C]. Every augmentation is applied (there is no per-batch coin flip),
-        # so each view always gets its DWT transform, matching DINO, which applies its
-        # DWT views to every sample.
+        # x: [B, T, C]. The view's single transform is applied on every call (no coin
+        # flip), matching DINO, which applies its DWT views to every sample.
         for aug in self.augs:
             x = aug(x)
         return x
