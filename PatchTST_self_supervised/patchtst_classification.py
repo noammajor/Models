@@ -35,6 +35,36 @@ def _instance_norm(x, eps=1e-6):
     return (x - mean) / std
 
 
+def _ckpt_stride(state, num_patch, patch_len):
+    """Stride a checkpoint was pretrained with, if it differs from patch_len.
+
+    The loaders yield non-overlapping patches. A backbone pretrained on overlapping
+    patches (stride < patch_len) has a positional embedding with (T - PL) // s + 1 rows
+    for the same window length T, so the stride is recovered from W_pos. Returns None
+    when the checkpoint uses non-overlapping patches (or has no W_pos).
+    """
+    w = state.get("backbone.W_pos")
+    if w is None or w.shape[0] == num_patch or w.shape[0] < 2:
+        return None
+    s, r = divmod(num_patch * patch_len - patch_len, w.shape[0] - 1)
+    return s if r == 0 and 0 < s < patch_len else None
+
+
+def _repatch(patches, padding_mask, stride):
+    """Re-cut non-overlapping patches [B, P, PL, C] into overlapping ones at `stride`.
+
+    A new patch counts as real only if all its timesteps come from real (unpadded)
+    patches; rows with no such patch fall back to any-real.
+    """
+    B, P, PL, C = patches.shape
+    series = patches.reshape(B, P * PL, C)
+    out = series.unfold(1, PL, stride).permute(0, 1, 3, 2).contiguous()   # [B, P', PL, C]
+    m_t = padding_mask.bool().repeat_interleave(PL, dim=1).unfold(1, PL, stride)  # [B, P', PL]
+    m_all, m_any = m_t.all(-1), m_t.any(-1)
+    mask = torch.where(m_all.any(1, keepdim=True), m_all, m_any)
+    return out, mask
+
+
 def classification(config, checkpoint_path, classification_train,
                    classification_val, classification_test, n_classes,
                    linear_probe=True, mlp_head: bool = False):
@@ -62,12 +92,25 @@ def classification(config, checkpoint_path, classification_train,
     n_v       = sample_patches.shape[-1]
     patch_len = sample_patches.shape[2]
 
+    # A backbone pretrained on overlapping patches (e.g. stride 8) is fed patches cut at
+    # that stride, so the encoder sees the same patching as in pretraining and its
+    # positional embedding loads.
+    state, stride = None, None
+    if checkpoint_path is not None:
+        ckpt  = torch.load(checkpoint_path, map_location="cpu")
+        state = ckpt.get("model", ckpt)
+        stride = _ckpt_stride(state, num_patch, patch_len)
+    if stride is not None:
+        num_patch = (num_patch * patch_len - patch_len) // stride + 1
+        print(f"  Checkpoint pretrained at stride {stride}: re-patching inputs "
+              f"({num_patch} overlapping patches)")
+
     # Build model with classification head
     model = PatchTST(
         c_in         = n_v,
         target_dim   = n_classes,
         patch_len    = patch_len,
-        stride       = patch_len,
+        stride       = stride or patch_len,
         num_patch    = num_patch,
         n_layers     = config.get("n_layers",  3),
         n_heads      = config.get("n_heads",   16),
@@ -83,9 +126,7 @@ def classification(config, checkpoint_path, classification_train,
     ).to(device)
 
     # Load pretrained backbone weights (skip head and shape mismatches)
-    if checkpoint_path is not None:
-        ckpt = torch.load(checkpoint_path, map_location="cpu")
-        state = ckpt.get("model", ckpt)
+    if state is not None:
         model_dict = model.state_dict()
         filtered = {k: v for k, v in state.items()
                     if k in model_dict and model_dict[k].shape == v.shape
@@ -141,6 +182,8 @@ def classification(config, checkpoint_path, classification_train,
         correct, total = 0, 0
         for patches, labels, padding_mask in classification_train:
             patches      = _instance_norm(patches)   # RevIN before encoder
+            if stride is not None:
+                patches, padding_mask = _repatch(patches, padding_mask, stride)
             # PatchTST expects [B, P, n_vars, PL]
             x            = patches.permute(0, 1, 3, 2).to(device)
             labels       = labels.to(device)
@@ -161,6 +204,8 @@ def classification(config, checkpoint_path, classification_train,
     with torch.no_grad():
         for patches, labels, padding_mask in classification_test:
             patches      = _instance_norm(patches)   # RevIN before encoder
+            if stride is not None:
+                patches, padding_mask = _repatch(patches, padding_mask, stride)
             x            = patches.permute(0, 1, 3, 2).to(device)
             labels       = labels.to(device)
             padding_mask = padding_mask.to(device)
