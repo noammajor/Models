@@ -176,7 +176,8 @@ class DWTAugmentation:
 
 class AugmentationPipeline:
     """
-    Randomly applies each augmentation with p=0.5.
+    Applies the view's single transform (its DWT view, or a physics transform for the
+    ablation) to every sample; there is no random application.
 
     Like DINO, the two views use different DWT modes:
       - view 1 (smooth): dwt_mode = config["view1_dwt_mode"]  (default: soft_threshold)
