@@ -215,10 +215,11 @@ class AugmentationPipeline:
                 ))
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        # x: [B, T, C]
+        # x: [B, T, C]. Every augmentation is applied (there is no per-batch coin flip),
+        # so each view always gets its DWT transform, matching DINO, which applies its
+        # DWT views to every sample.
         for aug in self.augs:
-            if random.random() < 0.5:
-                x = aug(x)
+            x = aug(x)
         return x
 
 
