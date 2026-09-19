@@ -79,13 +79,15 @@ config = {
     #   finest_levels         – how many of the finest detail levels to perturb (1 = only finest).
     #   high_perturb_noise_range – (min_σ, max_σ) of Gaussian noise added to all detail coeffs.
     #
-    "dwt_wavelet":                  "sym4",         # fallback when dwt_wavelet_pool is None
-    "dwt_wavelet_pool":             ["sym4", "sym6", "sym8", "db4", "db6"],  # random per sample; set None for fixed wavelet
+    # The four values below are aligned with Le-JEPA (LE-JEPA/config_lejepa.py) so both
+    # models use the same wavelet views: db4, 3 levels, σ=0.3, noise U(0.1, 0.3).
+    "dwt_wavelet":                  "db4",          # fallback when dwt_wavelet_pool is None
+    "dwt_wavelet_pool":             None,           # fixed wavelet (was a random pool of sym4/6/8, db4/6)
     "dwt_level":                    3,              # try: 2, 3, 4
-    "dwt_soft_threshold_sigma":     0.6,            # bumped: 0.3 → 0.6
+    "dwt_soft_threshold_sigma":     0.3,            # was 0.6
     "dwt_zero_out_ratio":           0.4,
     "dwt_finest_levels":            3,              # bumped: 2 → 3
-    "dwt_high_perturb_noise_range": (0.2, 0.5),    # gentler student noise
+    "dwt_high_perturb_noise_range": (0.1, 0.3),    # was (0.2, 0.5)
     "dwt_band_scale_approx_range":  (0.80, 1.20),
     "dwt_band_scale_detail_range":  (0.40, 1.60),
 
