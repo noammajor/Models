@@ -66,7 +66,13 @@ if not os.path.exists(args.save_path): os.makedirs(args.save_path)
 
 # args.save_finetuned_model = '_cw'+str(args.context_points)+'_tw'+str(args.target_points) + '_patch'+str(args.patch_len) + '_stride'+str(args.stride) + '_epochs-finetune' + str(args.n_epochs_finetune) + '_mask' + str(args.mask_ratio)  + '_model' + str(args.finetuned_model_id)
 _random_tag = '_random' if args.random_encoder else ''
-suffix_name = '_cw'+str(args.context_points)+'_tw'+str(args.target_points) + '_patch'+str(args.patch_len) + '_stride'+str(args.stride) + '_epochs-finetune' + str(args.n_epochs_finetune) + '_model' + str(args.finetuned_model_id) + _random_tag
+# The probe head is checkpointed under save_path and reloaded for testing. Without the
+# seed (and the pretrain tag) in the name, concurrent runs differing only by seed share
+# one file and can load each other's head, or a half-written one.
+_ckpt_tag   = os.environ.get('TS_CKPT_TAG', '')
+_ckpt_tag   = ('_' + _ckpt_tag) if _ckpt_tag else ''
+_seed_tag   = '_s' + str(args.seed)
+suffix_name = '_cw'+str(args.context_points)+'_tw'+str(args.target_points) + '_patch'+str(args.patch_len) + '_stride'+str(args.stride) + '_epochs-finetune' + str(args.n_epochs_finetune) + '_model' + str(args.finetuned_model_id) + _random_tag + _ckpt_tag + _seed_tag
 if args.is_finetune: args.save_finetuned_model = args.dset_finetune+'_patchtst_finetuned'+suffix_name
 elif args.is_linear_probe: args.save_finetuned_model = args.dset_finetune+'_patchtst_linear-probe'+suffix_name
 else: args.save_finetuned_model = args.dset_finetune+'_patchtst_finetuned'+suffix_name
