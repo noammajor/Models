@@ -2241,6 +2241,7 @@ def run_timedart(skip_train: bool = False,
                  head_type: str = "linear",
                  pretrain_cls_model: bool = False,
                  embed_dim: int = None,
+                 num_patches: int = None,
                  epochs: int = None,
                  epochs_forecasting: int = None):
     """
@@ -2280,6 +2281,11 @@ def run_timedart(skip_train: bool = False,
         cfg['e_layers'] = encoder_layers
     if embed_dim is not None:
         cfg['d_model'] = embed_dim
+    # Pretraining context: TimeDART otherwise always pretrains at config seq_len (336),
+    # even when the downstream is the 1152-step classification protocol. Passing
+    # --num_patches makes the pretraining window match the downstream one.
+    if num_patches is not None:
+        cfg['seq_len'] = num_patches * cfg.get('patch_len', 16)
     if lr is not None:
         cfg['learning_rate'] = lr
     # Attention heads: TS_TIMEDART_NHEADS overrides the config value, so a run can pick
@@ -2294,7 +2300,11 @@ def run_timedart(skip_train: bool = False,
     # overwriting the standard backbone. No-op for every existing 20-epoch run.
     _ep = epochs if epochs is not None else cfg.get('train_epochs', 20)
     _ep_tag = f"_ep{int(_ep)}" if _ep and int(_ep) != 20 else ''
-    ckpt_dir  = Path(__file__).parent / f"outputs/timedart_pretrain{_src_tag}{_synth_tag}_layers{cfg['e_layers']}{_ep_tag}{_SEED_TAG}"
+    # Context tag: only when the pretraining window differs from the default 336, so a
+    # cw1152 backbone gets its own dir instead of overwriting the cw336 one. No-op for
+    # every existing run.
+    _cw_tag = f"_cw{cfg['seq_len']}" if cfg.get('seq_len', 336) != 336 else ''
+    ckpt_dir  = Path(__file__).parent / f"outputs/timedart_pretrain{_src_tag}{_synth_tag}_layers{cfg['e_layers']}{_cw_tag}{_ep_tag}{_SEED_TAG}"
     ckpt_file     = ckpt_dir / ("monash" + _src_tag) / "ckpt_best.pth"
     cls_ckpt_file = ckpt_dir / "monash_cls" / "ckpt_best.pth"
 
