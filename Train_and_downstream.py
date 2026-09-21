@@ -2515,7 +2515,12 @@ def run_timedart(skip_train: bool = False,
             ft_args.mlp_head       = (head_type == "mlp")
             ft_args.head_dropout   = cfg.get('head_dropout_forecasting', cfg.get('head_dropout', 0.2))
 
-            setting = f"timedart_{forecast_dataset}_pl{pred_len}_dm{cfg['d_model']}_el{cfg['e_layers']}"
+            # The forecasting head is checkpointed at outputs/timedart_finetune/{setting}/
+            # checkpoint.pth and reloaded after early stopping. Without the seed / pretrain
+            # tag / epoch budget in the name, two concurrent runs differing only by seed
+            # share one file and can load each other's head (or a half-written one).
+            setting = (f"timedart_{forecast_dataset}_pl{pred_len}_dm{cfg['d_model']}"
+                       f"_el{cfg['e_layers']}{_synth_tag}{_ep_tag}{_SEED_TAG}")
 
             print(f"\n[TimeDart] {'Linear probing' if linear_probe else 'Fine-tuning'} pred_len={pred_len} on {forecast_dataset} …")
             exp = Exp_TimeDART(ft_args)
