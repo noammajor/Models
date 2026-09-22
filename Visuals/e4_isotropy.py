@@ -140,9 +140,14 @@ _MSE_REGEX = {
 # monash_forecast_seed; jepa/lejepa/softclt under their *_seed_sweep/forecast; the
 # random-encoder baseline under forecast_random_lp.
 _FORECAST_DIRS = [
+    # permodel_forecast_seed supersedes monash_forecast_seed: the latter ran before the
+    # per-model backbones existed and read checkpoints that have since been overwritten.
+    "logs/testing_data/permodel_forecast_seed",
     "logs/testing_data/monash_forecast_seed",
     "logs/testing_data/jepa_seed_sweep/forecast",
     "logs/testing_data/lejepa_seed_sweep/forecast",
+    # LR 2e-4 SoftCLT supersedes the original sweep.
+    "logs/testing_data/softclt_lr2e4_20ep_forecast",
     "logs/testing_data/softclt_seed_sweep/forecast",
     "logs/testing_data/forecast_random_lp",
 ]
@@ -201,7 +206,13 @@ def main():
     ap.add_argument("--gpu", type=int, default=0)
     ap.add_argument("--output_dir", type=str, default="plots")
     ap.add_argument("--suffix", type=str, default="")
+    ap.add_argument("--ckpt_override", nargs="*", default=[], metavar="MODEL=PATH",
+                    help="Point a model at an explicit checkpoint, e.g. "
+                         "softclt=/abs/path/checkpoint_best.pth. Needed because _ckpt_path "
+                         "resolves only untagged directories, so tagged backbones "
+                         "(lr2e4, _equal, _ep40) are otherwise unreachable.")
     args = ap.parse_args()
+    _overrides = dict(kv.split("=", 1) for kv in args.ckpt_override)
 
     # Point the shared extractors at the forecast backbone and per-patch mode.
     T.NUM_PATCHES = args.num_patches
@@ -221,8 +232,10 @@ def main():
     rows = []  # (model, eff_rank_mean, pr_mean, D, delta, n_delta)
     for model in args.models:
         print(f"\n{'='*60}\n  MODEL: {model}\n{'='*60}")
-        ckpt = T._ckpt_path(model, args.encoder_layers, args.seed, args.pretrain_source)
-        print(f"  Checkpoint: {ckpt}  exists={Path(str(ckpt)).exists()}")
+        ckpt = _overrides.get(model) or T._ckpt_path(model, args.encoder_layers, args.seed,
+                                                     args.pretrain_source)
+        print(f"  Checkpoint: {ckpt}  exists={Path(str(ckpt)).exists()}"
+              f"{'  (override)' if model in _overrides else ''}")
         eff_ranks, prs, Ds = [], [], []
         for ds in args.datasets:
             try:
