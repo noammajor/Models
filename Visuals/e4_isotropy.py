@@ -232,8 +232,9 @@ def main():
     rows = []  # (model, eff_rank_mean, pr_mean, D, delta, n_delta)
     for model in args.models:
         print(f"\n{'='*60}\n  MODEL: {model}\n{'='*60}")
-        ckpt = _overrides.get(model) or T._ckpt_path(model, args.encoder_layers, args.seed,
-                                                     args.pretrain_source)
+        # Path, not str: the per-model extractors call ckpt.exists().
+        ckpt = (Path(_overrides[model]) if model in _overrides
+                else T._ckpt_path(model, args.encoder_layers, args.seed, args.pretrain_source))
         print(f"  Checkpoint: {ckpt}  exists={Path(str(ckpt)).exists()}"
               f"{'  (override)' if model in _overrides else ''}")
         eff_ranks, prs, Ds = [], [], []
