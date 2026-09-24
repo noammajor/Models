@@ -13,13 +13,14 @@ Panels:
   2. Singular-value spectrum of the centred embedding covariance (log scale)
   3. 2D PCA scatter coloured by class label
 
-Default paths assume the user's Mac layout. Override via CLI flags.
+The classification-data directory defaults to classification_data_dir in
+data_paths.py; the checkpoint defaults to the LE-JEPA classification backbone
+for the given seed and depth. Override either via CLI flags.
 
 Usage:
     python Visuals/lejepa_gaussianity.py
     python Visuals/lejepa_gaussianity.py --dataset SpokenArabicDigits \\
-        --ckpt "/Users/noammajor/Downloads/Models/LE-JEPA Backbones/classification/LE-JEPA_layers8_cw1152/best_model.pt" \\
-        --cls_dir "/Users/noammajor/Desktop/data/Classification data" \\
+        --ckpt path/to/LE-JEPA_layers8_cw1152/best_model.pt \\
         --output_dir Visuals/plots
 """
 

@@ -21,13 +21,15 @@ import sys
 import numpy as np
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "shared"))
 from data_loaders.data_puller import _read_tsf_series
+from data_paths import DATA_PATHS
 
-# ── defaults ─────────────────────────────────────────────────────────────────
-DEFAULT_MONASH    = "/Users/noammajor/Desktop/Monash"
-DEFAULT_SYNTHETIC = "/home/shared/datasets/synthetic_data_TS"
-DEFAULT_SYNTH_MIX = "/home/shared/datasets/synthetic_TS_Mix"
+# ── defaults: the corpora data_paths.py points at ────────────────────────────
+DEFAULT_MONASH    = DATA_PATHS["monash_data_dir"]
+DEFAULT_SYNTHETIC = DATA_PATHS["synthetic_data_dir"]
+DEFAULT_SYNTH_MIX = DATA_PATHS["synthetic_mix_data_dir"]
 MIN_LEN           = 512
 
 

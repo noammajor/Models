@@ -168,8 +168,7 @@ def main():
             print(f"{ds}: unknown dataset, skipping")
 
     print(f"\nDone. Standardised data in: {args.out_dir}/")
-    print("Upload with:")
-    print(f"  rsync -av {args.out_dir}/ majorno@<server>:/home/shared/datasets/Anomaly_TS/")
+    print("Point anomaly_data_dir in data_paths.py at this directory, or copy it there.")
 
 
 if __name__ == "__main__":
