@@ -2,7 +2,7 @@ config = {
     "path_save": "./output_model/LE-JEPA/",
     "seed": 42,
     "num_epochs": 20,
-    "batch_size": 128,
+    "batch_size": 64,
     "num_workers": 4,
     "clip_grad": 1.0,
     "warmup_ratio": 0.05,

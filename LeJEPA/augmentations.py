@@ -6,7 +6,7 @@ Each is stochastic — random parameters are sampled every call.
 The pipeline applies each augmentation independently with p=0.5,
 so both views receive different random transformations.
 
-DWT augmentation is re-implemented from TSDiNO (same logic as DINO's
+DWT augmentation is re-implemented from DINO (same logic as DINO's
 DWTAugmentation). The mode is controlled by config["dwt_mode"].
 Set config["dwt_mode"] = None to disable DWT entirely.
 
@@ -38,7 +38,7 @@ class GaussianJitter:
 
 class AmplitudeScaling:
     """
-    Per-sample amplitude scaling (from TSDiNO galilien_transformation).
+    Per-sample amplitude scaling (from DINO galilien_transformation).
     Each sample in the batch gets an independent scale factor drawn from [a, b].
     """
     def __init__(self, scale_range: tuple = (0.8, 1.2)):
@@ -83,12 +83,12 @@ class FrequencyMasking:
         return torch.fft.irfft(x_f, n=x.size(1), dim=1)
 
 
-# ── DWT augmentation (re-implemented from TSDiNO) ────────────────────────────
+# ── DWT augmentation (re-implemented from DINO) ────────────────────────────
 
 class DWTAugmentation:
     """
     Discrete Wavelet Transform augmentation, re-implemented from
-    TSDiNO/data_agumentation.py.  Requires pywt.
+    DINO/data_agumentation.py.  Requires pywt.
 
     Operates per sample in the batch (each [T, C] processed independently).
 
@@ -226,8 +226,8 @@ class AugmentationPipeline:
         return x
 
 
-# ── Physics-inspired augmentations (ported from TSDiNO, batched over B) ─────────
-# Each _Phys* operates on a single [T, C] window with the same math as TSDiNO's
+# ── Physics-inspired augmentations (ported from DINO, batched over B) ─────────
+# Each _Phys* operates on a single [T, C] window with the same math as DINO's
 # data_agumentation.py; PhysicsAugmentation applies it per-sample across [B, T, C].
 
 class _PhysPolar:
@@ -285,7 +285,7 @@ _PHYS = {'polar': _PhysPolar, 'galilien': _PhysGalilien, 'lorentz': _PhysLorentz
 
 
 class PhysicsAugmentation:
-    """Apply a TSDiNO physics transform per-sample over a [B, T, C] batch."""
+    """Apply a DINO physics transform per-sample over a [B, T, C] batch."""
     def __init__(self, mode, **kw):
         if mode not in _PHYS:
             raise ValueError(f"unknown physics aug '{mode}'; choices: {list(_PHYS)}")

@@ -21,7 +21,7 @@ config = {
     "data_path_forecast_test": "data/ETTh1.csv",
     "data_path_classification": "UCI HAR Dataset",
     "num_workers": 6,
-    "batch_size_per_gpu": 128,
+    "batch_size_per_gpu": 64,
 
     # ── Model architecture ────────────────────────────────────────────────────
     "c_in": 7,          # number of input variables  (9 for UCI HAR)
@@ -79,7 +79,7 @@ config = {
     #   finest_levels         – how many of the finest detail levels to perturb (1 = only finest).
     #   high_perturb_noise_range – (min_σ, max_σ) of Gaussian noise added to all detail coeffs.
     #
-    # The four values below are aligned with Le-JEPA (LE-JEPA/config_lejepa.py) so both
+    # The four values below are aligned with Le-JEPA (LeJEPA/config_lejepa.py) so both
     # models use the same wavelet views: db4, 3 levels, σ=0.3, noise U(0.1, 0.3).
     "dwt_wavelet":                  "db4",          # fallback when dwt_wavelet_pool is None
     "dwt_wavelet_pool":             None,           # fixed wavelet (was a random pool of sym4/6/8, db4/6)
@@ -193,7 +193,7 @@ config = {
     "epochs_classification": 20,
     "lr_classification": 0.001,
     "min_lr_classification": 1e-6,
-    "batch_size_classification": 16,
+    "batch_size_classification": 64,
     "seq_len_classification": 128,  # UCI HAR fixed window
     "c_in_classification": 9,       # UCI HAR sensor count
 

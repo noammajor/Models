@@ -111,7 +111,7 @@ def _extract_lejepa_patch_level(ckpt: Path, loader, encoder_layers: int, device)
       patch_to_sample   : [N_patches]      maps each patch row back to its sample idx
                                            (same digit label expanded across C*P)
     """
-    lejepa_dir = ROOT / "LE-JEPA"
+    lejepa_dir = ROOT / "LeJEPA"
     _add_path(str(lejepa_dir), str(ROOT / "shared"))
 
     spec = importlib.util.spec_from_file_location("lejepa_encoder", lejepa_dir / "Encoder.py")

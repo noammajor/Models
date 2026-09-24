@@ -175,7 +175,7 @@ def _ckpt_path(model: str, encoder_layers: int, seed: int, pretrain_source: str)
                 f"layers{encoder_layers}_cw{CW}{_seed_tag}" / f"{fname}.pt")
 
     if model == "patchtst":
-        patchtst_dir = ROOT / "PatchTST_self_supervised"
+        patchtst_dir = ROOT / "MAE"
         _add_path(patchtst_dir)
         cfg = _load_config(patchtst_dir / "config_patchtst.py")
         cfg['n_layers']            = encoder_layers
@@ -192,7 +192,7 @@ def _ckpt_path(model: str, encoder_layers: int, seed: int, pretrain_source: str)
                 "masked_patchtst" / mtype / f"layers{encoder_layers}_cw{CW}{_seed_tag}" / fname)
 
     if model == "timedart":
-        cfg = _load_config(ROOT / "TimeDART-main" / "config_timedart.py")
+        cfg = _load_config(ROOT / "Diffusion" / "config_timedart.py")
         if seed is not None:
             # seeded backbone: outputs/timedart_pretrain_monash_layers8_seed{S}/monash_monash/ckpt_best.pth
             return (ROOT / f"outputs/timedart_pretrain_{src.replace('+','_')}_layers{encoder_layers}{_seed_tag}" /
@@ -213,14 +213,14 @@ def _ckpt_path(model: str, encoder_layers: int, seed: int, pretrain_source: str)
 @torch.no_grad()
 def _extract_dino(ckpt: Path, loader, device) -> tuple:
     """DINO encoder. Returns (embeddings [N, d], labels [N])."""
-    _add_path(ROOT / "TSDiNO", ROOT / "TSDiNO" / "models")
+    _add_path(ROOT / "DINO", ROOT / "DINO" / "models")
 
     sample_patches, _, _ = next(iter(loader))
     n_v = sample_patches.shape[-1]
     n_p = sample_patches.shape[1]
 
     from models.patchTST import PatchTST as DinoPatchTST
-    cfg   = _load_config(ROOT / "TSDiNO" / "config.py")
+    cfg   = _load_config(ROOT / "DINO" / "config.py")
     model = DinoPatchTST(
         c_in=n_v,
         target_dim=cfg.get("out_dim", 256),
@@ -350,7 +350,7 @@ def _extract_jepa(ckpt: Path, loader, encoder_layers: int, device,
 @torch.no_grad()
 def _extract_lejepa(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
     """LE-JEPA encoder. Returns (embeddings [N, d], labels [N])."""
-    lejepa_dir = ROOT / "LE-JEPA"
+    lejepa_dir = ROOT / "LeJEPA"
     shared_dir  = ROOT / "shared"
     _add_path(str(lejepa_dir), str(shared_dir))
 
@@ -484,7 +484,7 @@ def _extract_ntp(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
 @torch.no_grad()
 def _extract_patchtst(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
     """PatchTST (self-supervised) encoder. Returns (embeddings [N, d], labels [N])."""
-    patchtst_dir = ROOT / "PatchTST_self_supervised"
+    patchtst_dir = ROOT / "MAE"
     shared_dir    = ROOT / "shared"
     _add_path(str(patchtst_dir), str(shared_dir))
 
@@ -550,10 +550,10 @@ def _extract_patchtst(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
 @torch.no_grad()
 def _extract_timedart(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
     """TimeDaRT encoder. Returns (embeddings [N, d], labels [N])."""
-    td_dir    = ROOT / "TimeDART-main"
+    td_dir    = ROOT / "Diffusion"
     shared_dir = ROOT / "shared"
 
-    # Snapshot sys.modules and sys.path, then inject TimeDART-main first so its
+    # Snapshot sys.modules and sys.path, then inject Diffusion first so its
     # 'models', 'layers', and 'utils' packages take priority over other models'.
     import sys as _sys
     _snap_path = list(_sys.path)
@@ -563,7 +563,7 @@ def _extract_timedart(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
         if (_k in ("models", "layers", "utils") or
                 _k.startswith(("models.", "layers.", "utils."))):
             del _sys.modules[_k]
-    # Put TimeDART-main at front of path so its packages are found first
+    # Put Diffusion at front of path so its packages are found first
     _sys.path.insert(0, str(td_dir))
 
     from models.TimeDART import Model
@@ -660,7 +660,7 @@ def _extract_timedart(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
 @torch.no_grad()
 def _extract_softclt(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
     """SoftCLT encoder = PatchTransformerWrapper (backbone.backbone.* in the EMA 'student')."""
-    softclt_dir = ROOT / "softclt-main"
+    softclt_dir = ROOT / "SoftCLT"
     _add_path(str(softclt_dir), str(softclt_dir / "softclt_ts2vec"))
     from softclt_ts2vec.models.patch_transformer import PatchTransformerWrapper
 
@@ -780,11 +780,13 @@ def _reduce(embeddings: np.ndarray, method: str = "tsne",
 
 MODEL_DISPLAY = {
     "random":      "Random",
-    "jepa": "JEPA",
-    "lejepa":      "LE-JEPA",
+    "jepa":        "JEPA",
+    "lejepa":      "LeJEPA",
     "dino":        "DINO",
+    "mae":         "MAE",
     "patchtst":    "MAE",
     "ntp":         "NTP",
+    "diffusion":   "Diffusion",
     "timedart":    "Diffusion",
     "softclt":     "SoftCLT",
 }

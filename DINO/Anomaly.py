@@ -1,5 +1,5 @@
 """
-TSDiNO anomaly detection (reconstruction-based).
+DINO anomaly detection (reconstruction-based).
 
 Pretrained DINO teacher encoder (frozen by default; unfrozen if linear_probe=False)
 + linear reconstruction decoder trained on normal data only.
@@ -123,7 +123,7 @@ def anomaly_detection(args, path_num, anomaly_train, anomaly_test,
         else:
             checkpoint_path = os.path.join(args.output_dir, 'checkpoint_best.pth')
 
-    print(f"\n=== TSDiNO Anomaly Detection ===")
+    print(f"\n=== DINO Anomaly Detection ===")
     print(f"Loading checkpoint: {checkpoint_path}")
 
     if os.path.exists(checkpoint_path):
@@ -143,11 +143,11 @@ def anomaly_detection(args, path_num, anomaly_train, anomaly_test,
         backbone.eval()
         for p in backbone.parameters():
             p.requires_grad = False
-        print(f"  [TSDiNO anomaly] MODE: linear probe — encoder FROZEN")
+        print(f"  [DINO anomaly] MODE: linear probe — encoder FROZEN")
     else:
         for p in backbone.parameters():
             p.requires_grad = True
-        print(f"  [TSDiNO anomaly] MODE: full fine-tune — encoder UNFROZEN")
+        print(f"  [DINO anomaly] MODE: full fine-tune — encoder UNFROZEN")
 
     # Infer shape from first batch
     sample         = next(iter(anomaly_train))
@@ -170,7 +170,7 @@ def anomaly_detection(args, path_num, anomaly_train, anomaly_test,
             {"params": decoder.parameters(),  "lr": head_lr},
             {"params": backbone.parameters(), "lr": enc_lr},
         ])
-        print(f"  [TSDiNO anomaly] head_lr={head_lr}  encoder_lr={enc_lr}")
+        print(f"  [DINO anomaly] head_lr={head_lr}  encoder_lr={enc_lr}")
     n_epochs  = getattr(args, 'epoch_anomaly', 10)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
 
@@ -295,5 +295,5 @@ def anomaly_detection(args, path_num, anomaly_train, anomaly_test,
     # is removed. See shared/anomaly_metrics.py.
     from anomaly_metrics import compute_all, format_table   # shared/ is on sys.path at run time
     m = compute_all(gt, pred, point_adjust=point_adjust)
-    print(format_table(m, title="TSDiNO Anomaly Detection"))
+    print(format_table(m, title="DINO Anomaly Detection"))
     return dict(**m, threshold=threshold)

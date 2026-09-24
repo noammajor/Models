@@ -161,7 +161,7 @@ class PatchTSTForcastingAdapter(Dataset):
 
     def __init__(self, csv_path: str, split: str, seq_len: int, pred_len: int, patch_size: int):
         from pathlib import Path as _Path
-        _patchtst_dir = str(_Path(__file__).parent.parent.parent / "PatchTST_self_supervised")
+        _patchtst_dir = str(_Path(__file__).parent.parent.parent / "MAE")
         if _patchtst_dir not in sys.path:
             sys.path.insert(0, _patchtst_dir)
         from src.data.pred_dataset import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom
@@ -209,7 +209,7 @@ class PatchTSTPretrainAdapter(Dataset):
 
     def __init__(self, csv_path: str, split: str, seq_len: int, patch_size: int,
                  transform=None):
-        _patchtst_dir = str(Path(__file__).parent.parent.parent / "PatchTST_self_supervised")
+        _patchtst_dir = str(Path(__file__).parent.parent.parent / "MAE")
         if _patchtst_dir not in sys.path:
             sys.path.insert(0, _patchtst_dir)
         from src.data.pred_dataset import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom

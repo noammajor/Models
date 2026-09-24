@@ -1,6 +1,6 @@
 # Data directories
 Discrete_JEPA/data - forecasting timeseries/
-TSDiNO/UCI HAR Dataset/
+DINO/UCI HAR Dataset/
 Monash/*.tsf
 
 # Python cache
@@ -32,3 +32,15 @@ env/
 # CSV / data files
 *.csv
 *.parquet
+
+# Experiment outputs (kept on disk, never committed)
+logs/
+outputs/
+output_model/
+plots/
+Visuals/plots/
+results/
+saved_models/
+checkpoints*/
+*Backbone*/
+*backbones*/

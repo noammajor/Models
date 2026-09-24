@@ -15,7 +15,7 @@ from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 
 _DIR   = os.path.dirname(os.path.abspath(__file__))
 _ROOT  = os.path.dirname(_DIR)
-_PTST  = os.path.join(_ROOT, "PatchTST_self_supervised")
+_PTST  = os.path.join(_ROOT, "MAE")
 
 for _p in [_DIR, _ROOT, _PTST]:
     if _p not in sys.path:

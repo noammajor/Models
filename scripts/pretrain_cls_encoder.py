@@ -10,7 +10,7 @@ Checkpoint locations:
   dino        → checkpoints_layers8_cw1152/
   jepa → output_model/JEPA_layers8_cw1152/
   lejepa      → output_model/LE-JEPA_layers8_cw1152/
-  patchtst    → PatchTST_self_supervised/saved_models/  (context_points=1152)
+  patchtst    → MAE/saved_models/  (context_points=1152)
   ntp         → NTP/saved_models/  (ratio_patches=72)
 
 Usage:

@@ -1165,7 +1165,9 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
         from patchtst_classification import classification as ptst_classify
         from data_loaders.data_puller import ClassificationDataPuller, make_uea_dataloaders
         cls_dir    = cfg["classification_data_dir"]
-        cls_bs     = _get_cls_bs(cfg, "batch_size", 64)
+        # Use the dedicated classification key (like DINO/TimeDART/SoftCLT) so this
+        # doesn't silently inherit the pretrain batch size.
+        cls_bs     = _get_cls_bs(cfg, "batch_size_classification", 64)
         p_s        = cfg.get("patch_len", 16)
         _n_patches = 72                               # classification encoder always uses 72 patches
         _target_T  = _n_patches * p_s
@@ -1473,7 +1475,7 @@ def run_lejepa(skip_train: bool = False,
     if pred_lens is None:
         pred_lens = [96, 192, 336, 720]
 
-    lejepa_dir = Path(__file__).parent / "LE-JEPA"
+    lejepa_dir = Path(__file__).parent / "LeJEPA"
     shared_dir  = Path(__file__).parent / "shared"
     _add_path(lejepa_dir)
     _add_path(shared_dir)   # shared data_loaders
@@ -2692,14 +2694,20 @@ RUNNERS = {
     "dino":            run_dino,
     "jepa":            run_jepa,
     "lejepa":          run_lejepa,
-    "patchtst":        run_patchtst,
-    "patchtst_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, anomaly_dataset=None, pretrain_only=False, classification_only=False, pred_lens=None, checkpoints=None, encoder_layers=None, pretrain_source=None, num_patches=None, linear_probe=True, head_type="linear", seed=None, step_size=None, embed_dim=None: run_patchtst(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, anomaly_dataset=anomaly_dataset, pretrain_only=pretrain_only, classification_only=classification_only, pred_lens=pred_lens, checkpoints=checkpoints, random_encoder=True, encoder_layers=encoder_layers, pretrain_source=pretrain_source, num_patches=num_patches, linear_probe=linear_probe, head_type=head_type, seed=seed, step_size=step_size, embed_dim=embed_dim),
+    "mae":             run_patchtst,
+    "mae_random":      lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, anomaly_dataset=None, pretrain_only=False, classification_only=False, pred_lens=None, checkpoints=None, encoder_layers=None, pretrain_source=None, num_patches=None, linear_probe=True, head_type="linear", seed=None, step_size=None, embed_dim=None: run_patchtst(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, anomaly_dataset=anomaly_dataset, pretrain_only=pretrain_only, classification_only=classification_only, pred_lens=pred_lens, checkpoints=checkpoints, random_encoder=True, encoder_layers=encoder_layers, pretrain_source=pretrain_source, num_patches=num_patches, linear_probe=linear_probe, head_type=head_type, seed=seed, step_size=step_size, embed_dim=embed_dim),
     "jepa_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, anomaly_dataset=None, pred_lens=None, checkpoints=None, pretrain_only=False, encoder_layers=None, predictor_layers=None, lr=None, pretrain_source=None, checkpoint=None, num_patches=None, linear_probe=True, head_type="linear": run_jepa(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, anomaly_dataset=anomaly_dataset, pred_lens=pred_lens, checkpoints=checkpoints, pretrain_only=pretrain_only, encoder_layers=encoder_layers, predictor_layers=predictor_layers, lr=lr, pretrain_source=pretrain_source, checkpoint=checkpoint, num_patches=num_patches, random_encoder=True, linear_probe=linear_probe, head_type=head_type),
     "ntp":             run_ntp,
     "random":          run_random,
-    "timedart":        run_timedart,
+    "diffusion":       run_timedart,
     "softclt":         run_softclt,
 }
+
+# Legacy names kept so existing scripts and logs keep working: the paper calls
+# these objectives MAE and Diffusion, the code used the backbone names.
+RUNNERS["patchtst"]        = RUNNERS["mae"]
+RUNNERS["timedart"]        = RUNNERS["diffusion"]
+RUNNERS["patchtst_random"] = RUNNERS["mae_random"]
 
 def run(model: str,
         task: str = None,
@@ -2853,7 +2861,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model", type=str, required=True,
         choices=list(RUNNERS),
-        help="Which model to run: dino | jepa | lejepa | patchtst | ntp | timedart | softclt | random",
+        help="Which model to run: dino | jepa | lejepa | mae | ntp | diffusion | softclt | random",
     )
     parser.add_argument(
         "--pretrain_dataset", type=str, default=None,

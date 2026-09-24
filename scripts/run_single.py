@@ -27,7 +27,7 @@ ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(ROOT))
 
 IN_DOMAIN_DATASETS = ["etth1", "etth2", "ettm1", "ettm2", "weather", "electricity"]
-ALL_MODELS         = ["dino", "jepa", "lejepa", "patchtst", "ntp", "hybrid", "timedart", "softclt"]
+ALL_MODELS         = ["dino", "jepa", "lejepa", "patchtst", "ntp", "timedart", "softclt"]
 
 MODEL_DEFAULT_LR = {
     "dino":     5e-4,
@@ -35,7 +35,6 @@ MODEL_DEFAULT_LR = {
     "lejepa":   5e-4,
     "patchtst": 5e-5,
     "ntp":      5e-5,
-    "hybrid":   5e-4,
     "timedart": 1e-4,
     "softclt":  1e-3,
 }
@@ -59,7 +58,7 @@ def _find_src_checkpoint(model: str, dataset: str, layers: int, out_dim: int = N
         return ROOT / "output_model" / f"LE-JEPA_layers{layers}" / "best_model.pt"
 
     elif model == "patchtst":
-        save_dir = (ROOT / "PatchTST_self_supervised" / "saved_models" /
+        save_dir = (ROOT / "MAE" / "saved_models" /
                     dataset / "masked_patchtst" / "based_model" / f"layers{layers}")
         candidates = [p for p in save_dir.glob("*.pth") if "_epoch" not in p.name]
         return candidates[0] if candidates else save_dir / "checkpoint_best.pth"
@@ -68,10 +67,6 @@ def _find_src_checkpoint(model: str, dataset: str, layers: int, out_dim: int = N
         save_dir = ROOT / "NTP" / "saved_models" / dataset / "ntp" / f"layers{layers}"
         candidates = [p for p in save_dir.glob("*.pt") if "_epoch" not in p.name and "_losses" not in p.name]
         return candidates[0] if candidates else save_dir / "checkpoint_best.pt"
-
-    elif model == "hybrid":
-        # in-domain run: path includes dataset tag
-        return ROOT / "output_model" / f"Hybrid_{dataset}_layers{layers}" / "best_model.pt"
 
     elif model == "softclt":
         # SoftCLT output_dir is tagged by pretrain source + depth in run_softclt;
@@ -160,8 +155,6 @@ def main():
                         help="GPU index via CUDA_VISIBLE_DEVICES (default: 0)")
     parser.add_argument("--seed",     type=int, default=None,
                         help="Random seed")
-    parser.add_argument("--phi",        type=float, default=None,
-                        help="LEJEPA/NTP mixing weight φ∈[0,1] (hybrid model only)")
     parser.add_argument("--skip_pretrain", action="store_true",
                         help="Skip pretraining, go straight to forecasting")
     parser.add_argument("--finetune", action="store_true",
@@ -230,8 +223,6 @@ def main():
         base_cmd += ["--aug_global", args.aug_global]
     if args.aug_local is not None:
         base_cmd += ["--aug_local", args.aug_local]
-    if args.phi is not None:
-        base_cmd += ["--phi", str(args.phi)]
     if args.pretrain_source is not None:
         base_cmd += ["--pretrain_source", args.pretrain_source]
     if args.synthetic_data_dir is not None:

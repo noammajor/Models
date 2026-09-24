@@ -117,12 +117,12 @@ scaling, etc.) — everything else comes from the config file.
 
 | Model    | Config file |
 |----------|-------------|
-| DINO     | [TSDiNO/config.py](TSDiNO/config.py) |
+| DINO     | [DINO/config.py](DINO/config.py) |
 | JEPA     | [JEPA/config_files/config_jepa.py](JEPA/config_files/config_jepa.py) |
-| LE-JEPA  | [LE-JEPA/config_lejepa.py](LE-JEPA/config_lejepa.py) |
-| PatchTST | [PatchTST_self_supervised/config_patchtst.py](PatchTST_self_supervised/config_patchtst.py) |
+| LE-JEPA  | [LeJEPA/config_lejepa.py](LeJEPA/config_lejepa.py) |
+| PatchTST | [MAE/config_patchtst.py](MAE/config_patchtst.py) |
 | NTP      | [NTP/config_ntp.py](NTP/config_ntp.py) |
-| TimeDART | [TimeDART-main/config_timedart.py](TimeDART-main/config_timedart.py) |
+| TimeDART | [Diffusion/config_timedart.py](Diffusion/config_timedart.py) |
 
 ### Shared data paths
 
@@ -275,7 +275,7 @@ Checkpoint locations (with default 8-layer / cw=1152):
 - dino     → checkpoints_layers8_cw1152/
 - jepa     → output_model/JEPA_layers8_cw1152/
 - lejepa   → output_model/LE-JEPA_layers8_cw1152/
-- patchtst → PatchTST_self_supervised/saved_models/  (context_points=1152)
+- patchtst → MAE/saved_models/  (context_points=1152)
 - ntp      → NTP/saved_models/  (ratio_patches=72)
 
 CLI options:
@@ -320,7 +320,7 @@ Checkpoints are saved under layer-suffixed paths, e.g.:
 - `output_model/LE-JEPA_layers8/`
 - `checkpoints_layers8/` (DINO)
 - `NTP/saved_models/{src}/ntp/layers8/`
-- `PatchTST_self_supervised/saved_models/{src}/masked_patchtst/based_model/layers8/`
+- `MAE/saved_models/{src}/masked_patchtst/based_model/layers8/`
 
 CLI options:
 - `--models`           one or more of: dino, jepa, lejepa, patchtst, ntp, timedart  (default: all)

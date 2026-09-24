@@ -3,7 +3,7 @@ config = {
     "patch_len":    16,
     "num_patches":  21,      # 21 × 16 = 336 timesteps (same context window as DINO)
     # SoftCLT pretrains with NON-overlapping patches (unfold step == patch_len). Without
-    # this key the forecaster inherits step_size=8 from TSDiNO/config.py and unfolds with
+    # this key the forecaster inherits step_size=8 from DINO/config.py and unfolds with
     # 50% overlap — a train/test mismatch, and it also changes num_patch (41 vs 21) so the
     # pretrained W_pos no longer fits. Keep it equal to patch_len.
     "step_size":    16,
@@ -22,7 +22,7 @@ config = {
 
     # ── Pretraining ──────────────────────────────────────────────────────────
     "lr":         1e-3,
-    "batch_size": 128,
+    "batch_size": 64,
     "epochs":     20,
 
     # pretrain_source: "monash" | "synthetic" | "monash+synthetic" | None (CSV)

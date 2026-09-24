@@ -82,7 +82,7 @@ def _checkpoint_exists(model: str, encoder_layers: int, pretrain_source: str) ->
         d = ROOT / "NTP" / "saved_models" / pretrain_source / "ntp" / f"layers{encoder_layers}"
         return d.exists() and any(d.glob("ntp_pretrained_*.pt"))
     if model == "patchtst":
-        d = (ROOT / "PatchTST_self_supervised" / "saved_models" /
+        d = (ROOT / "MAE" / "saved_models" /
              pretrain_source / "masked_patchtst" / "based_model" / f"layers{encoder_layers}")
         return d.exists() and any(d.glob("patchtst_pretrained_*.pth"))
     if model == "timedart":

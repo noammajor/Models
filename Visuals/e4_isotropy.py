@@ -108,7 +108,7 @@ def rank_metrics(X: np.ndarray, max_samples: int = 40000):
     if s.sum() <= 0:
         return float("nan"), float("nan"), X.shape[1]
     # Effective rank (Roy & Vetterli): entropy of the normalized SINGULAR values
-    # s/Σs — NOT the squared/eigenvalue form. This matches LE-JEPA/Training.py's
+    # s/Σs — NOT the squared/eigenvalue form. This matches LeJEPA/Training.py's
     # _embedding_stats (the isotropy-table convention), so a single effective-rank
     # number is comparable across the paper.
     ps = s / s.sum()

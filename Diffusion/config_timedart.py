@@ -27,7 +27,7 @@ config = {
 
     # ── Pretraining optimisation ──────────────────────────────────────────────
     "train_epochs":    20,
-    "batch_size":      128,
+    "batch_size":      64,
     "learning_rate":   1e-4,
     "lr_decay":        0.5,
     "num_workers":     4,

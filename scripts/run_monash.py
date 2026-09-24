@@ -9,10 +9,10 @@ Usage:
 
 Models: dino | jepa | ntp | patchtst
 Checkpoints are saved by each model to its own output directory:
-  dino        →  TSDiNO/checkpoints/checkpoint{epoch}.pth
+  dino        →  DINO/checkpoints/checkpoint{epoch}.pth
   jepa        →  JEPA/output_model/JEPA/_epoch{epoch}/
   ntp         →  NTP/saved_models/monash/ntp/ntp_pretrained_*_epoch{epoch}.pt
-  patchtst    →  PatchTST_self_supervised/saved_models/monash/masked_patchtst/based_model/*_epoch{epoch}.pth
+  patchtst    →  MAE/saved_models/monash/masked_patchtst/based_model/*_epoch{epoch}.pth
 """
 
 import argparse
