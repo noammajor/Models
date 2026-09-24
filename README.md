@@ -243,14 +243,22 @@ CLI (in addition to `-N`, `-L`, `-P`, `-J` from kernel-synth):
 - `-O`  output filename (default `LMC_synth_MTS.arrow`)
 - `-D`  output directory (default `./`)
 
-Example (8k series × 2.5k timesteps × 160 channels — what populates the
-"Synthetic (full)" row above):
+Example (4k rows × 2.5k timesteps × 160 channels = ~1.61 B timesteps — what
+populates the "Synthetic (full)" row above). Note `-L` is the length of a
+series, not the timesteps per row: each row carries `C × L` = 400k timesteps,
+and the generator builds an `L × L` covariance matrix, so `-L` above a few
+thousand will not fit in memory.
 
     python scripts/synthetic_data_generation/LMC_Synth.py \
-        -N 8000 -L 400000 -C 160 -J 5 -P 16 \
+        -N 4000 -L 2500 -C 160 -J 5 -P 16 \
         -M 0.1 -X 1.0 -W 1.5 -Z 2.0 \
         -O LMC_synth_MTS.arrow \
         -D /home/shared/datasets/synthetic_data_TS/
+
+Rather than calling the generators by hand, `run_synthetic_generation.sh` runs
+both of them at these settings and then draws the Monash-sized subset:
+
+    JOBS=16 ./scripts/run_synthetic_generation.sh all
 
 Lower `dirichlet_min` → sparser channel mixtures; higher `weibull_scale` →
 more latent functions per series. Tune to taste.

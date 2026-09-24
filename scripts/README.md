@@ -25,8 +25,14 @@ between two protocols is the difference between their scripts.
 | `run_probe_head.sh` | `linear`, `mlp`, `finetune` on the per-model backbone | the evaluation protocol |
 | `run_random_baseline.sh` | untrained encoder, frozen, probed | no pre-training at all |
 
-`run_corpus.sh synthetic_small` needs the Monash-sized synthetic subset; build it
-once with `subsample_synthetic.py`.
+The corpora `run_corpus.sh` pre-trains on are built by
+`run_synthetic_generation.sh`, which runs both generators and then draws the
+Monash-sized subset:
+
+```bash
+JOBS=16 ./scripts/run_synthetic_generation.sh all      # full corpus, then subset
+./scripts/run_synthetic_generation.sh subset           # subset only
+```
 
 `run_probe_head.sh` pre-trains nothing — run `run_per_model.sh` for that model and
 task first, or there is no backbone to probe.
@@ -57,6 +63,7 @@ protocol scripts and `launch.sh`.
 
 | Script | |
 | --- | --- |
-| `subsample_synthetic.py` | draw the Monash-sized subset of the synthetic corpus |
+| `run_synthetic_generation.sh` | build the synthetic corpus and its Monash-sized subset |
+| `synthetic_data_generation/` | the two generators it calls (LMC and kernel-synth) |
+| `subsample_synthetic.py` | draw the Monash-sized subset of an existing corpus |
 | `count_dataset_sizes.py` | series and timestep counts per corpus (the dataset table) |
-| `synthetic_data_generation/` | generates the synthetic corpus itself |

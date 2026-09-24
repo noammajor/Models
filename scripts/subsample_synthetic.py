@@ -181,6 +181,14 @@ def main():
                 shp = table[shp_col][ri].as_py()
                 if shp:
                     tgt = tgt.reshape([int(x) for x in shp])
+            # ArrowWriter infers its schema from the FIRST record: if that one is
+            # univariate, 'target' is not registered as an ndarray column and every
+            # later [C, T] row fails to encode ("Can only convert 1-dimensional array
+            # values"). The subset mixes kernel-synth (1-D) and LMC (2-D) rows, so
+            # normalise univariate targets to [1, T] — the loaders channel-expand, so
+            # a [1, T] row is still exactly one series of the same T timesteps.
+            if tgt.ndim == 1:
+                tgt = tgt[None, :]
             rec = {"target": tgt}
             if "start" in table.schema.names:
                 rec["start"] = table["start"][ri].as_py()
