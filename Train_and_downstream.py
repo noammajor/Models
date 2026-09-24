@@ -2275,31 +2275,6 @@ def run_timedart(skip_train: bool = False,
 
 # ── Random baseline ───────────────────────────────────────────────────────────
 
-def run_random(skip_train: bool = False, pretrain_dataset: str = None, forecast_dataset: str = None,
-               head_type: str = "linear"):
-    random_dir = Path(__file__).parent / "random"
-    ntp_dir    = Path(__file__).parent / "NTP"
-    _add_path(random_dir)
-    _add_path(ntp_dir)
-
-    import importlib.util
-    _spec = importlib.util.spec_from_file_location("config_ntp", ntp_dir / "config_ntp.py")
-    _mod  = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(_mod)
-    cfg = {**DATA_PATHS, **dict(_mod.config)}
-
-    _forecast_dset = forecast_dataset or cfg.get("forecast_dataset", "ettm1")
-    cfg["forecast_dataset"] = _forecast_dset
-
-    print("\n" + "="*60)
-    print("  MODEL: Random Baseline (frozen random encoder)")
-    print(f"  forecast: {_forecast_dset}")
-    print("="*60)
-
-    from random_forecasting import random_forecasting
-    random_forecasting(cfg, _forecast_dset, mlp_head=(head_type == "mlp"))
-
-
 # ── SoftCLT ──────────────────────────────────────────────────────────────────
 
 def run_softclt(
@@ -2698,7 +2673,6 @@ RUNNERS = {
     "mae_random":      lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, anomaly_dataset=None, pretrain_only=False, classification_only=False, pred_lens=None, checkpoints=None, encoder_layers=None, pretrain_source=None, num_patches=None, linear_probe=True, head_type="linear", seed=None, step_size=None, embed_dim=None: run_patchtst(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, anomaly_dataset=anomaly_dataset, pretrain_only=pretrain_only, classification_only=classification_only, pred_lens=pred_lens, checkpoints=checkpoints, random_encoder=True, encoder_layers=encoder_layers, pretrain_source=pretrain_source, num_patches=num_patches, linear_probe=linear_probe, head_type=head_type, seed=seed, step_size=step_size, embed_dim=embed_dim),
     "jepa_random": lambda skip_train=False, pretrain_dataset=None, forecast_dataset=None, classification_dataset=None, anomaly_dataset=None, pred_lens=None, checkpoints=None, pretrain_only=False, encoder_layers=None, predictor_layers=None, lr=None, pretrain_source=None, checkpoint=None, num_patches=None, linear_probe=True, head_type="linear": run_jepa(skip_train=skip_train, pretrain_dataset=pretrain_dataset, forecast_dataset=forecast_dataset, classification_dataset=classification_dataset, anomaly_dataset=anomaly_dataset, pred_lens=pred_lens, checkpoints=checkpoints, pretrain_only=pretrain_only, encoder_layers=encoder_layers, predictor_layers=predictor_layers, lr=lr, pretrain_source=pretrain_source, checkpoint=checkpoint, num_patches=num_patches, random_encoder=True, linear_probe=linear_probe, head_type=head_type),
     "ntp":             run_ntp,
-    "random":          run_random,
     "diffusion":       run_timedart,
     "softclt":         run_softclt,
 }
@@ -2861,7 +2835,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model", type=str, required=True,
         choices=list(RUNNERS),
-        help="Which model to run: dino | jepa | lejepa | mae | ntp | diffusion | softclt | random",
+        help="Which model to run: dino | jepa | lejepa | mae | ntp | diffusion | softclt | mae_random",
     )
     parser.add_argument(
         "--pretrain_dataset", type=str, default=None,
