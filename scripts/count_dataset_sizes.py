@@ -197,7 +197,14 @@ def main():
     parser.add_argument("--synth_mix_dir", default=DEFAULT_SYNTH_MIX)
     parser.add_argument("--min_len",       type=int, default=MIN_LEN)
     parser.add_argument("--no_synthetic",  action="store_true")
+    parser.add_argument("--only", metavar="DIR",
+                        help="Count just this one directory of .arrow files and exit "
+                             "(used by run_synthetic_generation.sh after each corpus).")
     args = parser.parse_args()
+
+    if args.only:
+        count_arrow_dir(args.only, args.min_len, os.path.basename(args.only.rstrip("/")))
+        return
 
     results = {}
 

@@ -255,10 +255,15 @@ thousand will not fit in memory.
         -O LMC_synth_MTS.arrow \
         -D /home/shared/datasets/synthetic_data_TS/
 
-Rather than calling the generators by hand, `run_synthetic_generation.sh` runs
-both of them at these settings and then draws the Monash-sized subset:
+Rather than calling the generators by hand, `run_synthetic_generation.sh`
+builds all three synthetic corpora at these settings:
 
     JOBS=16 ./scripts/run_synthetic_generation.sh all
+
+Each corpus is an equal number of rows from the two generators — 4,000 + 4,000
+for the full corpus, 2,900 + 2,900 for the mix — and the script writes each one
+to the directory `data_paths.py` names, so `--pretrain_source synthetic` and
+`--pretrain_source monash+synthetic` find them without further configuration.
 
 Lower `dirichlet_min` → sparser channel mixtures; higher `weibull_scale` →
 more latent functions per series. Tune to taste.

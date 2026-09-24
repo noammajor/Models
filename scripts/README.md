@@ -25,14 +25,22 @@ between two protocols is the difference between their scripts.
 | `run_probe_head.sh` | `linear`, `mlp`, `finetune` on the per-model backbone | the evaluation protocol |
 | `run_random_baseline.sh` | untrained encoder, frozen, probed | no pre-training at all |
 
-The corpora `run_corpus.sh` pre-trains on are built by
-`run_synthetic_generation.sh`, which runs both generators and then draws the
-Monash-sized subset:
+The synthetic corpora are built from scratch by `run_synthetic_generation.sh`:
 
 ```bash
-JOBS=16 ./scripts/run_synthetic_generation.sh all      # full corpus, then subset
-./scripts/run_synthetic_generation.sh subset           # subset only
+JOBS=16 ./scripts/run_synthetic_generation.sh all      # all three
+./scripts/run_synthetic_generation.sh mix              # just one of them
 ```
+
+| Stage | Written to | Read by |
+| --- | --- | --- |
+| `full` | `synthetic_data_dir` | `--pretrain_source synthetic` |
+| `mix` | `synthetic_mix_data_dir` | `--pretrain_source monash+synthetic` |
+| `subset` | `<synthetic_data_dir>_monashsize` | `run_corpus.sh <model> synthetic_small` |
+
+Note the hybrid source reads the *mix* directory, not the full corpus: the
+hybrid runs pair Monash with a smaller synthetic half (5,800 rows against
+8,000), so `all` is needed before the hybrid protocol will run.
 
 `run_probe_head.sh` pre-trains nothing — run `run_per_model.sh` for that model and
 task first, or there is no backbone to probe.
