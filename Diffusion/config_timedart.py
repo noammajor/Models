@@ -1,3 +1,10 @@
+# Defaults reproduce the per-model Monash protocol of the paper: the encoder is
+# 8 layers, d_model 128, 16 heads, d_ff 512, patch length 16, over a 336-step
+# context (21 patches), pre-trained on Monash for 20 epochs.
+#   learning rate  1e-4
+#   batch size     64
+# Equivalent to: ./scripts/run_per_model.sh diffusion <task> <seed>
+# Classification uses the same settings with a 1152-step context (72 patches).
 config = {
 
     # ── Pretraining data source ───────────────────────────────────────────────

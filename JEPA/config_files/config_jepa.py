@@ -1,6 +1,14 @@
-# ETTm1 configuration for JEPA (P2P only — no VQ / semantic tokens)
+# JEPA configuration (P2P only — no VQ / semantic tokens).
 # Data paths use "./" relative to the JEPA/ directory.
 
+# Defaults reproduce the per-model Monash protocol of the paper: the encoder is
+# 8 layers, d_model 128, 16 heads, d_ff 512, patch length 16, over a 336-step
+# context (21 patches), pre-trained on Monash for 20 epochs.
+#   learning rate  3e-3
+#   batch size     64
+# SGD with Nesterov momentum, which is why the LR is an order above the others.
+# Equivalent to: ./scripts/run_per_model.sh jepa <task> <seed>
+# Classification uses the same settings with a 1152-step context (72 patches).
 config = {
     "path_save": "./output_model/JEPA/",
     "lr": 3e-3,

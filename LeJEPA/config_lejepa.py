@@ -1,3 +1,11 @@
+# Defaults reproduce the per-model Monash protocol of the paper: the encoder is
+# 8 layers, d_model 128, 16 heads, d_ff 512, patch length 16, over a 336-step
+# context (21 patches), pre-trained on Monash for 20 epochs.
+#   learning rate  5e-4
+#   batch size     64
+# AdamW by default, so the LR read is "lr_adamw"; "lr_sgd" applies only when optimizer="sgd".
+# Equivalent to: ./scripts/run_per_model.sh lejepa <task> <seed>
+# Classification uses the same settings with a 1152-step context (72 patches).
 config = {
     "path_save": "./output_model/LE-JEPA/",
     "seed": 42,

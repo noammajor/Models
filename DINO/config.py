@@ -1,3 +1,11 @@
+# Defaults reproduce the per-model Monash protocol of the paper: the encoder is
+# 8 layers, d_model 128, 16 heads, d_ff 512, patch length 16, over a 336-step
+# context (21 patches), pre-trained on Monash for 20 epochs.
+#   learning rate  5e-4
+#   batch size     128
+# LR is scaled by batch/256 internally, so 5e-4 at batch 128 is an effective 2.5e-4.
+# Equivalent to: ./scripts/run_per_model.sh dino <task> <seed>
+# Classification uses the same settings with a 1152-step context (72 patches).
 config = {
 
     # ── Task ─────────────────────────────────────────────────────────────────
