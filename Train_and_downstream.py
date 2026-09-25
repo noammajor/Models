@@ -1094,7 +1094,7 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
     if num_patches is not None:
         _cw = num_patches * cfg.get('patch_len', 16)
         _ptst_save_dir = str(
-            patchtst_dir / "saved_models" / "classification" /
+            patchtst_dir / "saved_models" /
             _pretrain_dset / "mae" / cfg.get("model_type", "based_model") /
             f"layers{cfg.get('n_layers', 3)}_cw{_cw}{_ep_tag}{_SEED_TAG}{_synth_tag}"
         )
@@ -1352,7 +1352,7 @@ def run_ntp(skip_train: bool = False, synthetic_data_dir: str = None, pretrain_d
     if num_patches is not None:
         _cw = num_patches * cfg.get('patch_size', 16)
         _ntp_save_dir_override = str(
-            ntp_dir / "saved_models" / "classification" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}_cw{_cw}{_ep_tag}{_SEED_TAG}{_synth_tag}"
+            ntp_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}_cw{_cw}{_ep_tag}{_SEED_TAG}{_synth_tag}"
         )
     elif _SEED_TAG or _ep_tag:
         _ntp_save_dir_override = str(
