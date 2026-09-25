@@ -53,10 +53,10 @@ MODEL_GPU = {
     "dino":            0,
     "jepa":            1,
     "lejepa":          2,
-    "patchtst":        3,
+    "mae":        3,
     "ntp":             4,
-    "timedart":        5,
-    "patchtst_random": 6,
+    "diffusion":        5,
+    "mae_random": 6,
 }
 ALL_MODELS = list(MODEL_GPU.keys())
 
@@ -67,7 +67,7 @@ def _checkpoint_exists(model: str, encoder_layers: int, pretrain_source: str) ->
     """Return True if a pretrained checkpoint exists for this (model, layers, src)."""
     src_tag = f"_{pretrain_source.replace('+', '_')}" if pretrain_source != "monash" else ""
 
-    if model == "patchtst_random":
+    if model == "mae_random":
         return True   # random baseline — no checkpoint required
     if model == "dino":
         d = ROOT / f"checkpoints{src_tag}_layers{encoder_layers}"
@@ -81,11 +81,11 @@ def _checkpoint_exists(model: str, encoder_layers: int, pretrain_source: str) ->
     if model == "ntp":
         d = ROOT / "NTP" / "saved_models" / pretrain_source / "ntp" / f"layers{encoder_layers}"
         return d.exists() and any(d.glob("ntp_pretrained_*.pt"))
-    if model == "patchtst":
+    if model == "mae":
         d = (ROOT / "MAE" / "saved_models" /
              pretrain_source / "masked_patchtst" / "based_model" / f"layers{encoder_layers}")
         return d.exists() and any(d.glob("patchtst_pretrained_*.pth"))
-    if model == "timedart":
+    if model == "diffusion":
         f = (ROOT / f"outputs/timedart_pretrain{src_tag}_layers{encoder_layers}" /
              f"monash{src_tag}" / "ckpt_best.pth")
         return f.exists()
@@ -169,7 +169,7 @@ def _unpack_forecast(model: str, result) -> tuple:
     if model in ("lejepa", "ntp"):
         mse = result[0]
         mae = result[1] if len(result) > 1 else None
-    elif model == "timedart":
+    elif model == "diffusion":
         mse = result[1] if len(result) > 1 else None
         mae = result[2] if len(result) > 2 else None
     else:
@@ -198,7 +198,7 @@ def _unpack_classify(model: str, result):
     if not isinstance(result, tuple) or len(result) == 0:
         return None
 
-    if model == "timedart":
+    if model == "diffusion":
         acc = result[3] if len(result) > 3 else None
     else:
         # dino, jepa, patchtst, lejepa, ntp: (*, *, cls_acc, anom)

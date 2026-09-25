@@ -326,9 +326,9 @@ else comes from the config file.
 | DINO | [DINO/config.py](DINO/config.py) |
 | JEPA | [JEPA/config_files/config_jepa.py](JEPA/config_files/config_jepa.py) |
 | LE-JEPA | [LeJEPA/config_lejepa.py](LeJEPA/config_lejepa.py) |
-| MAE | [MAE/config_patchtst.py](MAE/config_patchtst.py) |
+| MAE | [MAE/config_mae.py](MAE/config_mae.py) |
 | NTP | [NTP/config_ntp.py](NTP/config_ntp.py) |
-| Diffusion | [Diffusion/config_timedart.py](Diffusion/config_timedart.py) |
+| Diffusion | [Diffusion/config_diffusion.py](Diffusion/config_diffusion.py) |
 | SoftCLT | [SoftCLT/config_softclt.py](SoftCLT/config_softclt.py) |
 
 ### Keys worth knowing
@@ -362,8 +362,8 @@ objective's implementation keeps its original vocabulary:
   - SoftCLT: the soft-assignment temperatures `tau_inst` and `tau_temp`.
 
 CLI flags never rewrite the config files; they override keys at runtime, some
-through environment variables (`TS_PRETRAIN_BS`, `TS_PATCHTST_BS`,
-`TS_TIMEDART_BS`, `TS_SOFTCLT_BS`, `TS_DINO_BS`, `TS_FORECAST_BS`, `TS_CLS_BS`,
+through environment variables (`TS_PRETRAIN_BS`, `TS_MAE_BS`,
+`TS_DIFFUSION_BS`, `TS_SOFTCLT_BS`, `TS_DINO_BS`, `TS_FORECAST_BS`, `TS_CLS_BS`,
 `TS_CKPT_TAG`). Anything not exposed as a flag — `mask_ratio`, `nhead`,
 augmentation specifications, EMA momentum — has to be edited in the config.
 

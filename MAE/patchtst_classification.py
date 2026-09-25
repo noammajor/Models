@@ -72,7 +72,7 @@ def classification(config, checkpoint_path, classification_train,
     Classification with PatchTST backbone.
 
     Args:
-        config                : dict from config_patchtst.py
+        config                : dict from config_mae.py
         checkpoint_path       : path to pretrained .pth file
         classification_train/val/test : DataLoaders from ClassificationDataPuller
                                         each batch: (patches [B, P, PL, n_vars], labels [B])

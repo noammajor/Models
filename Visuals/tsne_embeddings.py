@@ -53,12 +53,11 @@ def _pp_dmodel(z, d_model: int = 128):
         return z.permute(0, 1, 3, 2).reshape(-1, d_model)
     return z.reshape(-1, z.shape[-1])
 
-ALL_MODELS = ["random", "dino", "jepa", "lejepa", "patchtst", "ntp", "timedart", "softclt"]
+ALL_MODELS = ["random", "dino", "jepa", "lejepa", "mae", "ntp", "diffusion", "softclt"]
 
-# The paper names two of the objectives differently from the backbones they are
-# built on. Both spellings are accepted on --models; checkpoint paths and the
-# extractor table are keyed on the backbone names below.
-MODEL_ALIASES = {"mae": "patchtst", "diffusion": "timedart"}
+# The objectives are named for the paper: MAE and Diffusion. The backbone
+# spellings they are built on are still accepted on --models.
+MODEL_ALIASES = {"patchtst": "mae", "timedart": "diffusion"}
 
 
 def normalize_models(models):
@@ -185,10 +184,10 @@ def _ckpt_path(model: str, encoder_layers: int, seed: int, pretrain_source: str)
         return (ntp_dir / "saved_models" / "classification" / src / "ntp" /
                 f"layers{encoder_layers}_cw{CW}{_seed_tag}" / f"{fname}.pt")
 
-    if model == "patchtst":
+    if model == "mae":
         patchtst_dir = ROOT / "MAE"
         _add_path(patchtst_dir)
-        cfg = _load_config(patchtst_dir / "config_patchtst.py")
+        cfg = _load_config(patchtst_dir / "config_mae.py")
         cfg['n_layers']            = encoder_layers
         cfg['pretrained_model_id'] = encoder_layers
         cfg['context_points']      = NUM_PATCHES * cfg.get('patch_len', PATCH_SIZE)
@@ -202,8 +201,8 @@ def _ckpt_path(model: str, encoder_layers: int, seed: int, pretrain_source: str)
         return (patchtst_dir / "saved_models" / "classification" / src /
                 "masked_patchtst" / mtype / f"layers{encoder_layers}_cw{CW}{_seed_tag}" / fname)
 
-    if model == "timedart":
-        cfg = _load_config(ROOT / "Diffusion" / "config_timedart.py")
+    if model == "diffusion":
+        cfg = _load_config(ROOT / "Diffusion" / "config_diffusion.py")
         if seed is not None:
             # seeded backbone: outputs/timedart_pretrain_monash_layers8_seed{S}/monash_monash/ckpt_best.pth
             return (ROOT / f"outputs/timedart_pretrain_{src.replace('+','_')}_layers{encoder_layers}{_seed_tag}" /
@@ -501,7 +500,7 @@ def _extract_patchtst(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
 
     from src.models.patchTST import PatchTST
 
-    cfg = _load_config(patchtst_dir / "config_patchtst.py")
+    cfg = _load_config(patchtst_dir / "config_mae.py")
 
     sample_patches, _, _ = next(iter(loader))
     num_patch = sample_patches.shape[1]
@@ -584,7 +583,7 @@ def _extract_timedart(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
     _sys.path[:] = _snap_path
     _add_path(str(td_dir), str(shared_dir))
 
-    cfg = _load_config(td_dir / "config_timedart.py")
+    cfg = _load_config(td_dir / "config_diffusion.py")
     from types import SimpleNamespace
 
     sample_patches, _, _ = next(iter(loader))
@@ -594,7 +593,7 @@ def _extract_timedart(ckpt: Path, loader, encoder_layers: int, device) -> tuple:
     stride    = cfg.get("stride", patch_len)
 
     # Backbones are pre-trained with embed_dim=128 (Train_and_downstream sets
-    # cfg['d_model']=embed_dim), so build at 128 — config_timedart.py's 256 default
+    # cfg['d_model']=embed_dim), so build at 128 — config_diffusion.py's 256 default
     # is stale and would mis-load the checkpoint (transfer_weights skips mismatches).
     _td_dmodel = cfg.get("d_model", 256)
     if _td_dmodel != 128:
@@ -741,9 +740,9 @@ _EXTRACTORS = {
     "jepa": _extract_jepa,
     "lejepa":      _extract_lejepa,
     "ntp":         _extract_ntp,
-    "patchtst":    _extract_patchtst,
+    "mae":         _extract_patchtst,
     "softclt":     _extract_softclt,
-    "timedart":    _extract_timedart,
+    "diffusion":   _extract_timedart,
 }
 
 
@@ -795,10 +794,8 @@ MODEL_DISPLAY = {
     "lejepa":      "LeJEPA",
     "dino":        "DINO",
     "mae":         "MAE",
-    "patchtst":    "MAE",
     "ntp":         "NTP",
     "diffusion":   "Diffusion",
-    "timedart":    "Diffusion",
     "softclt":     "SoftCLT",
 }
 
@@ -1087,7 +1084,7 @@ def main():
                 # call extractor with correct signature
                 if model_name in ("dino",):
                     embs, labels = extractor(ckpt, loader, device)
-                elif model_name == "timedart":
+                elif model_name == "diffusion":
                     embs, labels = extractor(ckpt, loader, args.encoder_layers, device)
                 elif model_name == "jepa":
                     embs, labels = extractor(ckpt, loader, args.encoder_layers, device,

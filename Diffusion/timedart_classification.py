@@ -123,7 +123,7 @@ def classification(config, checkpoint_path,
     Classification with TimeDaRT encoder.
 
     Args:
-        config               : dict from config_timedart.py
+        config               : dict from config_diffusion.py
         checkpoint_path      : path to pretrained ckpt_best.pth
         classification_train/val/test : DataLoaders (3-tuple batches)
                                each batch: (patches [B, P, PL, n_vars], labels [B],

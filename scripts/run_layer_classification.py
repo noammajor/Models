@@ -61,11 +61,11 @@ MODEL_GPU = {
     "dino":               0,
     "jepa":               1,
     "lejepa":             2,
-    "patchtst":           3,
+    "mae":           3,
     "ntp":                4,
     "jepa_random":        5,
-    "patchtst_random":    5,
-    "timedart":           6,
+    "mae_random":    5,
+    "diffusion":           6,
     "softclt":            7,
 }
 ALL_MODELS = list(MODEL_GPU.keys())
@@ -168,7 +168,7 @@ def run_model_worker(model: str, encoder_layers: int, gpu: int,
                 #   timedart                              : (best_pred, mse, mae, cls_acc, anom)
                 #   any model in random-init / single-float fallback: cls_acc as float
                 if isinstance(result, tuple):
-                    cls_acc = result[3] if model == "timedart" else result[2]
+                    cls_acc = result[3] if model == "diffusion" else result[2]
                 else:
                     cls_acc = result
 

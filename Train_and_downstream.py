@@ -643,8 +643,8 @@ def run_jepa(skip_train: bool = False,
         config['path_save'] = base_path + _src_tag + '/'
     elif pretrain_dataset is not None:
         config.pop('pretrain_source', None)
-    # Uniform pre-training batch (equal-budget protocol). Mirrors TS_PATCHTST_BS /
-    # TS_TIMEDART_BS / TS_SOFTCLT_BS / TS_DINO_BS, which cover the other models.
+    # Uniform pre-training batch (equal-budget protocol). Mirrors TS_MAE_BS /
+    # TS_DIFFUSION_BS / TS_SOFTCLT_BS / TS_DINO_BS, which cover the other models.
     if os.environ.get('TS_PRETRAIN_BS'):
         config['batch_size'] = int(os.environ['TS_PRETRAIN_BS'])
     if encoder_layers is not None:
@@ -656,7 +656,11 @@ def run_jepa(skip_train: bool = False,
             _src_tag = f"_{pretrain_dataset}"
         else:
             _src_tag = ''
-        config['path_save'] = f'./output_model/JEPA{_src_tag}{_synth_tag}_layers{encoder_layers}{_SEED_TAG}/'
+        # Epoch tag: empty at the default 20, so a longer run writes to its own
+        # directory instead of overwriting the standard backbone.
+        _ep = epochs if epochs is not None else config.get('num_epochs')
+        _ep_tag = f"_ep{int(_ep)}" if _ep and int(_ep) != 20 else ''
+        config['path_save'] = f'./output_model/JEPA{_src_tag}{_synth_tag}_layers{encoder_layers}{_ep_tag}{_SEED_TAG}/'
     if embed_dim is not None:
         config['encoder_embed_dim'] = embed_dim
     if predictor_embed_dim is not None:
@@ -974,7 +978,7 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
 
     import importlib.util
     _spec = importlib.util.spec_from_file_location(
-        "config_patchtst", patchtst_dir / "config_patchtst.py")
+        "config_mae", patchtst_dir / "config_mae.py")
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     cfg = {**DATA_PATHS, **dict(_mod.config)}
@@ -1045,10 +1049,10 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
         "--head_dropout",        str(cfg.get("head_dropout",        0.2)),
         "--mask_ratio",          str(cfg.get("mask_ratio",          0.4)),
         "--n_epochs_pretrain",   str(epochs if epochs is not None else cfg.get("n_epochs_pretrain", 10)),
-        # Pretrain batch: TS_PATCHTST_BS env overrides config (mirrors TS_FORECAST_BS /
+        # Pretrain batch: TS_MAE_BS env overrides config (mirrors TS_FORECAST_BS /
         # TS_CLS_BS). Needed for high-channel in-domain sets — PatchTST is
         # channel-independent, so traffic (862 ch) OOMs at the default 64.
-        "--batch_size",          str(int(os.environ.get("TS_PATCHTST_BS", cfg.get("batch_size", 64)))),
+        "--batch_size",          str(int(os.environ.get("TS_MAE_BS") or os.environ.get("TS_PATCHTST_BS") or cfg.get("batch_size", 64))),
         "--revin",               str(int(cfg.get("revin",           True))),
         "--pretrained_model_id", str(cfg.get("pretrained_model_id", 1)),
         "--seed",                str(seed if seed is not None else GLOBAL_SEED),
@@ -1063,24 +1067,28 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
         pretrain_cmd += ["--lr", str(_pretrain_lr)]
     # Save dir: single source of truth for both pretrain write and downstream read.
     # Three layouts: classification-cw (sweep), seed-tagged, or default.
+    # Epoch tag: empty at the default 20, so a longer run writes to its own
+    # directory instead of overwriting the standard backbone.
+    _ep = epochs if epochs is not None else cfg.get('n_epochs_pretrain')
+    _ep_tag = f"_ep{int(_ep)}" if _ep and int(_ep) != 20 else ''
     if num_patches is not None:
         _cw = num_patches * cfg.get('patch_len', 16)
         _ptst_save_dir = str(
             patchtst_dir / "saved_models" / "classification" /
             _pretrain_dset / "masked_patchtst" / cfg.get("model_type", "based_model") /
-            f"layers{cfg.get('n_layers', 3)}_cw{_cw}{_SEED_TAG}{_synth_tag}"
+            f"layers{cfg.get('n_layers', 3)}_cw{_cw}{_ep_tag}{_SEED_TAG}{_synth_tag}"
         )
     elif _SEED_TAG:
         _ptst_save_dir = str(
             patchtst_dir / "saved_models" / _pretrain_dset /
             "masked_patchtst" / cfg.get("model_type", "based_model") /
-            f"layers{cfg.get('n_layers', 3)}{_SEED_TAG}{_synth_tag}"
+            f"layers{cfg.get('n_layers', 3)}{_ep_tag}{_SEED_TAG}{_synth_tag}"
         )
     else:
         _ptst_save_dir = str(
             patchtst_dir / "saved_models" / _pretrain_dset /
             "masked_patchtst" / cfg.get("model_type", "based_model") /
-            f"layers{cfg.get('n_layers', 3)}{_synth_tag}"
+            f"layers{cfg.get('n_layers', 3)}{_ep_tag}{_synth_tag}"
         )
     pretrain_cmd += ["--save_dir", _ptst_save_dir]
 
@@ -1263,8 +1271,8 @@ def run_ntp(skip_train: bool = False, synthetic_data_dir: str = None, pretrain_d
         cfg['pretrain_source'] = pretrain_source
     elif pretrain_dataset is not None and pretrain_dataset not in ('monash', 'synthetic', 'monash+synthetic'):
         cfg['pretrain_source'] = None  # force in-domain CSV pretraining
-    # Uniform pre-training batch (equal-budget protocol). Mirrors TS_PATCHTST_BS /
-    # TS_TIMEDART_BS / TS_SOFTCLT_BS / TS_DINO_BS, which cover the other models.
+    # Uniform pre-training batch (equal-budget protocol). Mirrors TS_MAE_BS /
+    # TS_DIFFUSION_BS / TS_SOFTCLT_BS / TS_DINO_BS, which cover the other models.
     if os.environ.get('TS_PRETRAIN_BS'):
         cfg['batch_size'] = int(os.environ['TS_PRETRAIN_BS'])
     if encoder_layers is not None:
@@ -1319,16 +1327,20 @@ def run_ntp(skip_train: bool = False, synthetic_data_dir: str = None, pretrain_d
     from ntp_pretrain import pretrain_ntp, _model_fname
     from ntp_forecasting import forecasting as ntp_forecasting
 
-    # Resolve checkpoint path (used whether we train or skip)
+    # Resolve checkpoint path (used whether we train or skip).
+    # Epoch tag: empty at the default 20, so a longer run writes to its own
+    # directory instead of overwriting the standard backbone.
+    _ep = epochs if epochs is not None else cfg.get('num_epochs')
+    _ep_tag = f"_ep{int(_ep)}" if _ep and int(_ep) != 20 else ''
     _ntp_save_dir_override = None
     if num_patches is not None:
         _cw = num_patches * cfg.get('patch_size', 16)
         _ntp_save_dir_override = str(
-            ntp_dir / "saved_models" / "classification" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}_cw{_cw}{_SEED_TAG}{_synth_tag}"
+            ntp_dir / "saved_models" / "classification" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}_cw{_cw}{_ep_tag}{_SEED_TAG}{_synth_tag}"
         )
-    elif _SEED_TAG:
+    elif _SEED_TAG or _ep_tag:
         _ntp_save_dir_override = str(
-            ntp_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}{_SEED_TAG}{_synth_tag}"
+            ntp_dir / "saved_models" / _pretrain_dset / "ntp" / f"layers{cfg['n_layers']}{_ep_tag}{_SEED_TAG}{_synth_tag}"
         )
     # Save-path priority: programmatic override > config["path_save"] > default.
     # Mirrors the resolution inside pretrain_ntp() so train/eval read from the same dir.
@@ -1497,8 +1509,8 @@ def run_lejepa(skip_train: bool = False,
         config['path_save'] = f'./output_model/LE-JEPA{_src_tag}/'
     elif pretrain_dataset is not None and pretrain_dataset not in ('monash', 'synthetic', 'monash+synthetic'):
         config.pop('pretrain_source', None)  # force in-domain CSV pretraining
-    # Uniform pre-training batch (equal-budget protocol). Mirrors TS_PATCHTST_BS /
-    # TS_TIMEDART_BS / TS_SOFTCLT_BS / TS_DINO_BS, which cover the other models.
+    # Uniform pre-training batch (equal-budget protocol). Mirrors TS_MAE_BS /
+    # TS_DIFFUSION_BS / TS_SOFTCLT_BS / TS_DINO_BS, which cover the other models.
     if os.environ.get('TS_PRETRAIN_BS'):
         config['batch_size'] = int(os.environ['TS_PRETRAIN_BS'])
     if encoder_layers is not None:
@@ -1872,7 +1884,7 @@ def run_timedart(skip_train: bool = False,
     followed by forecasting fine-tune using our PatchTSTForcastingAdapter
     (same splits / normalisation as every other model).
 
-    Backbone: PatchTST (bidirectional encoder, configured via config_timedart.py).
+    Backbone: PatchTST (bidirectional encoder, configured via config_diffusion.py).
     Diffusion pretraining objective is unchanged.
     """
     if pred_lens is None:
@@ -1888,7 +1900,7 @@ def run_timedart(skip_train: bool = False,
     from collections import OrderedDict
 
     # ── load config ────────────────────────────────────────────────────────────
-    _spec = _ilu.spec_from_file_location("config_timedart", timedart_dir / "config_timedart.py")
+    _spec = _ilu.spec_from_file_location("config_diffusion", timedart_dir / "config_diffusion.py")
     _mod  = _ilu.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     cfg = {**DATA_PATHS, **dict(_mod.config)}
@@ -1911,9 +1923,9 @@ def run_timedart(skip_train: bool = False,
         cfg['seq_len'] = num_patches * cfg.get('patch_len', 16)
     if lr is not None:
         cfg['learning_rate'] = lr
-    # Attention heads: TS_TIMEDART_NHEADS overrides the config value, so a run can pick
-    # the head count without editing config_timedart.py (shared by concurrent runs).
-    if os.environ.get('TS_TIMEDART_NHEADS'):
+    # Attention heads: TS_DIFFUSION_NHEADS overrides the config value, so a run can pick
+    # the head count without editing config_diffusion.py (shared by concurrent runs).
+    if os.environ.get('TS_DIFFUSION_NHEADS') or os.environ.get('TS_TIMEDART_NHEADS'):
         cfg['n_heads'] = int(os.environ['TS_TIMEDART_NHEADS'])
 
     _pretrain_src = _resolve_pretrain_source(cfg)
@@ -1989,10 +2001,10 @@ def run_timedart(skip_train: bool = False,
         num_classes        = 6,
         num_workers        = cfg.get('num_workers', 4),
         train_epochs       = epochs if epochs is not None else cfg.get('train_epochs', 20),
-        # Pretrain batch: TS_TIMEDART_BS env overrides config (mirrors TS_PATCHTST_BS /
+        # Pretrain batch: TS_DIFFUSION_BS env overrides config (mirrors TS_MAE_BS /
         # TS_SOFTCLT_BS). Needed for high-channel in-domain sets — the traffic (862 ch)
         # in-domain pretrain OOMs at the default 128.
-        batch_size         = int(os.environ.get("TS_TIMEDART_BS", cfg.get('batch_size', 128))),
+        batch_size         = int(os.environ.get("TS_DIFFUSION_BS") or os.environ.get("TS_TIMEDART_BS") or cfg.get('batch_size', 128)),
         learning_rate      = cfg['learning_rate'],
         patience           = cfg.get('patience', 3),
         load_checkpoints   = None,
@@ -2030,7 +2042,7 @@ def run_timedart(skip_train: bool = False,
                         synth_dir, seq_len=seq_len, which=which, min_len=min_len))
                 ds = datasets[0] if len(datasets) == 1 else torch.utils.data.ConcatDataset(datasets)
             return torch.utils.data.DataLoader(
-                ds, batch_size=int(os.environ.get("TS_TIMEDART_BS", cfg['batch_size'])), shuffle=(which == 'train'),
+                ds, batch_size=int(os.environ.get("TS_DIFFUSION_BS") or os.environ.get("TS_TIMEDART_BS") or cfg['batch_size']), shuffle=(which == 'train'),
                 num_workers=cfg.get('num_workers', 4), drop_last=True)
 
         train_loader = _make_pretrain_loader('train')

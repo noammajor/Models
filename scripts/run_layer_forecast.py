@@ -50,10 +50,10 @@ MODEL_GPU = {
     "dino":            0,
     "jepa":            7,
     "lejepa":          2,
-    "patchtst":        3,
+    "mae":        3,
     "ntp":             4,
-    "patchtst_random": 5,
-    "timedart":        6,
+    "mae_random": 5,
+    "diffusion":        6,
     "softclt":         1,
 }
 
@@ -130,10 +130,10 @@ def discover_checkpoints(model: str, encoder_layers: int,
         )) if save_dir.exists() else []
         return found or [None]
 
-    elif model == "patchtst":
+    elif model == "mae":
         import importlib.util as _ilu
-        _spec = _ilu.spec_from_file_location("config_patchtst",
-                    ROOT / "MAE" / "config_patchtst.py")
+        _spec = _ilu.spec_from_file_location("config_mae",
+                    ROOT / "MAE" / "config_mae.py")
         _mod = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_mod)
         _cfg = dict(_mod.config); _cfg['n_layers'] = encoder_layers
         _cfg['pretrained_model_id'] = encoder_layers  # mirrors run_patchtst save-side logic
@@ -154,10 +154,10 @@ def discover_checkpoints(model: str, encoder_layers: int,
                     found.add(int(sfx))
         return sorted(found) or [None]
 
-    elif model == "patchtst_random":
+    elif model == "mae_random":
         return [None]
 
-    elif model == "timedart":
+    elif model == "diffusion":
         # TimeDart only saves ckpt_best.pth — no per-epoch tournament search
         return ["best"]
 
@@ -232,7 +232,7 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                 )
                 return (result[1], None) if result else None
 
-            elif model in ("ntp", "patchtst", "patchtst_random"):
+            elif model in ("ntp", "mae", "mae_random"):
                 kwargs = dict(
                     model=model,
                     skip_train=True,
@@ -243,16 +243,16 @@ def eval_checkpoint(model: str, dataset: str, pred_len: int, ckpt,
                     linear_probe=linear_probe,
                     head_type=head_type,
                 )
-                if model != "patchtst_random":
+                if model != "mae_random":
                     kwargs["checkpoints"] = [ckpt] if ckpt is not None else None
                 result = run(**kwargs)
                 if isinstance(result, tuple) and len(result) >= 2:
                     return (result[0], result[1])  # (mse, mae)
                 return (result, None) if result is not None else None
 
-            elif model == "timedart":
+            elif model == "diffusion":
                 result = run(
-                    model="timedart",
+                    model="diffusion",
                     skip_train=True,
                     forecast_dataset=dataset,
                     pred_lens=[pred_len],
@@ -373,20 +373,20 @@ def eval_best(model: str, dataset: str, pred_len: int,
                              head_type=head_type,
                              output_dir=output_dir)
                 return (result[1], None) if result else None
-            elif model in ("ntp", "patchtst", "patchtst_random"):
+            elif model in ("ntp", "mae", "mae_random"):
                 kwargs = dict(model=model, skip_train=True, forecast_dataset=dataset,
                               pred_lens=[pred_len], encoder_layers=encoder_layers,
                               pretrain_source=pretrain_source,
                               linear_probe=linear_probe,
                               head_type=head_type)
-                if model != "patchtst_random":
+                if model != "mae_random":
                     kwargs["checkpoints"] = None
                 result = run(**kwargs)
                 if isinstance(result, tuple) and len(result) >= 2:
                     return (result[0], result[1])
                 return (result, None) if result is not None else None
-            elif model == "timedart":
-                result = run(model="timedart", skip_train=True, forecast_dataset=dataset,
+            elif model == "diffusion":
+                result = run(model="diffusion", skip_train=True, forecast_dataset=dataset,
                              pred_lens=[pred_len], encoder_layers=encoder_layers, gpu=gpu,
                              pretrain_source=pretrain_source,
                              linear_probe=linear_probe,
@@ -561,8 +561,8 @@ def run_forecast_sweep(models: list, layer_configs: list,
     log_dir = ROOT / "logs" / f"layer_forecast{_log_tag}"
 
     # patchtst_random runs once (no layer sweep)
-    random_models  = [m for m in models if m == "patchtst_random"]
-    layered_models = [m for m in models if m != "patchtst_random"]
+    random_models  = [m for m in models if m == "mae_random"]
+    layered_models = [m for m in models if m != "mae_random"]
 
     for n_layers in layer_configs:
         print(f"\n{'='*60}")

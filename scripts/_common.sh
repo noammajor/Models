@@ -64,8 +64,8 @@ ts_budget() {
 # the env overrides each one reads.
 ts_batch() {
   export TS_PRETRAIN_BS=$1    # jepa / lejepa / ntp
-  export TS_PATCHTST_BS=$1    # mae
-  export TS_TIMEDART_BS=$1    # diffusion
+  export TS_MAE_BS=$1         # mae
+  export TS_DIFFUSION_BS=$1   # diffusion
   export TS_SOFTCLT_BS=$1     # softclt
   export TS_DINO_BS=$1        # dino
 }

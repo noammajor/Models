@@ -70,9 +70,9 @@ MODEL_GPU = {
     "dino":       0,
     "jepa":       1,
     "lejepa":     2,
-    "patchtst":   3,
+    "mae":   3,
     "ntp":        4,
-    "timedart":   5,
+    "diffusion":   5,
     "softclt":    6,
 }
 
@@ -90,7 +90,7 @@ def launch_model(model: str, encoder_layers: int, gpu: int,
     # For unlisted depths, fall back to the 8-layer LR (mid-range default).
     if model == "dino":
         lr = DINO_LAYER_LR.get(encoder_layers, DINO_LAYER_LR[8])
-    elif model in ("ntp", "patchtst", "timedart"):
+    elif model in ("ntp", "mae", "diffusion"):
         lr = NTP_PATCHTST_TIMEDART_LAYER_LR.get(encoder_layers,
                                                 NTP_PATCHTST_TIMEDART_LAYER_LR[8])
     else:

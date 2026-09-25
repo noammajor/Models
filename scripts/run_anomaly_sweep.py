@@ -44,10 +44,10 @@ MODEL_GPU = {
     "dino":            0,
     "jepa":            1,
     "lejepa":          2,
-    "patchtst":        3,
+    "mae":        3,
     "ntp":             4,
-    "timedart":        5,
-    "patchtst_random": 6,
+    "diffusion":        5,
+    "mae_random": 6,
 }
 ALL_MODELS = list(MODEL_GPU.keys())
 

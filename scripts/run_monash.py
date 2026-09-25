@@ -23,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT   = Path(__file__).parent.parent
-MODELS = ["jepa", "ntp", "patchtst", "dino"]
+MODELS = ["jepa", "ntp", "mae", "dino"]
 
 
 def pretrain_one(model: str, gpu: int, log_dir: Path) -> bool:

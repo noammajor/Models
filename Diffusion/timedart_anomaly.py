@@ -126,7 +126,7 @@ def anomaly_detection(config, checkpoint_path, anomaly_train, anomaly_test,
     (frozen by default; unfrozen if linear_probe=False).
 
     Args:
-        config         : dict from config_timedart.py
+        config         : dict from config_diffusion.py
         checkpoint_path: path to pretrained ckpt_best.pth
         anomaly_train  : DataLoader — batches of patches [B, P, patch_size, n_vars]
         anomaly_test   : DataLoader — batches of (patches, labels [B, T])
