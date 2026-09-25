@@ -141,11 +141,11 @@ three:
 JOBS=16 ./scripts/run_synthetic_generation.sh all
 ```
 
-| Stage | Written to | Read by |
-| --- | --- | --- |
-| `full` | `synthetic_data_dir` | `--pretrain_source synthetic` |
-| `mix` | `synthetic_mix_data_dir` | `--pretrain_source monash+synthetic` |
-| `subset` | `<synthetic_data_dir>_monashsize` | `run_corpus.sh <model> synthetic_small` |
+| Stage | Corpus in the paper | Written to | Read by |
+| --- | --- | --- | --- |
+| `full` | Synthetic (2.5M) | `synthetic_data_dir` | `--pretrain_source synthetic` |
+| `mix` | the synthetic half of Hybrid (2.5M) | `synthetic_mix_data_dir` | `--pretrain_source monash+synthetic` |
+| `subset` | Synthetic (680K) | `<synthetic_data_dir>_monashsize` | `run_corpus.sh <model> synthetic_small` |
 
 Each corpus is an equal number of rows from two Gaussian-process generators
 (see [scripts/synthetic_data_generation/](scripts/synthetic_data_generation/)):
@@ -158,16 +158,22 @@ Note that the hybrid source reads the **mix** directory, not the full corpus:
 the hybrid runs pair Monash with a smaller synthetic half, so `all` is needed
 before the hybrid protocol will run.
 
-`subset` is a random draw from the full corpus whose total filtered timestep
-count matches Monash. "Synthetic vs Monash" otherwise confounds the
-data-generating process with corpus size; the subset holds size fixed so that
-only the process differs.
+`subset` is a random draw from the full corpus sized to match Monash.
+"Synthetic vs Monash" otherwise confounds the data-generating process with
+corpus size; the subset holds size fixed so that only the process differs.
 
-| Corpus | Series | Filtered timesteps |
-| --- | ---: | ---: |
-| Monash | 45,042 | 445,011,429 |
-| Synthetic (full) | 8,000 | 1,610,000,000 |
-| Synthetic (mix) | 5,800 | 1,167,250,000 |
+Corpus sizes, counted in 336-step training windows as the paper reports them:
+
+| Corpus | Training windows | Role |
+| --- | ---: | --- |
+| Monash (680K) | 683,982 (+77,365 validation) | the reference corpus |
+| Synthetic (680K) | 680,000 | data source at fixed scale |
+| Synthetic (2.5M) | 2,512,000 | scale at fixed source |
+| Hybrid (2.5M) | Monash + ~1.8M synthetic | real plus synthetic volume |
+
+The generator draws N = 4,000 series of length T = 2,500, with C = 160 channels
+for the multivariate (LMC) half; the window count follows from how many 336-step
+windows those series yield.
 
 Generation is CPU-bound and takes hours at these sizes — every series is a draw
 from a GP prior. Set `JOBS` to the core count and run it detached.
@@ -206,13 +212,15 @@ per-objective learning rates and batch sizes are:
 
 | | DINO | JEPA | LE-JEPA | NTP | MAE | Diffusion | SoftCLT |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| optimizer | AdamW | SGD | AdamW | Adam | Adam | Adam | AdamW |
 | learning rate | 5e-4 | 3e-3 | 5e-4 | 1e-4 | 1e-4 | 1e-4 | 2e-4 |
-| batch size | 128 | 64 | 64 | 64 | 64 | 64 | 64 |
+| batch size | 128 | 128 | 128 | 64 | 64 | 128 | 128 |
 
-JEPA's is an SGD learning rate (Nesterov momentum); the rest are Adam or AdamW.
 DINO scales its learning rate by batch/256 internally, so 5e-4 at batch 128 is
-an effective 2.5e-4. `run_equal_budget.sh` replaces this whole table with LR
-1e-4 and batch 64 for every objective.
+an effective 2.5e-4. NTP and MAE already sit at the equal budget (1e-4, batch
+64), which is why their rows are identical under both protocols.
+`run_equal_budget.sh` replaces this whole table with LR 1e-4 and batch 64 for
+every objective, and fixes the predictor at 4 layers for JEPA and LE-JEPA.
 
 Each script pre-trains and then evaluates every dataset of the task, on one
 GPU, sequentially. Logs land in `logs/<protocol>/<model>_<task>/`.
@@ -226,6 +234,8 @@ GPU, sequentially. Logs land in `logs/<protocol>/<model>_<task>/`.
 | `run_long_pretrain.sh` | 40 epochs instead of 20 | the pre-training length |
 | `run_probe_head.sh` | `linear`, `mlp`, `finetune` | the evaluation protocol |
 | `run_random_baseline.sh` | untrained encoder, frozen, probed | no pre-training at all |
+| `run_depth_sweep.sh` | encoder depth 2 / 4 / 8 / 12 / 24 | the backbone depth |
+| `run_lejepa_ablation.sh` | LE-JEPA augmentation family and SIGReg strength | the LE-JEPA views / regularizer |
 
 Everything shared between them — the dataset lists, the per-objective learning
 rates and batch sizes, the pretrain-then-evaluate loop — lives in

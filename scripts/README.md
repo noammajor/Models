@@ -24,6 +24,8 @@ between two protocols is the difference between their scripts.
 | `run_long_pretrain.sh` | 40 epochs instead of 20 | the pre-training length |
 | `run_probe_head.sh` | `linear`, `mlp`, `finetune` on the per-model backbone | the evaluation protocol |
 | `run_random_baseline.sh` | untrained encoder, frozen, probed | no pre-training at all |
+| `run_depth_sweep.sh` | encoder depth 2 / 4 / 8 / 12 / 24 | the backbone depth |
+| `run_lejepa_ablation.sh` | LE-JEPA augmentation family and SIGReg strength | the LE-JEPA views / regularizer |
 
 The synthetic corpora are built from scratch by `run_synthetic_generation.sh`:
 

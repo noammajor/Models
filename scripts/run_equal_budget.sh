@@ -9,6 +9,7 @@
 #
 #   encoder      8 layers, d_model 128, 16 heads, d_ff 512, patch length 16
 #   pre-training LR 1e-4, batch 64, 20 epochs, Monash
+#   predictor    4 layers, for the objectives that have one
 #   context      336 steps (21 patches) for forecasting and anomaly detection
 #                1152 steps (72 patches) for classification
 #   checkpoints  tagged "_equal" so they never collide with other protocols
@@ -42,6 +43,8 @@ ts_log equal_budget "$M" "$TASK"
 
 FLAGS="--model $M --pretrain_source monash $ENCODER_FLAGS"
 FLAGS="$FLAGS --num_patches $PATCHES --lr $LR --epochs $EPOCHS --ckpt_tag equal"
+# The matched budget fixes the predictor depth too, for the objectives that have one.
+case "$M" in jepa|lejepa) FLAGS="$FLAGS --predictor_layers 4" ;; esac
 # MAE patches non-overlappingly; without this it would inherit an overlapping stride
 case "$M" in mae|patchtst) FLAGS="$FLAGS --step_size 16" ;; esac
 

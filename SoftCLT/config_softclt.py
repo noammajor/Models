@@ -2,7 +2,7 @@
 # 8 layers, d_model 128, 16 heads, d_ff 512, patch length 16, over a 336-step
 # context (21 patches), pre-trained on Monash for 20 epochs.
 #   learning rate  2e-4
-#   batch size     64
+#   batch size     128
 # Equivalent to: ./scripts/run_per_model.sh softclt <task> <seed>
 # Classification uses the same settings with a 1152-step context (72 patches).
 config = {
@@ -29,7 +29,7 @@ config = {
 
     # ── Pretraining ──────────────────────────────────────────────────────────
     "lr":         2e-4,
-    "batch_size": 64,
+    "batch_size": 128,
     "epochs":     20,
 
     # pretrain_source: "monash" | "synthetic" | "monash+synthetic" | None (CSV)

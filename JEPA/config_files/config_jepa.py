@@ -5,7 +5,7 @@
 # 8 layers, d_model 128, 16 heads, d_ff 512, patch length 16, over a 336-step
 # context (21 patches), pre-trained on Monash for 20 epochs.
 #   learning rate  3e-3
-#   batch size     64
+#   batch size     128
 # SGD with Nesterov momentum, which is why the LR is an order above the others.
 # Equivalent to: ./scripts/run_per_model.sh jepa <task> <seed>
 # Classification uses the same settings with a 1152-step context (72 patches).
@@ -52,7 +52,7 @@ config = {
     "checkpoint_save": 5000,
     "checkpoint_print": 30,
     "ratio_patches": 21,  # 21×16 = 336 timesteps — aligned with forecasting context
-    "batch_size": 64,
+    "batch_size": 128,
     "num_workers": 4,
 
     # loader

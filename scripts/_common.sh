@@ -52,12 +52,12 @@ ts_py() {
 ts_budget() {
   case "$1" in
     dino)               LR=5e-4; BATCH=128 ;;
-    jepa)               LR=3e-3; BATCH=64  ;;   # SGD with Nesterov momentum
-    lejepa)             LR=5e-4; BATCH=64  ;;
-    ntp)                LR=1e-4; BATCH=64  ;;
-    mae|patchtst)       LR=1e-4; BATCH=64  ;;
-    diffusion|timedart) LR=1e-4; BATCH=64  ;;
-    softclt)            LR=2e-4; BATCH=64  ;;
+    jepa)               LR=3e-3; BATCH=128 ;;   # SGD with Nesterov momentum
+    lejepa)             LR=5e-4; BATCH=128 ;;
+    ntp)                LR=1e-4; BATCH=64  ;;   # already the equal budget
+    mae|patchtst)       LR=1e-4; BATCH=64  ;;   # already the equal budget
+    diffusion|timedart) LR=1e-4; BATCH=128 ;;
+    softclt)            LR=2e-4; BATCH=128 ;;
     *) echo "unknown model: $1" >&2; exit 1 ;;
   esac
 }
