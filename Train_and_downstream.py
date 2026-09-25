@@ -1024,7 +1024,7 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
         'monash+synthetic': "Monash + Synthetic",
     }.get(_pretrain_dset, _pretrain_dset)
     print("\n" + "="*60)
-    print("  MODEL: PatchTST (self-supervised)")
+    print("  MODEL: MAE (masked-patch autoencoding, PatchTST backbone)")
     if pretrain_only:
         print(f"  pretrain: {_src_label}  [pretrain only]")
     else:
@@ -1094,15 +1094,15 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
 
     # ── pretraining ───────────────────────────────────────────────────────────
     if not skip_train:
-        print(f"\n[PatchTST] Starting pretraining on {_pretrain_dset} …")
+        print(f"\n[MAE] Starting pretraining on {_pretrain_dset} …")
         result = subprocess.run(pretrain_cmd, cwd=patchtst_dir, capture_output=True, text=True)
         print(result.stdout)
         if result.returncode != 0:
-            print("[PatchTST] Pretraining exited with errors.")
+            print("[MAE] Pretraining exited with errors.")
             print(result.stderr)
             return
     else:
-        print("[PatchTST] Skipping pretraining.")
+        print("[MAE] Skipping pretraining.")
 
     # ── resolve checkpoint path (needed for both forecast and classify) ────────
     n_ep    = epochs if epochs is not None else cfg.get("n_epochs_pretrain", 10)
@@ -1118,18 +1118,18 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
     pretrained_model_path = None if random_encoder else os.path.join(_ptst_save_dir, model_fname)
 
     if pretrain_only:
-        print("\n[PatchTST] Pretrain-only mode — skipping forecasting.")
+        print("\n[MAE] Pretrain-only mode — skipping forecasting.")
         return
 
     # ── forecasting downstream ────────────────────────────────────────────────
     mse_val, mae_val = None, None
     if _forecast_dset is None:
-        print("\n[PatchTST] No forecast_dataset — skipping forecasting.")
+        print("\n[MAE] No forecast_dataset — skipping forecasting.")
     else:
         import re as _re
-        print(f"\n[PatchTST] Running forecasting fine-tuning on {_forecast_dset} …")
+        print(f"\n[MAE] Running forecasting fine-tuning on {_forecast_dset} …")
         for _pl in pred_lens:
-            print(f"\n[PatchTST] pred_len={_pl}")
+            print(f"\n[MAE] pred_len={_pl}")
             result = subprocess.run(
                 [sys.executable, "patchtst_finetune.py",
                  "--dset_finetune",      _forecast_dset,
@@ -1156,7 +1156,7 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
             )
             print(result.stdout)
             if result.returncode != 0:
-                print(f"[PatchTST] pred_len={_pl} exited with errors.")
+                print(f"[MAE] pred_len={_pl} exited with errors.")
                 print(result.stderr)
                 continue
 
@@ -1164,7 +1164,7 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
             if _score_match:
                 _mse = float(_score_match.group(1))
                 _mae = float(_score_match.group(2))
-                print(f"[PatchTST] pred_len={_pl}  MSE={_mse:.4f}  MAE={_mae:.4f}")
+                print(f"[MAE] pred_len={_pl}  MSE={_mse:.4f}  MAE={_mae:.4f}")
                 if mse_val is None or _mse < mse_val:
                     mse_val, mae_val = _mse, _mae
 
@@ -1217,7 +1217,7 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
                                 linear_probe=linear_probe,
                                 mlp_head=(head_type == "mlp"))
         print(f"\n{'='*60}")
-        print(f"  [PatchTST] Classification on {classification_dataset}")
+        print(f"  [MAE] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
         print(f"{'='*60}")
 
@@ -1951,7 +1951,7 @@ def run_timedart(skip_train: bool = False,
     _device  = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     print("\n" + "="*60)
-    print(f"  MODEL: TimeDart  (backbone={cfg.get('model','PatchTST')})")
+    print(f"  MODEL: Diffusion  (backbone={cfg.get('model','PatchTST')})")
     print(f"  pretrain: {pretrain_src or pretrain_dataset}   forecast: {forecast_dataset or '(none)'}")
     print(f"  e_layers={cfg['e_layers']}  d_model={cfg['d_model']}  n_heads={cfg['n_heads']}  patch_len={cfg['patch_len']}")
     print(f"  checkpoint: {ckpt_file}")
@@ -2078,7 +2078,7 @@ def run_timedart(skip_train: bool = False,
         n_epochs = epochs if epochs is not None else cfg.get('train_epochs', 20)
         min_vali = float('inf')
 
-        print(f"\n[TimeDart] Pretraining ({n_epochs} epochs) …")
+        print(f"\n[Diffusion] Pretraining ({n_epochs} epochs) …")
         for epoch in range(n_epochs):
             train_loss = exp.pretrain_one_epoch(train_loader, optimizer, model_scheduler)
             vali_loss  = exp.valid_one_epoch(val_loader)
@@ -2091,9 +2091,9 @@ def run_timedart(skip_train: bool = False,
                 torch.save({"epoch": epoch, "model_state_dict": enc_sd},
                            ckpt_path / "ckpt_best.pth")
                 print(f"    ✓ saved best (vali={vali_loss:.4f})")
-        print(f"[TimeDart] Pretraining done. Checkpoint: {ckpt_path}/ckpt_best.pth")
+        print(f"[Diffusion] Pretraining done. Checkpoint: {ckpt_path}/ckpt_best.pth")
     else:
-        print("[TimeDart] Skipping pretraining.")
+        print("[Diffusion] Skipping pretraining.")
 
     if pretrain_only:
         return
@@ -2104,7 +2104,7 @@ def run_timedart(skip_train: bool = False,
     # train loop which only uses batch_x (input) and batch_y (target).
 
     if not ckpt_file.exists():
-        print(f"[TimeDart] WARNING: checkpoint not found at {ckpt_file}")
+        print(f"[Diffusion] WARNING: checkpoint not found at {ckpt_file}")
 
     if forecast_dataset is None:
         best_pred, best_mse, best_mae = None, float('inf'), float('inf')
@@ -2157,7 +2157,7 @@ def run_timedart(skip_train: bool = False,
             setting = (f"diffusion_{forecast_dataset}_pl{pred_len}_dm{cfg['d_model']}"
                        f"_el{cfg['e_layers']}{_synth_tag}{_ep_tag}{_SEED_TAG}")
 
-            print(f"\n[TimeDart] {'Linear probing' if linear_probe else 'Fine-tuning'} pred_len={pred_len} on {forecast_dataset} …")
+            print(f"\n[Diffusion] {'Linear probing' if linear_probe else 'Fine-tuning'} pred_len={pred_len} on {forecast_dataset} …")
             exp = Exp_TimeDART(ft_args)
 
             if linear_probe:
@@ -2200,7 +2200,7 @@ def run_timedart(skip_train: bool = False,
             trues_arr = _np.concatenate(trues_list, axis=0)
             mse = float(_np.mean((preds_arr - trues_arr) ** 2))
             mae = float(_np.mean(_np.abs(preds_arr - trues_arr)))
-            print(f"  [TimeDart] pred_len={pred_len} → test MSE={mse:.4f}  MAE={mae:.4f}")
+            print(f"  [Diffusion] pred_len={pred_len} → test MSE={mse:.4f}  MAE={mae:.4f}")
 
             if pred_len == pred_lens[0] and mse < best_mse:
                 best_mse  = mse
@@ -2258,7 +2258,7 @@ def run_timedart(skip_train: bool = False,
                                     linear_probe=linear_probe,
                                     mlp_head=(head_type == "mlp"))
         print(f"\n{'='*60}")
-        print(f"  [TimeDart] Classification on {classification_dataset}")
+        print(f"  [Diffusion] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
         print(f"{'='*60}")
 

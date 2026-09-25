@@ -213,5 +213,5 @@ def classification(config, checkpoint_path, classification_train,
             tc += (logits.argmax(1) == labels).sum().item()
             tt += len(labels)
     test_acc = tc / tt
-    print(f"[PatchTST] Test Accuracy: {test_acc:.4f}")
+    print(f"[MAE] Test Accuracy: {test_acc:.4f}")
     return test_acc
