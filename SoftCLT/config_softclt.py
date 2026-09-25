@@ -50,7 +50,18 @@ config = {
 
     # ── Downstream: Classification ────────────────────────────────────────────
     "epochs_classification":     20,
-    "lr_classification":         1e-3,
     "min_lr_classification":     1e-6,
+
+    # ── Downstream protocol (shared across every objective and the controls) ──
+    # Classification: LR 1e-3, batch 64, 20 epochs.
+    # Anomaly detection: Adam, LR 1e-3, cosine annealing, 10 epochs,
+    #   early stopping at patience 3.
+    # MLP probe (when --head mlp): one hidden layer of width 512 with GELU and
+    #   dropout, built in the model code; its dropout is "head_dropout" below.
+    "lr_classification":        1e-3,
     "batch_size_classification": 64,
+    "epoch_classification":     20,
+    "lr_anomaly":               1e-3,
+    "epoch_anomaly":            10,
+    "anomaly_patience":         3,
 }

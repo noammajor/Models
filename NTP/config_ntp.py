@@ -56,13 +56,9 @@ config = {
     "epochs_forecasting":     20,
 
     # ── Classification ────────────────────────────────────────────────────────
-    "epoch_classification":      20,
-    "lr_classification":         None,  # head LR; None → script default (1e-3)
     "lr_classification_encoder": None,  # encoder LR when fine-tuning; None → head_lr
 
     # ── Anomaly Detection ─────────────────────────────────────────────────────
-    "epoch_anomaly":         10,
-    "lr_anomaly":            None,  # head LR; None → script default (1e-3)
     "lr_anomaly_encoder":    None,  # encoder LR when fine-tuning; None → head_lr
 
     # ── Misc ──────────────────────────────────────────────────────────────────
@@ -72,4 +68,17 @@ config = {
     # If None, defaults to: NTP/saved_models/{pretrain_source}/ntp/layers{n_layers}/
     # Set to a directory string to override.
     "path_save":      None,
+
+    # ── Downstream protocol (shared across every objective and the controls) ──
+    # Classification: LR 1e-3, batch 64, 20 epochs.
+    # Anomaly detection: Adam, LR 1e-3, cosine annealing, 10 epochs,
+    #   early stopping at patience 3.
+    # MLP probe (when --head mlp): one hidden layer of width 512 with GELU and
+    #   dropout, built in the model code; its dropout is "head_dropout" below.
+    "lr_classification":        1e-3,
+    "batch_size_classification": 64,
+    "epoch_classification":     20,
+    "lr_anomaly":               1e-3,
+    "epoch_anomaly":            10,
+    "anomaly_patience":         3,
 }
