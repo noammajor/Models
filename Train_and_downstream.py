@@ -962,6 +962,23 @@ def run_jepa(skip_train: bool = False,
 
 # ── PatchTST ──────────────────────────────────────────────────────────────────
 
+def _run_streaming(cmd, cwd=None):
+    """Run a subprocess, echoing its output live, and return it as well.
+
+    subprocess.run(capture_output=True) holds everything until the process
+    exits, so a multi-hour pre-training run writes nothing to its log and looks
+    hung. stderr is merged into stdout so neither pipe can fill and deadlock.
+    """
+    proc = subprocess.Popen(cmd, cwd=cwd, text=True, bufsize=1,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    lines = []
+    for line in proc.stdout:
+        print(line, end='', flush=True)
+        lines.append(line)
+    proc.wait()
+    return subprocess.CompletedProcess(cmd, proc.returncode, ''.join(lines), '')
+
+
 def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretrain_dataset: str = None, forecast_dataset: str = None,
                  classification_dataset=None, anomaly_dataset: str = None,
                  pretrain_only: bool = False, classification_only: bool = False, pred_lens=None,
@@ -1095,11 +1112,9 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
     # ── pretraining ───────────────────────────────────────────────────────────
     if not skip_train:
         print(f"\n[MAE] Starting pretraining on {_pretrain_dset} …")
-        result = subprocess.run(pretrain_cmd, cwd=patchtst_dir, capture_output=True, text=True)
-        print(result.stdout)
+        result = _run_streaming(pretrain_cmd, cwd=patchtst_dir)
         if result.returncode != 0:
-            print("[MAE] Pretraining exited with errors.")
-            print(result.stderr)
+            print("[MAE] Pretraining exited with errors (output above).")
             return
     else:
         print("[MAE] Skipping pretraining.")
@@ -1130,8 +1145,8 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
         print(f"\n[MAE] Running forecasting fine-tuning on {_forecast_dset} …")
         for _pl in pred_lens:
             print(f"\n[MAE] pred_len={_pl}")
-            result = subprocess.run(
-                [sys.executable, "patchtst_finetune.py",
+            result = _run_streaming(
+                [sys.executable, "-u", "patchtst_finetune.py",
                  "--dset_finetune",      _forecast_dset,
                  "--is_finetune",        str(int(not linear_probe)),
                  "--is_linear_probe",    str(int(linear_probe)),
@@ -1152,12 +1167,10 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
                  "--lr",               str(cfg.get("finetune_lr", 1e-4)),
                  "--seed",             str(seed if seed is not None else GLOBAL_SEED),
                  "--mlp_head",         str(int(head_type == "mlp"))],
-                cwd=patchtst_dir, capture_output=True, text=True,
+                cwd=patchtst_dir,
             )
-            print(result.stdout)
             if result.returncode != 0:
-                print(f"[MAE] pred_len={_pl} exited with errors.")
-                print(result.stderr)
+                print(f"[MAE] pred_len={_pl} exited with errors (output above).")
                 continue
 
             _score_match = _re.search(r"score:\s*\[array\(([\d.]+)[^)]*\)[^,]*,\s*array\(([\d.]+)", result.stdout)
