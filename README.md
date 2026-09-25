@@ -52,7 +52,7 @@ the only place paths are configured, and every script reads it.
 | **Monash** | pre-training | [HuggingFace](https://huggingface.co/datasets/Monash-University/monash_tsf) | `monash_data_dir` |
 | **Synthetic** | pre-training | generated locally, see [below](#generating-the-synthetic-corpora) | `synthetic_data_dir`, `synthetic_mix_data_dir` |
 | **Forecasting** | downstream | [HuggingFace](https://huggingface.co/datasets/pkr7098/time-series-forecasting-datasets) | `forecasting_data_dir` |
-| **Classification** (UEA) | downstream | *(link)* | `classification_data_dir` |
+| **Classification** (UEA) | downstream | [timeseriesclassification.com](https://www.timeseriesclassification.com/dataset.php) | `classification_data_dir` |
 | **Anomaly detection** | downstream | *(link)* | `anomaly_data_dir` |
 
 ### Expected layout
@@ -67,6 +67,22 @@ matters:
 | Forecasting | `ETTh1.csv`, `ETTh2.csv`, `ETTm1.csv`, `ETTm2.csv`, `weather.csv`, `electricity.csv`, `traffic.csv` — a flat directory, no subfolders |
 | Classification | one directory per dataset: `<Name>/<Name>_TRAIN.ts` and `<Name>/<Name>_TEST.ts` |
 | Anomaly detection | one directory per dataset: `<NAME>/train.npy` `[T, C]`, `<NAME>/test.npy` `[T, C]`, `<NAME>/test_labels.npy` `[T]` |
+
+The classification data comes from the UEA multivariate archive. That page
+offers bulk archives only, in several formats — take the **multivariate, aeon
+`ts` format** one (~1.5 GB), which is the `.ts` layout the loader reads. It
+extracts to one directory per dataset; these nine are the ones this study uses:
+
+```
+EthanolConcentration   JapaneseVowels        SelfRegulationSCP2
+FaceDetection          SelfRegulationSCP1    SpokenArabicDigits
+Handwriting            Heartbeat             UWaveGestureLibrary
+```
+
+Each must end up as `<classification_data_dir>/<Name>/<Name>_TRAIN.ts` and
+`_TEST.ts`; the rest of the archive can be deleted. The site also documents
+loading individual datasets programmatically through the aeon toolkit, which
+avoids the full download.
 
 The Monash repository stores the archive as one `.zip` per dataset under
 `data/`, not as loose `.tsf` files, so it has to be extracted — `monash_data_dir`
