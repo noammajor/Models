@@ -51,7 +51,7 @@ the only place paths are configured, and every script reads it.
 | --- | --- | --- | --- |
 | **Monash** | pre-training | *(link)* | `monash_data_dir` |
 | **Synthetic** | pre-training | generated locally, see [below](#generating-the-synthetic-corpora) | `synthetic_data_dir`, `synthetic_mix_data_dir` |
-| **Forecasting** | downstream | *(link)* | `forecasting_data_dir` |
+| **Forecasting** | downstream | [HuggingFace](https://huggingface.co/datasets/pkr7098/time-series-forecasting-datasets) | `forecasting_data_dir` |
 | **Classification** (UEA) | downstream | *(link)* | `classification_data_dir` |
 | **Anomaly detection** | downstream | *(link)* | `anomaly_data_dir` |
 
@@ -64,9 +64,14 @@ matters:
 | --- | --- |
 | Monash | a flat directory of `*.tsf` files |
 | Synthetic | a flat directory of `*.arrow` files (GluonTS); univariate `[T]` and multivariate `[C, T]` targets may be mixed |
-| Forecasting | `ETTh1.csv`, `ETTh2.csv`, `ETTm1.csv`, `ETTm2.csv`, `weather.csv`, `electricity.csv`, `traffic.csv` |
+| Forecasting | `ETTh1.csv`, `ETTh2.csv`, `ETTm1.csv`, `ETTm2.csv`, `weather.csv`, `electricity.csv`, `traffic.csv` — a flat directory, no subfolders |
 | Classification | one directory per dataset: `<Name>/<Name>_TRAIN.ts` and `<Name>/<Name>_TEST.ts` |
 | Anomaly detection | one directory per dataset: `<NAME>/train.npy` `[T, C]`, `<NAME>/test.npy` `[T, C]`, `<NAME>/test_labels.npy` `[T]` |
+
+The forecasting repository linked above carries all seven CSVs (alongside
+`exchange_rate.csv` and `national_illness.csv`, which this study does not use).
+Its dataset viewer reports a schema error because the files do not share
+columns; the CSVs themselves download normally.
 
 The anomaly datasets are distributed in several different native formats.
 [shared/prep_anomaly_data.py](shared/prep_anomaly_data.py) converts them into

@@ -46,7 +46,6 @@ config = {
     "predictor_num_layers":3,
 
     # ── Datasets ──────────────────────────────────────────────────────────────
-    "pretrain_dataset": "etth1",
     "forecast_dataset": "etth1",
 
     # data
@@ -68,14 +67,8 @@ config = {
     "val_prec": 0.1,
     "test_prec": 0.1,
 
-    # ── ETTm1: 7 variables ────────────────────────────────────────────────────
-    "timestampcols": ["date"],
-    "input_variables": [
-        "HUFL", "HULL", "MUFL", "MULL", "LUFL", "LULL", "OT",
-    ],
-    "path_data": [
-        "./data/ETTh1.csv"
-    ],
+    # For in-domain pre-training (--pretrain_dataset <csv dataset>) the CSV path,
+    # timestamp column and channel groups are filled in from dataset_registry.py.
     "chunk_size": 128,
 
     # forecasting downstream

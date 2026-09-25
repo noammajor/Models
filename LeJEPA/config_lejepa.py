@@ -63,14 +63,10 @@ config = {
     "dwt_band_scale_approx_range":  (0.80, 1.20),
     "dwt_band_scale_detail_range":  (0.40, 1.60),
 
-    # ── Pretrain Dataset ──────────────────────────────────────────────────────
-    "pretrain_dataset": "etth1",
+    # ── Downstream target ─────────────────────────────────────────────────────
+    # For in-domain pre-training (--pretrain_dataset <csv dataset>) the CSV path,
+    # timestamp column and channel groups are filled in from dataset_registry.py.
     "forecast_dataset": "etth1",
-    "timestampcols": ["date"],
-    "input_variables": [
-        ["HUFL", "HULL", "MUFL", "MULL", "LUFL", "LULL", "OT"],
-    ],
-    "path_data": ["./data/ETTh1.csv"],
     "val_prec": 0.1,
     "test_prec": 0.1,
 
