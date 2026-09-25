@@ -67,6 +67,16 @@ MODELS=mae ./scripts/launch.sh "0 1 2 3 4" ./scripts/run_equal_budget.sh %M clas
 `DRY_RUN=1` prints the commands instead of running them, and works on both the
 protocol scripts and `launch.sh`.
 
+To check a protocol end-to-end before committing GPUs to a whole suite, narrow
+it to one dataset — each suite is overridable from the environment:
+
+```bash
+FORECAST_DATASETS=etth1 CUDA_VISIBLE_DEVICES=0 ./scripts/run_per_model.sh mae forecast 123
+```
+
+`FORECAST_DATASETS`, `ANOMALY_DATASETS`, `CLASSIFY_DATASETS`,
+`IN_DOMAIN_DATASETS` and `ALL_SEEDS` all work this way.
+
 ## Figures
 
 `run_figures.sh` runs the four analyses in `Visuals/`. None of them train

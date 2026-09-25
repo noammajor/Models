@@ -241,8 +241,14 @@ MODELS=- ./scripts/launch.sh "0 1 2 3 4" ./scripts/run_random_baseline.sh foreca
 ```
 
 `DRY_RUN=1` prints the commands instead of running them, on both the protocol
-scripts and `launch.sh`. Use it to check a protocol before committing GPUs to
-it.
+scripts and `launch.sh`. To check a protocol end-to-end on real data without
+committing GPUs to a whole suite, narrow it to one dataset — `FORECAST_DATASETS`,
+`ANOMALY_DATASETS`, `CLASSIFY_DATASETS`, `IN_DOMAIN_DATASETS` and `ALL_SEEDS` are
+all overridable from the environment:
+
+```bash
+FORECAST_DATASETS=etth1 CUDA_VISIBLE_DEVICES=0 ./scripts/run_per_model.sh mae forecast 123
+```
 
 ### Running a single configuration by hand
 

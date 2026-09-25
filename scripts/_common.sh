@@ -15,16 +15,19 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 
 # ── the evaluation suites ────────────────────────────────────────────────────
-FORECAST_DATASETS="etth1 etth2 ettm1 ettm2 weather electricity traffic"
-ANOMALY_DATASETS="MSL PSM SMAP SMD SWaT"
-CLASSIFY_DATASETS="EthanolConcentration FaceDetection Handwriting Heartbeat \
-JapaneseVowels SelfRegulationSCP1 SelfRegulationSCP2 SpokenArabicDigits UWaveGestureLibrary"
+# Each is overridable from the environment, so a single dataset can be run to
+# check a protocol before committing GPUs to the whole suite:
+#   FORECAST_DATASETS=etth1 ./scripts/run_per_model.sh mae forecast 123
+FORECAST_DATASETS=${FORECAST_DATASETS:-"etth1 etth2 ettm1 ettm2 weather electricity traffic"}
+ANOMALY_DATASETS=${ANOMALY_DATASETS:-"MSL PSM SMAP SMD SWaT"}
+CLASSIFY_DATASETS=${CLASSIFY_DATASETS:-"EthanolConcentration FaceDetection Handwriting Heartbeat \
+JapaneseVowels SelfRegulationSCP1 SelfRegulationSCP2 SpokenArabicDigits UWaveGestureLibrary"}
 
 # Forecasting datasets small enough to pre-train on by themselves (in-domain).
-IN_DOMAIN_DATASETS="etth1 etth2 ettm1 ettm2 weather"
+IN_DOMAIN_DATASETS=${IN_DOMAIN_DATASETS:-"etth1 etth2 ettm1 ettm2 weather"}
 
 # The five seeds every table in the paper averages over.
-ALL_SEEDS="123 456 789 1337 2003"
+ALL_SEEDS=${ALL_SEEDS:-"123 456 789 1337 2003"}
 
 # The shared encoder: 8 layers, d_model 128, 16 heads, d_ff 512, patch length 16.
 ENCODER_FLAGS="--encoder_layers 8 --embed_dim 128"
