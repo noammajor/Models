@@ -21,7 +21,7 @@ config = {
     "data_path_forecast_test": "data/ETTh1.csv",
     "data_path_classification": "UCI HAR Dataset",
     "num_workers": 6,
-    "batch_size_per_gpu": 64,
+    "batch_size_per_gpu": 128,   # per-model protocol; DINO scales LR by batch/256
 
     # ── Model architecture ────────────────────────────────────────────────────
     "c_in": 7,          # number of input variables  (9 for UCI HAR)
@@ -53,7 +53,7 @@ config = {
 
     # ── Optimizer ─────────────────────────────────────────────────────────────
     "optimizer": "adamw",           # "adamw" | "sgd"
-    "lr": 0.001,
+    "lr": 5e-4,
     "min_lr": 1e-5,
     "warmup_epochs": 1,
     "weight_decay": 0.04,

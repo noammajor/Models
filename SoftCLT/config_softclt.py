@@ -21,7 +21,7 @@ config = {
     "lambda_":   0.5,     # balance instance vs temporal loss
 
     # ── Pretraining ──────────────────────────────────────────────────────────
-    "lr":         1e-3,
+    "lr":         2e-4,
     "batch_size": 64,
     "epochs":     20,
 

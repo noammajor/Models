@@ -28,6 +28,7 @@ config = {
     "mask_ratio":          0.4,
     "n_epochs_pretrain":   20,
     "batch_size":          64,
+    "lr":                  1e-4,   # pre-training LR; overridden by --lr
     "num_workers":         4,
     "batch_size_forecast": 128,
     "finetune_lr":         4e-4,    # forecasting fine-tune LR (subprocess flag)

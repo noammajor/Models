@@ -1058,8 +1058,9 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
                          "--monash_min_len",      str(cfg["monash_min_len"])]
     if synth_dir is not None:
         pretrain_cmd += ["--synthetic_data_dir", synth_dir]
-    if lr is not None:
-        pretrain_cmd += ["--lr", str(lr)]
+    _pretrain_lr = lr if lr is not None else cfg.get("lr")
+    if _pretrain_lr is not None:
+        pretrain_cmd += ["--lr", str(_pretrain_lr)]
     # Save dir: single source of truth for both pretrain write and downstream read.
     # Three layouts: classification-cw (sweep), seed-tagged, or default.
     if num_patches is not None:
