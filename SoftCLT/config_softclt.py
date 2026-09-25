@@ -56,8 +56,9 @@ config = {
     # Classification: LR 1e-3, batch 64, 20 epochs.
     # Anomaly detection: Adam, LR 1e-3, cosine annealing, 10 epochs,
     #   early stopping at patience 3.
-    # MLP probe (when --head mlp): one hidden layer of width 512 with GELU and
-    #   dropout, built in the model code; its dropout is "head_dropout" below.
+    # MLP probe (when --head mlp): one hidden layer of width 512 with GELU,
+    #   built in the model code. Dropout 0.2 for classification and
+    #   forecasting; the anomaly-detection probe uses no dropout.
     "lr_classification":        1e-3,
     "batch_size_classification": 64,
     "epoch_classification":     20,

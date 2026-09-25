@@ -28,9 +28,8 @@ from models.TimeDART import Model
 from utils.tools import transfer_weights
 
 
-# Paper B.1: the MLP probe is one hidden layer of width 512 with GELU and
-# dropout 0.2, identical for every objective and every downstream task.
-MLP_PROBE_DROPOUT = 0.2
+# The anomaly-detection probe head is Linear -> GELU -> Linear, with no
+# dropout. The classification and forecasting probes use dropout 0.2.
 
 class _LinearReconDecoder(nn.Module):
     """[B, n_vars, d_model, n_patches] → [B, T, n_vars]"""
@@ -41,7 +40,6 @@ class _LinearReconDecoder(nn.Module):
             self.proj = nn.Sequential(
                 nn.Linear(d_model, hidden_dim),
                 nn.GELU(),
-                nn.Dropout(MLP_PROBE_DROPOUT),
                 nn.Linear(hidden_dim, patch_size),
             )
         else:
