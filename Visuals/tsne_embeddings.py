@@ -195,19 +195,19 @@ def _ckpt_path(model: str, encoder_layers: int, seed: int, pretrain_source: str)
         p_len   = cfg.get("patch_len", 16)
         m_id    = cfg.get("pretrained_model_id", 1)
         # classification backbone is saved at stride16 / epochs-pretrain20
-        fname   = (f"patchtst_pretrained_cw{ctx}_patch{p_len}_stride16"
+        fname   = (f"mae_pretrained_cw{ctx}_patch{p_len}_stride16"
                    f"_epochs-pretrain20_mask0.4_model{m_id}.pth")
         mtype   = cfg.get("model_type", "based_model")
         return (patchtst_dir / "saved_models" / "classification" / src /
-                "masked_patchtst" / mtype / f"layers{encoder_layers}_cw{CW}{_seed_tag}" / fname)
+                "mae" / mtype / f"layers{encoder_layers}_cw{CW}{_seed_tag}" / fname)
 
     if model == "diffusion":
         cfg = _load_config(ROOT / "Diffusion" / "config_diffusion.py")
         if seed is not None:
-            # seeded backbone: outputs/timedart_pretrain_monash_layers8_seed{S}/monash_monash/ckpt_best.pth
-            return (ROOT / f"outputs/timedart_pretrain_{src.replace('+','_')}_layers{encoder_layers}{_seed_tag}" /
+            # seeded backbone: outputs/diffusion_pretrain_monash_layers8_seed{S}/monash_monash/ckpt_best.pth
+            return (ROOT / f"outputs/diffusion_pretrain_{src.replace('+','_')}_layers{encoder_layers}{_seed_tag}" /
                     f"{src.replace('+','_')}_{src.replace('+','_')}" / "ckpt_best.pth")
-        return (ROOT / f"outputs/timedart_pretrain{_src_tag}_layers{encoder_layers}" /
+        return (ROOT / f"outputs/diffusion_pretrain{_src_tag}_layers{encoder_layers}" /
                 f"monash{_src_tag}" / "ckpt_best.pth")
 
     if model == "softclt":

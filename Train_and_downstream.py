@@ -1075,19 +1075,19 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
         _cw = num_patches * cfg.get('patch_len', 16)
         _ptst_save_dir = str(
             patchtst_dir / "saved_models" / "classification" /
-            _pretrain_dset / "masked_patchtst" / cfg.get("model_type", "based_model") /
+            _pretrain_dset / "mae" / cfg.get("model_type", "based_model") /
             f"layers{cfg.get('n_layers', 3)}_cw{_cw}{_ep_tag}{_SEED_TAG}{_synth_tag}"
         )
     elif _SEED_TAG:
         _ptst_save_dir = str(
             patchtst_dir / "saved_models" / _pretrain_dset /
-            "masked_patchtst" / cfg.get("model_type", "based_model") /
+            "mae" / cfg.get("model_type", "based_model") /
             f"layers{cfg.get('n_layers', 3)}{_ep_tag}{_SEED_TAG}{_synth_tag}"
         )
     else:
         _ptst_save_dir = str(
             patchtst_dir / "saved_models" / _pretrain_dset /
-            "masked_patchtst" / cfg.get("model_type", "based_model") /
+            "mae" / cfg.get("model_type", "based_model") /
             f"layers{cfg.get('n_layers', 3)}{_ep_tag}{_synth_tag}"
         )
     pretrain_cmd += ["--save_dir", _ptst_save_dir]
@@ -1111,7 +1111,7 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
     stride  = cfg.get("stride", 12)
     m_ratio = cfg.get("mask_ratio", 0.4)
     m_id    = cfg.get("pretrained_model_id", 1)
-    model_fname_base = (f"patchtst_pretrained_cw{ctx}_patch{p_len}_stride{stride}"
+    model_fname_base = (f"mae_pretrained_cw{ctx}_patch{p_len}_stride{stride}"
                         f"_epochs-pretrain{n_ep}_mask{m_ratio}_model{m_id}")
     _ckpt_epoch = checkpoints[0] if (checkpoints and checkpoints[0] is not None) else None
     model_fname = f"{model_fname_base}_{_ckpt_epoch}.pth" if _ckpt_epoch is not None else f"{model_fname_base}.pth"
@@ -1939,7 +1939,7 @@ def run_timedart(skip_train: bool = False,
     # cw1152 backbone gets its own dir instead of overwriting the cw336 one. No-op for
     # every existing run.
     _cw_tag = f"_cw{cfg['seq_len']}" if cfg.get('seq_len', 336) != 336 else ''
-    ckpt_dir  = Path(__file__).parent / f"outputs/timedart_pretrain{_src_tag}{_synth_tag}_layers{cfg['e_layers']}{_cw_tag}{_ep_tag}{_SEED_TAG}"
+    ckpt_dir  = Path(__file__).parent / f"outputs/diffusion_pretrain{_src_tag}{_synth_tag}_layers{cfg['e_layers']}{_cw_tag}{_ep_tag}{_SEED_TAG}"
     ckpt_file     = ckpt_dir / ("monash" + _src_tag) / "ckpt_best.pth"
     cls_ckpt_file = ckpt_dir / "monash_cls" / "ckpt_best.pth"
 
@@ -2009,7 +2009,7 @@ def run_timedart(skip_train: bool = False,
         patience           = cfg.get('patience', 3),
         load_checkpoints   = None,
         pretrain_checkpoints = str(ckpt_dir),
-        checkpoints        = str(Path(__file__).parent / "outputs" / "timedart_finetune"),
+        checkpoints        = str(Path(__file__).parent / "outputs" / "diffusion_finetune"),
         transfer_checkpoints = "ckpt_best.pth",
         data               = "ETTh1",
         root_path          = "/tmp",
@@ -2143,18 +2143,18 @@ def run_timedart(skip_train: bool = False,
             ft_args.dec_in         = _c_in
             ft_args.c_out          = _c_in
             ft_args.load_checkpoints = str(ckpt_file) if ckpt_file.exists() else None
-            ft_args.checkpoints    = str(Path(__file__).parent / "outputs" / "timedart_finetune")
+            ft_args.checkpoints    = str(Path(__file__).parent / "outputs" / "diffusion_finetune")
             # Use constant LR for forecasting — exponential decay kills LR by epoch 10
             ft_args.lradj          = "constant"
             ft_args.patience       = cfg.get('patience', 5)
             ft_args.mlp_head       = (head_type == "mlp")
             ft_args.head_dropout   = cfg.get('head_dropout_forecasting', cfg.get('head_dropout', 0.2))
 
-            # The forecasting head is checkpointed at outputs/timedart_finetune/{setting}/
+            # The forecasting head is checkpointed at outputs/diffusion_finetune/{setting}/
             # checkpoint.pth and reloaded after early stopping. Without the seed / pretrain
             # tag / epoch budget in the name, two concurrent runs differing only by seed
             # share one file and can load each other's head (or a half-written one).
-            setting = (f"timedart_{forecast_dataset}_pl{pred_len}_dm{cfg['d_model']}"
+            setting = (f"diffusion_{forecast_dataset}_pl{pred_len}_dm{cfg['d_model']}"
                        f"_el{cfg['e_layers']}{_synth_tag}{_ep_tag}{_SEED_TAG}")
 
             print(f"\n[TimeDart] {'Linear probing' if linear_probe else 'Fine-tuning'} pred_len={pred_len} on {forecast_dataset} …")

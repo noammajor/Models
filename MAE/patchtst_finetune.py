@@ -61,7 +61,7 @@ torch.manual_seed(args.seed)
 torch.cuda.manual_seed_all(args.seed)
 args.dset = args.dset_finetune
 print('args:', args)
-args.save_path = 'saved_models/' + args.dset_finetune + '/masked_patchtst/' + args.model_type + '/'
+args.save_path = 'saved_models/' + args.dset_finetune + '/mae/' + args.model_type + '/'
 if not os.path.exists(args.save_path): os.makedirs(args.save_path)
 
 # args.save_finetuned_model = '_cw'+str(args.context_points)+'_tw'+str(args.target_points) + '_patch'+str(args.patch_len) + '_stride'+str(args.stride) + '_epochs-finetune' + str(args.n_epochs_finetune) + '_mask' + str(args.mask_ratio)  + '_model' + str(args.finetuned_model_id)

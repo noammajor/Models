@@ -12,7 +12,7 @@ Checkpoints are saved by each model to its own output directory:
   dino        →  DINO/checkpoints/checkpoint{epoch}.pth
   jepa        →  JEPA/output_model/JEPA/_epoch{epoch}/
   ntp         →  NTP/saved_models/monash/ntp/ntp_pretrained_*_epoch{epoch}.pt
-  patchtst    →  MAE/saved_models/monash/masked_patchtst/based_model/*_epoch{epoch}.pth
+  patchtst    →  MAE/saved_models/monash/mae/based_model/*_epoch{epoch}.pth
 """
 
 import argparse

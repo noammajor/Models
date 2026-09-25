@@ -137,7 +137,7 @@ def discover_checkpoints(model: str, encoder_layers: int,
         _mod = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_mod)
         _cfg = dict(_mod.config); _cfg['n_layers'] = encoder_layers
         _cfg['pretrained_model_id'] = encoder_layers  # mirrors run_patchtst save-side logic
-        _prefix = (f"patchtst_pretrained"
+        _prefix = (f"mae_pretrained"
                    f"_cw{_cfg['context_points']}"
                    f"_patch{_cfg['patch_len']}"
                    f"_stride{_cfg['stride']}"
@@ -145,7 +145,7 @@ def discover_checkpoints(model: str, encoder_layers: int,
                    f"_mask{_cfg['mask_ratio']}"
                    f"_model{_cfg['pretrained_model_id']}_")
         _ptst_src = pretrain_source if pretrain_source else "monash"
-        save_dir = ROOT / "MAE" / "saved_models" / _ptst_src / "masked_patchtst" / "based_model" / f"layers{encoder_layers}"
+        save_dir = ROOT / "MAE" / "saved_models" / _ptst_src / "mae" / "based_model" / f"layers{encoder_layers}"
         found = set()
         for p in save_dir.glob("*.pth"):
             if p.stem.startswith(_prefix):
