@@ -31,7 +31,7 @@ from sklearn.preprocessing import normalize
 
 ROOT        = Path(__file__).parent.parent.resolve()
 PATCH_SIZE  = 16
-NUM_PATCHES = 72       # same as CLS_NUM_PATCHES in run_seed_analysis.py
+NUM_PATCHES = 72       # the classification context window (72 x 16 = 1152)
 CW          = NUM_PATCHES * PATCH_SIZE  # 1152
 
 # When True, the extractors return per-patch embeddings [N_patches, D] (each patch
@@ -54,6 +54,17 @@ def _pp_dmodel(z, d_model: int = 128):
     return z.reshape(-1, z.shape[-1])
 
 ALL_MODELS = ["random", "dino", "jepa", "lejepa", "patchtst", "ntp", "timedart", "softclt"]
+
+# The paper names two of the objectives differently from the backbones they are
+# built on. Both spellings are accepted on --models; checkpoint paths and the
+# extractor table are keyed on the backbone names below.
+MODEL_ALIASES = {"mae": "patchtst", "diffusion": "timedart"}
+
+
+def normalize_models(models):
+    """Map paper names onto the internal model keys, leaving others untouched."""
+    return [MODEL_ALIASES.get(m, m) for m in models]
+
 
 DEFAULT_CLS_DIR = "/home/shared/datasets/Classification_TS"
 
@@ -1045,6 +1056,7 @@ def main():
 
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
+    args.models = normalize_models(args.models)
     print(f"Models:   {args.models}")
     print(f"Datasets: {args.datasets}")
     print(f"Layers: {args.encoder_layers}  Source: {args.pretrain_source}\n")

@@ -222,6 +222,7 @@ def main():
     out_dir = Path(args.output_dir); out_dir.mkdir(parents=True, exist_ok=True)
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}  |  backbone cw={T.CW} ({T.NUM_PATCHES} patches)")
+    args.models = T.normalize_models(args.models)
     print(f"Models: {args.models}  Datasets: {args.datasets}  seed={args.seed}\n")
 
     # Build loaders once (shared across models).

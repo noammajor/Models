@@ -188,6 +188,7 @@ def main():
     ap.add_argument("--gpu", type=int, default=7)
     ap.add_argument("--output_dir", type=str, default="plots/latent_drift")
     args = ap.parse_args()
+    args.models = T.normalize_models(args.models)
 
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
     outdir = Path(args.output_dir); outdir.mkdir(parents=True, exist_ok=True)

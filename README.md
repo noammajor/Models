@@ -270,8 +270,16 @@ was given or the backbone will not be found.
 ## Figures and analyses
 
 These run forward passes through frozen, already-pre-trained encoders; none of
-them train anything. All default to the 8-layer backbones and take `--models`,
-`--seed` and `--output_dir`.
+them train anything — each reads the backbones `run_per_model.sh` produced. One
+script runs all four, pinning the seed, GPU, depth and pre-training source that
+the four Python entry points otherwise default differently:
+
+```bash
+./scripts/run_figures.sh all                    # isotropy, drift, tsne, gaussianity
+SEED=456 GPU=3 ./scripts/run_figures.sh isotropy
+```
+
+Or call them individually:
 
 ```bash
 # effective rank of the embedding space vs the forecasting gain over random

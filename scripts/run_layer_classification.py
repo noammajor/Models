@@ -23,7 +23,8 @@ Usage:
                                        --pretrain_source synthetic
     python run_layer_classification.py --dry_run
 
-    # Use classification-encoder checkpoints (pretrained with pretrain_cls_encoder.py):
+    # Use classification-encoder checkpoints (pre-trained by any protocol script
+    # with the "classify" task, i.e. --num_patches 72):
     python run_layer_classification.py --num_patches 72 --layers 8
 """
 
@@ -328,7 +329,7 @@ def main():
                         help="Override GPU for all models")
     parser.add_argument("--num_patches", type=int, default=72,
                         help="Use classification-encoder checkpoints (default: 72 → cw1152). "
-                             "Must match what was used in pretrain_cls_encoder.py. "
+                             "Must match the pre-training context window. "
                              "Pass 0 to disable and use the forecast-pretrain checkpoints.")
     parser.add_argument("--pretrain_source", type=str, default=None,
                         choices=["monash", "synthetic", "monash+synthetic"],
