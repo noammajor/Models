@@ -49,7 +49,7 @@ the only place paths are configured, and every script reads it.
 
 | Corpus | Used for | Download | `data_paths.py` key |
 | --- | --- | --- | --- |
-| **Monash** | pre-training | *(link)* | `monash_data_dir` |
+| **Monash** | pre-training | [HuggingFace](https://huggingface.co/datasets/Monash-University/monash_tsf) | `monash_data_dir` |
 | **Synthetic** | pre-training | generated locally, see [below](#generating-the-synthetic-corpora) | `synthetic_data_dir`, `synthetic_mix_data_dir` |
 | **Forecasting** | downstream | [HuggingFace](https://huggingface.co/datasets/pkr7098/time-series-forecasting-datasets) | `forecasting_data_dir` |
 | **Classification** (UEA) | downstream | *(link)* | `classification_data_dir` |
@@ -67,6 +67,18 @@ matters:
 | Forecasting | `ETTh1.csv`, `ETTh2.csv`, `ETTm1.csv`, `ETTm2.csv`, `weather.csv`, `electricity.csv`, `traffic.csv` — a flat directory, no subfolders |
 | Classification | one directory per dataset: `<Name>/<Name>_TRAIN.ts` and `<Name>/<Name>_TEST.ts` |
 | Anomaly detection | one directory per dataset: `<NAME>/train.npy` `[T, C]`, `<NAME>/test.npy` `[T, C]`, `<NAME>/test_labels.npy` `[T]` |
+
+The Monash repository stores the archive as one `.zip` per dataset under
+`data/`, not as loose `.tsf` files, so it has to be extracted — `monash_data_dir`
+must end up a flat directory of `.tsf` files. Its dataset viewer is disabled
+because the repository ships a loading script; the raw archives are what this
+code wants, so download the files rather than calling `datasets.load_dataset`:
+
+```bash
+huggingface-cli download Monash-University/monash_tsf --repo-type dataset \
+    --include "data/*.zip" --local-dir monash_raw
+cd monash_raw/data && for z in *.zip; do unzip -o -q "$z"; done
+```
 
 The forecasting repository linked above carries all seven CSVs (alongside
 `exchange_rate.csv` and `national_illness.csv`, which this study does not use).
