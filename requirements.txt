@@ -29,6 +29,19 @@ joblib>=1.3.0
 # ── GPU monitoring (sweep scripts) ───────────────────────────────────────────
 pynvml>=11.0.0
 
+# ── Not listed, and not needed ───────────────────────────────────────────────
+# affiliation   the affiliation-F1 metric (Huet et al., KDD 2022) is vendored
+#               under shared/affiliation/, so there is nothing to install.
+# seaborn, umap-learn, mkl, ray
+#               imported behind try/except or inside optional code paths.
+#               umap-learn is only needed for tsne_embeddings.py --method umap.
+# reformer_pytorch, fastdtw, tslearn, bottleneck
+#               imported by upstream modules that ship with the borrowed
+#               sub-projects (SoftCLT's catcc dataloader and distance matrix,
+#               the Time-Series-Library attention zoo). None of them is on the
+#               import path of any experiment in this repository -- verified by
+#               importing each entry point with them absent.
+
 # ── Visuals/tsne_embeddings.py uses: torch, numpy, matplotlib, scikit-learn ──
 # (TSNE, PCA, normalize) — all already covered above.
 # Optional: pip install umap-learn  # only needed if you pass --method umap
