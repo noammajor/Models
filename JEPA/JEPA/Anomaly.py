@@ -16,6 +16,10 @@ from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 from JEPA.Training import _instance_norm
 
 
+# Paper B.1: the MLP probe is one hidden layer of width 512 with GELU and
+# dropout 0.2, identical for every objective and every downstream task.
+MLP_PROBE_DROPOUT = 0.2
+
 class _LinearReconDecoder(nn.Module):
     """[B, P, embed_dim] → [B, T, n_vars]"""
     def __init__(self, embed_dim: int, patch_size: int, n_vars: int, mlp_head: bool = False, hidden_dim: int = 512):
@@ -26,6 +30,7 @@ class _LinearReconDecoder(nn.Module):
             self.proj = nn.Sequential(
                 nn.Linear(embed_dim, hidden_dim),
                 nn.GELU(),
+                nn.Dropout(MLP_PROBE_DROPOUT),
                 nn.Linear(hidden_dim, patch_size * n_vars),
             )
         else:

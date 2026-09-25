@@ -15,6 +15,10 @@ from ..models.layers.basics import *
 from ..models.layers.attention import *
 
 
+# Paper B.1: the MLP probe is one hidden layer of width 512 with GELU and
+# dropout 0.2, identical for every objective and every downstream task.
+MLP_PROBE_DROPOUT = 0.2
+
 def _proj(in_dim, out_dim, dropout, mlp_head=False, hidden_dim=512):
     """Linear (default) or 1-hidden-layer MLP (Linear→GELU→Dropout→Linear).
 
@@ -26,7 +30,7 @@ def _proj(in_dim, out_dim, dropout, mlp_head=False, hidden_dim=512):
     return nn.Sequential(
         nn.Linear(in_dim, hidden_dim),
         nn.GELU(),
-        nn.Dropout(dropout),
+        nn.Dropout(MLP_PROBE_DROPOUT),
         nn.Linear(hidden_dim, out_dim),
     )
 

@@ -30,6 +30,10 @@ def _instance_norm(x, eps=1e-6):
     return (x - mean) / std
 
 
+# Paper B.1: the MLP probe is one hidden layer of width 512 with GELU and
+# dropout 0.2, identical for every objective and every downstream task.
+MLP_PROBE_DROPOUT = 0.2
+
 class _LinearReconDecoder(nn.Module):
     """[B, P, nvars, d_model] → [B, T, nvars]"""
     def __init__(self, d_model: int, patch_len: int, mlp_head: bool = False, hidden_dim: int = 512):
@@ -39,6 +43,7 @@ class _LinearReconDecoder(nn.Module):
             self.proj = nn.Sequential(
                 nn.Linear(d_model, hidden_dim),
                 nn.GELU(),
+                nn.Dropout(MLP_PROBE_DROPOUT),
                 nn.Linear(hidden_dim, patch_len),
             )
         else:

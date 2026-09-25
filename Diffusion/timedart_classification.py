@@ -28,6 +28,10 @@ from models.TimeDART import Model
 from utils.tools import transfer_weights
 
 
+# Paper B.1: the MLP probe is one hidden layer of width 512 with GELU and
+# dropout 0.2, identical for every objective and every downstream task.
+MLP_PROBE_DROPOUT = 0.2
+
 class ClassificationHead(nn.Module):
     """Last patch → flatten(n_vars * d_model) → dropout → linear → n_classes."""
 
@@ -40,7 +44,7 @@ class ClassificationHead(nn.Module):
             self.linear = nn.Sequential(
                 nn.Linear(n_vars * d_model, hidden_dim),
                 nn.GELU(),
-                nn.Dropout(head_dropout),
+                nn.Dropout(MLP_PROBE_DROPOUT),
                 nn.Linear(hidden_dim, n_classes),
             )
         else:

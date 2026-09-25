@@ -17,6 +17,10 @@ from layers.TimeDART_EncDec import (
 from layers.Embed import Patch, PatchEmbedding, PositionalEncoding, TokenEmbedding_TimeDART
 
 
+# Paper B.1: the MLP probe is one hidden layer of width 512 with GELU and
+# dropout 0.2, identical for every objective and every downstream task.
+MLP_PROBE_DROPOUT = 0.2
+
 class FlattenHead(nn.Module):
     def __init__(
         self,
@@ -35,7 +39,7 @@ class FlattenHead(nn.Module):
             self.forecast_head = nn.Sequential(
                 nn.Linear(seq_len * d_model, hidden_dim),
                 nn.GELU(),
-                nn.Dropout(dropout),
+                nn.Dropout(MLP_PROBE_DROPOUT),
                 nn.Linear(hidden_dim, pred_len),
             )
             self.dropout = nn.Identity()
