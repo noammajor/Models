@@ -100,6 +100,16 @@ pre-training source — t-SNE defaults to the hybrid corpus, drift to seed 1337 
 so the wrapper passes all of them explicitly. Both `mae`/`patchtst` and
 `diffusion`/`timedart` are accepted on `--models`.
 
+## Checking the scripts
+
+`verify_scripts.sh` dry-runs every protocol against every model and task — 209
+invocations — and prints only failures. It touches no GPU and writes nothing, so
+it is the cheapest check that the whole set still resolves after an edit:
+
+```bash
+./scripts/verify_scripts.sh
+```
+
 ## Utilities
 
 | Script | |

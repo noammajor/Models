@@ -187,6 +187,33 @@ with the same shape:
 - `task` — `forecast anomaly classify`
 - seeds — omit to run all five (123, 456, 789, 1337, 2003)
 
+### The shared setup
+
+Held fixed across every objective and every protocol, so only the pre-training
+objective differs:
+
+| | |
+| --- | --- |
+| encoder | 8 layers, d_model 128, 16 heads, d_ff 512, patch length 16 |
+| context | 336 steps (21 patches) for forecasting and anomaly detection, 1152 steps (72 patches) for classification |
+| patching | non-overlapping, stride = patch length = 16 |
+| pre-training | 20 epochs on Monash |
+| evaluation | frozen encoder, linear head; forecasting horizons 96, 192, 336, 720 |
+| seeds | 123, 456, 789, 1337, 2003 |
+
+What each protocol varies from that is the last column of the table below. The
+per-objective learning rates and batch sizes are:
+
+| | DINO | JEPA | LE-JEPA | NTP | MAE | Diffusion | SoftCLT |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| learning rate | 5e-4 | 3e-3 | 5e-4 | 1e-4 | 1e-4 | 1e-4 | 2e-4 |
+| batch size | 128 | 64 | 64 | 64 | 64 | 64 | 64 |
+
+JEPA's is an SGD learning rate (Nesterov momentum); the rest are Adam or AdamW.
+DINO scales its learning rate by batch/256 internally, so 5e-4 at batch 128 is
+an effective 2.5e-4. `run_equal_budget.sh` replaces this whole table with LR
+1e-4 and batch 64 for every objective.
+
 Each script pre-trains and then evaluates every dataset of the task, on one
 GPU, sequentially. Logs land in `logs/<protocol>/<model>_<task>/`.
 

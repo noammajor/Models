@@ -88,7 +88,7 @@ ts_task() {
 # ── ts_log <protocol> <model> <task> → OUT ───────────────────────────────────
 ts_log() {
   OUT="logs/$1/${2}_${3}"
-  mkdir -p "$OUT"
+  [ "$DRY_RUN" = 1 ] || mkdir -p "$OUT"
 }
 
 # ── ts_sweep <model> <task> <seed...> ────────────────────────────────────────
