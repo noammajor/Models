@@ -969,7 +969,10 @@ def _run_streaming(cmd, cwd=None):
     exits, so a multi-hour pre-training run writes nothing to its log and looks
     hung. stderr is merged into stdout so neither pipe can fill and deadlock.
     """
-    proc = subprocess.Popen(cmd, cwd=cwd, text=True, bufsize=1,
+    # A child writing to a pipe block-buffers its stdout unless told otherwise,
+    # which would defeat the streaming: nothing arrives until ~8 KB accumulates.
+    env = dict(os.environ, PYTHONUNBUFFERED="1")
+    proc = subprocess.Popen(cmd, cwd=cwd, text=True, bufsize=1, env=env,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     lines = []
     for line in proc.stdout:
