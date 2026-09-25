@@ -53,7 +53,7 @@ the only place paths are configured, and every script reads it.
 | **Synthetic** | pre-training | generated locally, see [below](#generating-the-synthetic-corpora) | `synthetic_data_dir`, `synthetic_mix_data_dir` |
 | **Forecasting** | downstream | [HuggingFace](https://huggingface.co/datasets/pkr7098/time-series-forecasting-datasets) | `forecasting_data_dir` |
 | **Classification** (UEA) | downstream | [timeseriesclassification.com](https://www.timeseriesclassification.com/dataset.php) | `classification_data_dir` |
-| **Anomaly detection** | downstream | *(link)* | `anomaly_data_dir` |
+| **Anomaly detection** | downstream | public benchmark repositories | `anomaly_data_dir` |
 
 ### Expected layout
 
@@ -101,13 +101,19 @@ The forecasting repository linked above carries all seven CSVs (alongside
 Its dataset viewer reports a schema error because the files do not share
 columns; the CSVs themselves download normally.
 
-The anomaly datasets are distributed in several different native formats.
-[shared/prep_anomaly_data.py](shared/prep_anomaly_data.py) converts them into
-the layout above:
+MSL, PSM, SMAP, SMD and SWaT are the standard anomaly-detection benchmark set
+and are available from public repositories, which distribute them together in
+preprocessed form. They arrive in several different native formats — 2-D `.npy`
+arrays, CSV and Excel depending on the dataset — so
+[shared/prep_anomaly_data.py](shared/prep_anomaly_data.py) normalises whichever
+you have into the layout above:
 
 ```bash
 python shared/prep_anomaly_data.py --in_dir <raw downloads> --out_dir <anomaly_data_dir>
 ```
+
+It expects one directory per dataset under `--in_dir` and reports what it
+converted, so a missing dataset is named rather than silently skipped.
 
 Pre-training uses only series of at least 512 steps (`monash_min_len`), which
 is what the corpus sizes below are counted under. Check what you have with:
