@@ -17,8 +17,8 @@ Latent / joint-embedding:
 | Name | Objective |
 | --- | --- |
 | **JEPA** | joint-embedding predictive architecture |
-| **LE-JEPA** | JEPA with VICReg/SIGReg-style latent regularization |
-| **DINO** | self-distillation with a momentum teacher and DWT-based augmentations |
+| **LEJEPA** | JEPA with VICReg/SIGReg-style latent regularization |
+| **DINO** | self-distillation with a momentum teacher and vision-based augmentations |
 | **SoftCLT** | soft contrastive learning with instance- and temporal-level soft assignments |
 
 Generative / reconstructive:
@@ -49,11 +49,11 @@ the only place paths are configured, and every script reads it.
 
 | Corpus | Used for | Download | `data_paths.py` key |
 | --- | --- | --- | --- |
-| **Monash** | pre-training | [HuggingFace](https://huggingface.co/datasets/Monash-University/monash_tsf) | `monash_data_dir` |
+| **Monash** | pre-training | *(link)* | `monash_data_dir` |
 | **Synthetic** | pre-training | generated locally, see [below](#generating-the-synthetic-corpora) | `synthetic_data_dir`, `synthetic_mix_data_dir` |
-| **Forecasting** | downstream | [HuggingFace](https://huggingface.co/datasets/pkr7098/time-series-forecasting-datasets) | `forecasting_data_dir` |
-| **Classification** (UEA) | downstream | [timeseriesclassification.com](https://www.timeseriesclassification.com/dataset.php) | `classification_data_dir` |
-| **Anomaly detection** | downstream | public benchmark repositories | `anomaly_data_dir` |
+| **Forecasting** | downstream | *(link)* | `forecasting_data_dir` |
+| **Classification** (UEA) | downstream | *(link)* | `classification_data_dir` |
+| **Anomaly detection** | downstream | *(link)* | `anomaly_data_dir` |
 
 ### Expected layout
 
@@ -64,56 +64,17 @@ matters:
 | --- | --- |
 | Monash | a flat directory of `*.tsf` files |
 | Synthetic | a flat directory of `*.arrow` files (GluonTS); univariate `[T]` and multivariate `[C, T]` targets may be mixed |
-| Forecasting | `ETTh1.csv`, `ETTh2.csv`, `ETTm1.csv`, `ETTm2.csv`, `weather.csv`, `electricity.csv`, `traffic.csv` — a flat directory, no subfolders |
+| Forecasting | `ETTh1.csv`, `ETTh2.csv`, `ETTm1.csv`, `ETTm2.csv`, `weather.csv`, `electricity.csv`, `traffic.csv` |
 | Classification | one directory per dataset: `<Name>/<Name>_TRAIN.ts` and `<Name>/<Name>_TEST.ts` |
 | Anomaly detection | one directory per dataset: `<NAME>/train.npy` `[T, C]`, `<NAME>/test.npy` `[T, C]`, `<NAME>/test_labels.npy` `[T]` |
 
-The classification data comes from the UEA multivariate archive. That page
-offers bulk archives only, in several formats — take the **multivariate, aeon
-`ts` format** one (~1.5 GB), which is the `.ts` layout the loader reads. It
-extracts to one directory per dataset; these nine are the ones this study uses:
-
-```
-EthanolConcentration   JapaneseVowels        SelfRegulationSCP2
-FaceDetection          SelfRegulationSCP1    SpokenArabicDigits
-Handwriting            Heartbeat             UWaveGestureLibrary
-```
-
-Each must end up as `<classification_data_dir>/<Name>/<Name>_TRAIN.ts` and
-`_TEST.ts`; the rest of the archive can be deleted. The site also documents
-loading individual datasets programmatically through the aeon toolkit, which
-avoids the full download.
-
-The Monash repository stores the archive as one `.zip` per dataset under
-`data/`, not as loose `.tsf` files, so it has to be extracted — `monash_data_dir`
-must end up a flat directory of `.tsf` files. Its dataset viewer is disabled
-because the repository ships a loading script; the raw archives are what this
-code wants, so download the files rather than calling `datasets.load_dataset`:
-
-```bash
-huggingface-cli download Monash-University/monash_tsf --repo-type dataset \
-    --include "data/*.zip" --local-dir monash_raw
-cd monash_raw/data && for z in *.zip; do unzip -o -q "$z"; done
-```
-
-The forecasting repository linked above carries all seven CSVs (alongside
-`exchange_rate.csv` and `national_illness.csv`, which this study does not use).
-Its dataset viewer reports a schema error because the files do not share
-columns; the CSVs themselves download normally.
-
-MSL, PSM, SMAP, SMD and SWaT are the standard anomaly-detection benchmark set
-and are available from public repositories, which distribute them together in
-preprocessed form. They arrive in several different native formats — 2-D `.npy`
-arrays, CSV and Excel depending on the dataset — so
-[shared/prep_anomaly_data.py](shared/prep_anomaly_data.py) normalises whichever
-you have into the layout above:
+The anomaly datasets are distributed in several different native formats.
+[shared/prep_anomaly_data.py](shared/prep_anomaly_data.py) converts them into
+the layout above:
 
 ```bash
 python shared/prep_anomaly_data.py --in_dir <raw downloads> --out_dir <anomaly_data_dir>
 ```
-
-It expects one directory per dataset under `--in_dir` and reports what it
-converted, so a missing dataset is named rather than silently skipped.
 
 Pre-training uses only series of at least 512 steps (`monash_min_len`), which
 is what the corpus sizes below are counted under. Check what you have with:
@@ -141,11 +102,11 @@ three:
 JOBS=16 ./scripts/run_synthetic_generation.sh all
 ```
 
-| Stage | Corpus in the paper | Written to | Read by |
-| --- | --- | --- | --- |
-| `full` | Synthetic (2.5M) | `synthetic_data_dir` | `--pretrain_source synthetic` |
-| `mix` | the synthetic half of Hybrid (2.5M) | `synthetic_mix_data_dir` | `--pretrain_source monash+synthetic` |
-| `subset` | Synthetic (680K) | `<synthetic_data_dir>_monashsize` | `run_corpus.sh <model> synthetic_small` |
+| Stage | Written to | Read by |
+| --- | --- | --- |
+| `full` | `synthetic_data_dir` | `--pretrain_source synthetic` |
+| `mix` | `synthetic_mix_data_dir` | `--pretrain_source monash+synthetic` |
+| `subset` | `<synthetic_data_dir>_monashsize` | `run_corpus.sh <model> synthetic_small` |
 
 Each corpus is an equal number of rows from two Gaussian-process generators
 (see [scripts/synthetic_data_generation/](scripts/synthetic_data_generation/)):
@@ -158,22 +119,16 @@ Note that the hybrid source reads the **mix** directory, not the full corpus:
 the hybrid runs pair Monash with a smaller synthetic half, so `all` is needed
 before the hybrid protocol will run.
 
-`subset` is a random draw from the full corpus sized to match Monash.
-"Synthetic vs Monash" otherwise confounds the data-generating process with
-corpus size; the subset holds size fixed so that only the process differs.
+`subset` is a random draw from the full corpus whose total filtered timestep
+count matches Monash. "Synthetic vs Monash" otherwise confounds the
+data-generating process with corpus size; the subset holds size fixed so that
+only the process differs.
 
-Corpus sizes, counted in 336-step training windows as the paper reports them:
-
-| Corpus | Training windows | Role |
-| --- | ---: | --- |
-| Monash (680K) | 683,982 (+77,365 validation) | the reference corpus |
-| Synthetic (680K) | 680,000 | data source at fixed scale |
-| Synthetic (2.5M) | 2,512,000 | scale at fixed source |
-| Hybrid (2.5M) | Monash + ~1.8M synthetic | real plus synthetic volume |
-
-The generator draws N = 4,000 series of length T = 2,500, with C = 160 channels
-for the multivariate (LMC) half; the window count follows from how many 336-step
-windows those series yield.
+| Corpus | Series | Filtered timesteps |
+| --- | ---: | ---: |
+| Monash | 45,042 | 445,011,429 |
+| Synthetic (full) | 8,000 | 1,610,000,000 |
+| Synthetic (mix) | 5,800 | 1,167,250,000 |
 
 Generation is CPU-bound and takes hours at these sizes — every series is a draw
 from a GP prior. Set `JOBS` to the core count and run it detached.
@@ -189,38 +144,9 @@ with the same shape:
 ./scripts/<protocol>.sh <model> [<protocol options>] <task> <seed> [<seed> ...]
 ```
 
-- `model` — `dino jepa lejepa ntp mae diffusion softclt`
+- `model` — `dino jepa lejepa ntp mae diffusion softclt autotcl`
 - `task` — `forecast anomaly classify`
 - seeds — omit to run all five (123, 456, 789, 1337, 2003)
-
-### The shared setup
-
-Held fixed across every objective and every protocol, so only the pre-training
-objective differs:
-
-| | |
-| --- | --- |
-| encoder | 8 layers, d_model 128, 16 heads, d_ff 512, patch length 16 |
-| context | 336 steps (21 patches) for forecasting and anomaly detection, 1152 steps (72 patches) for classification |
-| patching | non-overlapping, stride = patch length = 16 |
-| pre-training | 20 epochs on Monash |
-| evaluation | frozen encoder, linear head; forecasting horizons 96, 192, 336, 720 |
-| seeds | 123, 456, 789, 1337, 2003 |
-
-What each protocol varies from that is the last column of the table below. The
-per-objective learning rates and batch sizes are:
-
-| | DINO | JEPA | LE-JEPA | NTP | MAE | Diffusion | SoftCLT |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| optimizer | AdamW | SGD | AdamW | Adam | Adam | Adam | AdamW |
-| learning rate | 5e-4 | 3e-3 | 5e-4 | 1e-4 | 1e-4 | 1e-4 | 2e-4 |
-| batch size | 128 | 128 | 128 | 64 | 64 | 128 | 128 |
-
-DINO scales its learning rate by batch/256 internally, so 5e-4 at batch 128 is
-an effective 2.5e-4. NTP and MAE already sit at the equal budget (1e-4, batch
-64), which is why their rows are identical under both protocols.
-`run_equal_budget.sh` replaces this whole table with LR 1e-4 and batch 64 for
-every objective, and fixes the predictor at 4 layers for JEPA and LE-JEPA.
 
 Each script pre-trains and then evaluates every dataset of the task, on one
 GPU, sequentially. Logs land in `logs/<protocol>/<model>_<task>/`.
@@ -234,8 +160,6 @@ GPU, sequentially. Logs land in `logs/<protocol>/<model>_<task>/`.
 | `run_long_pretrain.sh` | 40 epochs instead of 20 | the pre-training length |
 | `run_probe_head.sh` | `linear`, `mlp`, `finetune` | the evaluation protocol |
 | `run_random_baseline.sh` | untrained encoder, frozen, probed | no pre-training at all |
-| `run_depth_sweep.sh` | encoder depth 2 / 4 / 8 / 12 / 24 | the backbone depth |
-| `run_lejepa_ablation.sh` | LE-JEPA augmentation family and SIGReg strength | the LE-JEPA views / regularizer |
 
 Everything shared between them — the dataset lists, the per-objective learning
 rates and batch sizes, the pretrain-then-evaluate loop — lives in
@@ -278,14 +202,8 @@ MODELS=- ./scripts/launch.sh "0 1 2 3 4" ./scripts/run_random_baseline.sh foreca
 ```
 
 `DRY_RUN=1` prints the commands instead of running them, on both the protocol
-scripts and `launch.sh`. To check a protocol end-to-end on real data without
-committing GPUs to a whole suite, narrow it to one dataset — `FORECAST_DATASETS`,
-`ANOMALY_DATASETS`, `CLASSIFY_DATASETS`, `IN_DOMAIN_DATASETS` and `ALL_SEEDS` are
-all overridable from the environment:
-
-```bash
-FORECAST_DATASETS=etth1 CUDA_VISIBLE_DEVICES=0 ./scripts/run_per_model.sh mae forecast 123
-```
+scripts and `launch.sh`. Use it to check a protocol before committing GPUs to
+it.
 
 ### Running a single configuration by hand
 
@@ -313,16 +231,8 @@ was given or the backbone will not be found.
 ## Figures and analyses
 
 These run forward passes through frozen, already-pre-trained encoders; none of
-them train anything — each reads the backbones `run_per_model.sh` produced. One
-script runs all four, pinning the seed, GPU, depth and pre-training source that
-the four Python entry points otherwise default differently:
-
-```bash
-./scripts/run_figures.sh all                    # isotropy, drift, tsne, gaussianity
-SEED=456 GPU=3 ./scripts/run_figures.sh isotropy
-```
-
-Or call them individually:
+them train anything. All default to the 8-layer backbones and take `--models`,
+`--seed` and `--output_dir`.
 
 ```bash
 # effective rank of the embedding space vs the forecasting gain over random
@@ -369,10 +279,11 @@ else comes from the config file.
 | DINO | [DINO/config.py](DINO/config.py) |
 | JEPA | [JEPA/config_files/config_jepa.py](JEPA/config_files/config_jepa.py) |
 | LE-JEPA | [LeJEPA/config_lejepa.py](LeJEPA/config_lejepa.py) |
-| MAE | [MAE/config_mae.py](MAE/config_mae.py) |
+| MAE | [MAE/config_patchtst.py](MAE/config_patchtst.py) |
 | NTP | [NTP/config_ntp.py](NTP/config_ntp.py) |
-| Diffusion | [Diffusion/config_diffusion.py](Diffusion/config_diffusion.py) |
+| Diffusion | [Diffusion/config_timedart.py](Diffusion/config_timedart.py) |
 | SoftCLT | [SoftCLT/config_softclt.py](SoftCLT/config_softclt.py) |
+| AutoTCL | [AutoTCL/config_autotcl.py](AutoTCL/config_autotcl.py) |
 
 ### Keys worth knowing
 
@@ -405,8 +316,8 @@ objective's implementation keeps its original vocabulary:
   - SoftCLT: the soft-assignment temperatures `tau_inst` and `tau_temp`.
 
 CLI flags never rewrite the config files; they override keys at runtime, some
-through environment variables (`TS_PRETRAIN_BS`, `TS_MAE_BS`,
-`TS_DIFFUSION_BS`, `TS_SOFTCLT_BS`, `TS_DINO_BS`, `TS_FORECAST_BS`, `TS_CLS_BS`,
+through environment variables (`TS_PRETRAIN_BS`, `TS_PATCHTST_BS`,
+`TS_TIMEDART_BS`, `TS_SOFTCLT_BS`, `TS_DINO_BS`, `TS_FORECAST_BS`, `TS_CLS_BS`,
 `TS_CKPT_TAG`). Anything not exposed as a flag — `mask_ratio`, `nhead`,
 augmentation specifications, EMA momentum — has to be edited in the config.
 

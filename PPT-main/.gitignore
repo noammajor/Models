@@ -1,0 +1,4 @@
+*.pt
+*.log
+*.pyc
+src/data/*
