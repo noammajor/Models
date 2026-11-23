@@ -22,7 +22,7 @@
 # Usage:
 #   ./scripts/run_indomain.sh <model> <seed> [<seed> ...]
 #
-#     model  dino | jepa | lejepa | ntp | mae | diffusion | softclt
+#     model  dino | jepa | lejepa | ntp | mae | diffusion | softclt | autotcl
 #
 #   CUDA_VISIBLE_DEVICES=0 ./scripts/run_indomain.sh ntp 123
 #   CUDA_VISIBLE_DEVICES=1 ./scripts/run_indomain.sh softclt 123 456

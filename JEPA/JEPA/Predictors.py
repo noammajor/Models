@@ -2,6 +2,9 @@ import math
 import torch
 import torch.nn as nn
 
+from JEPA.Encoder import use_moderntcn
+from moderntcn_backbone import CNNJEPAPredictor
+
 
 # ─── Cross-Attention Block ─────────────────────────────────────────────────────
 
@@ -40,7 +43,7 @@ class CrossAttentionBlock(nn.Module):
 
 # ─── Predictor ─────────────────────────────────────────────────────────────────
 
-class JEPAPredictor(nn.Module):
+class TransformerJEPAPredictor(nn.Module):
     """
     Bottleneck transformer predictor for JEPA (P2P only).
 
@@ -142,3 +145,12 @@ class JEPAPredictor(nn.Module):
         for layer in self.predictor_layers:
             q = layer(q, kv)
         return self.out_proj(q)   # [B*F, N_t, encoder_dim]
+
+
+def JEPAPredictor(*args, **kwargs):
+    """The predictor this run uses: the cross-attention transformer above, or the
+    fully convolutional CNN-JEPA predictor when TS_BACKBONE=moderntcn. Both map
+    context embeddings to predicted target embeddings with the same call."""
+    if use_moderntcn():
+        return CNNJEPAPredictor(*args, **kwargs)
+    return TransformerJEPAPredictor(*args, **kwargs)

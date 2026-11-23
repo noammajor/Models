@@ -12,6 +12,9 @@ import os as _os
 _ROOT_DIR = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
 if _ROOT_DIR not in sys.path:
     sys.path.insert(0, _ROOT_DIR)
+if _os.path.join(_ROOT_DIR, 'shared') not in sys.path:
+    sys.path.insert(0, _os.path.join(_ROOT_DIR, 'shared'))
+from monash_exclude import monash_tsf_files
 from dataset_registry import _DATA_DIR as _ETT_DATA_DIR_PATH
 _ETT_DATA_DIR = str(_ETT_DATA_DIR_PATH) + _os.sep
 
@@ -66,7 +69,7 @@ class MonashDatasetPatchTST:
         window_size = context_points + target_points
         self._windows = []
 
-        for fpath in sorted(glob.glob(_os.path.join(data_dir, '*.tsf'))):
+        for fpath in (_os.path.join(data_dir, f) for f in monash_tsf_files(data_dir)):
             try:
                 series_list = _read_tsf_series(fpath)
             except Exception as e:

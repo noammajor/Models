@@ -32,7 +32,7 @@ def compute_jepa_loss(
 ):
     z_p_target = target_out["data_patches"]
     z_p_context = context_out["data_patches"]
-    pred= self.predictor(z_p_context, target_mask=non_masks)
+    pred= self.predictor(z_p_context, target_mask=non_masks, context_mask=masks)
     l_MSE = F.mse_loss(pred, z_p_target.detach())
 
     
@@ -189,7 +189,8 @@ def train_and_evaluate(self):
             }
             print("New best validation loss! Model saved.")
         if epoch%1 == 0:
-            self.save_model(self.encoder, self.encoder_ema, self.predictor, self.optimizer, epoch, f"{self.path_save}_epoch{epoch}")
+            if os.environ.get("TS_SAVE_EPOCH_CKPTS", "1") != "0":   # per-epoch files are optional
+                self.save_model(self.encoder, self.encoder_ema, self.predictor, self.optimizer, epoch, f"{self.path_save}_epoch{epoch}")
             self.best_model = {
                 "encoder": copy.deepcopy(self.encoder.state_dict()),
                 "predictor": copy.deepcopy(self.predictor.state_dict()),

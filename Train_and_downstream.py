@@ -126,7 +126,48 @@ def _synth_dir_tag(synthetic_data_dir):
         _ct = ''.join(c if c.isalnum() else '_' for c in _ct).strip('_')
         if _ct:
             tag = f"{tag}_{_ct}"
+    # ModernTCN backbones get their own directories. Kept outside the
+    # TS_CKPT_TAG segment, so _legacy_ckpt_dir (which strips that segment) can
+    # never fall back to a transformer checkpoint: the downstream loaders use
+    # strict=False and would silently load nothing into the CNN.
+    if os.environ.get('TS_BACKBONE', 'transformer').strip().lower() == 'moderntcn':
+        tag = f"{tag}_cnn"
+    # Monash files held out of pre-training (TS_MONASH_EXCLUDE) are named in the
+    # dir, e.g. '_no_electricity_hourly', also outside the TS_CKPT_TAG segment
+    # so the legacy fallback can never pick a full-Monash backbone.
+    _add_path(Path(__file__).parent / "shared")
+    from monash_exclude import monash_exclude_tag
+    tag = f"{tag}{monash_exclude_tag()}"
     return tag
+
+
+# Objectives whose encoder can be swapped for ModernTCN (--backbone moderntcn).
+_MODERNTCN_MODELS = {'dino', 'jepa', 'lejepa', 'jepa_random', 'autotcl'}   # jepa_random: the untrained CNN control
+
+
+def _legacy_ckpt_dir(ckpt_dir, weight_name, skip_train=True, extra_roots=()):
+    """Downstream-only runs: if <ckpt_dir>/<weight_name> is missing, look for a
+    backbone written before --ckpt_tag was folded into the dir name (i.e. the same
+    name without the trailing "_<TS_CKPT_TAG>" segment), optionally under other
+    roots too. Returns the first dir that has the file, else ckpt_dir unchanged.
+    Never used when pre-training, so new backbones still get the tagged name."""
+    ckpt_dir = str(ckpt_dir).rstrip('/')
+    if not skip_train or os.path.exists(os.path.join(ckpt_dir, weight_name)):
+        return ckpt_dir
+    _ct = os.environ.get('TS_CKPT_TAG', '')
+    _ct = ''.join(c if c.isalnum() else '_' for c in _ct).strip('_')
+    names = [os.path.basename(ckpt_dir)]
+    if _ct and f"_{_ct}" in names[0]:
+        names.append(names[0].replace(f"_{_ct}", "", 1))
+    parent = os.path.dirname(ckpt_dir)
+    roots = [parent] + [str(r) for r in extra_roots]
+    for root in roots:
+        for n in names:
+            cand = os.path.join(root, n)
+            if cand != ckpt_dir and os.path.exists(os.path.join(cand, weight_name)):
+                print(f"[ckpt] using legacy checkpoint dir: {cand}")
+                return cand
+    return ckpt_dir
 
 
 def _config_to_dino_args(cfg):
@@ -143,7 +184,8 @@ def _config_to_dino_args(cfg):
         test_only                   = cfg.get("test_only", False),
         seed                        = cfg.get("seed", GLOBAL_SEED),
         output_dir                  = cfg.get("output_dir", "./checkpoints"),
-        saveckp_freq                = cfg.get("saveckp_freq", 10),
+        # TS_SAVE_EPOCH_CKPTS=0 keeps only checkpoint_best.pth (no per-epoch files)
+        saveckp_freq                = 0 if os.environ.get("TS_SAVE_EPOCH_CKPTS", "1") == "0" else cfg.get("saveckp_freq", 10),
 
         # ── data ──────────────────────────────────────────────────────────
         data_path                   = cfg.get("data_path", ""),
@@ -328,6 +370,9 @@ def run_dino(skip_train: bool = False,
         _cw = num_patches * dino_cfg.get('patch_len', 16)
         _base = dino_cfg.get('output_dir', './checkpoints').rstrip('/')
         dino_cfg['output_dir'] = str(Path(_base).parent / 'classification' / (Path(_base).name + f'_cw{_cw}'))
+    dino_cfg['output_dir'] = _legacy_ckpt_dir(
+        dino_cfg['output_dir'], 'checkpoint_best.pth', skip_train,
+        extra_roots=[Path(dino_cfg['output_dir']).parent.parent / 'output_model' / 'classification'])
     if lr is not None:
         dino_cfg['lr'] = lr
     if warmup_epochs is not None:
@@ -674,6 +719,7 @@ def run_jepa(skip_train: bool = False,
         _cw = num_patches * config.get('patch_size', 16)
         _p = Path(config['path_save'].rstrip('/'))
         config['path_save'] = str(_p.parent / 'classification' / (_p.name + f'_cw{_cw}')) + '/'
+    config['path_save'] = _legacy_ckpt_dir(config['path_save'], 'best_model.pt', skip_train) + '/'
     if predictor_layers is not None:
         config['predictor_num_layers'] = predictor_layers
     if lr is not None:
@@ -876,7 +922,8 @@ def run_jepa(skip_train: bool = False,
                 print(f"  → checkpoint epoch {epoch}")
                 ckpt_tag = "" if epoch == "best" else f"_epoch{epoch}"
                 mse = model.forecasting(ckpt_tag, linear_probe=linear_probe,
-                                        mlp_head=(head_type == "mlp"))
+                                        mlp_head=(head_type == "mlp"),
+                                        random_encoder=random_encoder)
                 if is_search and mse is not None and mse < best_mse:
                     best_mse  = mse
                     best_ckpt = epoch
@@ -955,6 +1002,7 @@ def run_jepa(skip_train: bool = False,
         anom_result = model.anomaly_detection(ckpt_tag, anom_train, anom_test,
                                               anomaly_ratio=_get_anomaly_ratio(anomaly_dataset, config),
                                               linear_probe=linear_probe,
+                                              random_encoder=random_encoder,
                                               mlp_head=(head_type == "mlp"))
 
     return best_ckpt, best_mse, cls_acc, anom_result
@@ -1134,6 +1182,17 @@ def run_patchtst(skip_train: bool = False, synthetic_data_dir: str = None, pretr
     _ckpt_epoch = checkpoints[0] if (checkpoints and checkpoints[0] is not None) else None
     model_fname = f"{model_fname_base}_{_ckpt_epoch}.pth" if _ckpt_epoch is not None else f"{model_fname_base}.pth"
     pretrained_model_path = None if random_encoder else os.path.join(_ptst_save_dir, model_fname)
+    # Fallback for backbones filed under saved_models/classification/ before
+    # 3233c6a. Read-only: downstream-only runs may load from it.
+    if skip_train and pretrained_model_path and not os.path.exists(pretrained_model_path):
+        try:
+            _rel = Path(_ptst_save_dir).relative_to(patchtst_dir / "saved_models")
+            _old = patchtst_dir / "saved_models" / "classification" / _rel / model_fname
+            if _old.exists():
+                print(f"[MAE] using legacy checkpoint dir: {_old.parent}")
+                pretrained_model_path = str(_old)
+        except ValueError:
+            pass
 
     if pretrain_only:
         print("\n[MAE] Pretrain-only mode — skipping forecasting.")
@@ -1370,6 +1429,18 @@ def run_ntp(skip_train: bool = False, synthetic_data_dir: str = None, pretrain_d
     _ckpt_epoch = checkpoints[0] if (checkpoints and checkpoints[0] is not None) else None
     _ckpt_filename = f"{_base_name}_epoch{_ckpt_epoch}.pt" if _ckpt_epoch is not None else f"{_base_name}.pt"
     _ckpt_path = str(_save_dir / _ckpt_filename)
+    # Fallback for backbones filed under saved_models/classification/ before
+    # 3233c6a (forecasting runs with --num_patches landed there). Read-only:
+    # downstream-only runs may load from it; pre-training writes to _save_dir.
+    if skip_train and not os.path.exists(_ckpt_path):
+        try:
+            _rel = Path(_save_dir).relative_to(ntp_dir / "saved_models")
+            _old = ntp_dir / "saved_models" / "classification" / _rel / _ckpt_filename
+            if _old.exists():
+                print(f"[NTP] using legacy checkpoint dir: {_old.parent}")
+                _ckpt_path = str(_old)
+        except ValueError:
+            pass
     # Fallback for legacy on-disk dir name "NPT" (vs current "NTP").
     if not os.path.exists(_ckpt_path):
         _legacy_root = ntp_dir.parent / "NPT"
@@ -1581,6 +1652,7 @@ def run_lejepa(skip_train: bool = False,
         if _v2: config['view2_phys'] = _v2
         _pa = Path(config['path_save'].rstrip('/'))
         config['path_save'] = str(_pa.parent / (_pa.name + f"_aug{_aug.lower()}")) + '/'
+    config['path_save'] = _legacy_ckpt_dir(config['path_save'], 'best_model.pt', skip_train) + '/'
     if lr is not None:
         config['lr_adamw'] = lr
 
@@ -1863,6 +1935,28 @@ def run_lejepa(skip_train: bool = False,
 
 # ── Hybrid (LEJEPA + NTP) ─────────────────────────────────────────────────────
 
+class _FlatWindowAdapter(torch.utils.data.Dataset):
+    """
+    Wraps PatchTSTForcastingAdapter (which returns patched tensors) and
+    flattens them back to (seq_x, seq_y, zeros_mark, zeros_mark) so that
+    TimeDART's train/valid loops receive the (B, T, C) shape they expect.
+    """
+    def __init__(self, patched_ds):
+        self._ds = patched_ds
+
+    def __len__(self):
+        return len(self._ds)
+
+    def __getitem__(self, idx):
+        ctx, tgt = self._ds[idx]
+        # ctx: [n_patches, patch_size, C]  ->  [seq_len, C]
+        # tgt: [h,         patch_size, C]  ->  [pred_len, C]
+        seq_x = ctx.reshape(-1, ctx.shape[-1])
+        seq_y = tgt.reshape(-1, tgt.shape[-1])
+        zeros = torch.zeros_like(seq_x)
+        return seq_x, seq_y, zeros, zeros
+
+
 def _patch_timedart_get_data(exp):
     """Monkey-patch _get_data on a TimeDart Exp instance to return our loaders."""
     import types
@@ -1955,7 +2049,25 @@ def run_timedart(skip_train: bool = False,
     # cw1152 backbone gets its own dir instead of overwriting the cw336 one. No-op for
     # every existing run.
     _cw_tag = f"_cw{cfg['seq_len']}" if cfg.get('seq_len', 336) != 336 else ''
-    ckpt_dir  = Path(__file__).parent / f"outputs/diffusion_pretrain{_src_tag}{_synth_tag}_layers{cfg['e_layers']}{_cw_tag}{_ep_tag}{_SEED_TAG}"
+    _out_root = Path(__file__).parent / "outputs"
+    _dir_tail = f"{_src_tag}{_synth_tag}_layers{cfg['e_layers']}{_cw_tag}{_ep_tag}{_SEED_TAG}"
+    ckpt_dir  = _out_root / f"diffusion_pretrain{_dir_tail}"
+    # Fallback for backbones written before the on-disk rename
+    # (timedart_pretrain -> diffusion_pretrain) and/or before --ckpt_tag folded a
+    # "_monash" suffix into the dir name. Read-only: a fresh pre-training run still
+    # writes to ckpt_dir above. The first existing candidate wins.
+    if skip_train and not (ckpt_dir / ("monash" + _src_tag) / "ckpt_best.pth").exists():
+        _ct = os.environ.get('TS_CKPT_TAG', '')
+        _tail_noct = _dir_tail
+        if _ct and _synth_tag.endswith(f"_{_ct}"):
+            _tail_noct = f"{_src_tag}{_synth_tag[:-len(_ct)-1]}_layers{cfg['e_layers']}{_cw_tag}{_ep_tag}{_SEED_TAG}"
+        for _cand in (f"timedart_pretrain{_dir_tail}",
+                      f"diffusion_pretrain{_tail_noct}",
+                      f"timedart_pretrain{_tail_noct}"):
+            if (_out_root / _cand / ("monash" + _src_tag) / "ckpt_best.pth").exists():
+                print(f"[Diffusion] using legacy checkpoint dir: outputs/{_cand}")
+                ckpt_dir = _out_root / _cand
+                break
     ckpt_file     = ckpt_dir / ("monash" + _src_tag) / "ckpt_best.pth"
     cls_ckpt_file = ckpt_dir / "monash_cls" / "ckpt_best.pth"
 
@@ -2306,6 +2418,15 @@ def run_timedart(skip_train: bool = False,
 
 # ── SoftCLT ──────────────────────────────────────────────────────────────────
 
+# The TS2Vec-family objectives served by run_softclt(). Each sub-project
+# exposes build_model / save_backbone / load_*_windows with the same signatures.
+_TS2VEC_FAMILY = {
+    "softclt": dict(label="SoftCLT", dir="SoftCLT", config="config_softclt.py",
+                    module="SoftCLT", ckpt_default="./checkpoints_softclt", bs_env="TS_SOFTCLT_BS"),
+    "autotcl": dict(label="AutoTCL", dir="AutoTCL", config="config_autotcl.py",
+                    module="AutoTCL", ckpt_default="./checkpoints_autotcl", bs_env="TS_AUTOTCL_BS"),
+}
+
 def run_softclt(
     skip_train: bool = False,
     pretrain_dataset: str = None,
@@ -2327,19 +2448,27 @@ def run_softclt(
     epochs_forecasting: int = None,
     output_dir: str = None,
     synthetic_data_dir: str = None,
+    objective: str = "softclt",
 ):
+    # One runner for the TS2Vec-family objectives: they share the transformer
+    # wrapper, the window loaders and the DINO downstream plumbing, and differ
+    # in the loss. `objective` picks the sub-project.
+    _fam = _TS2VEC_FAMILY[objective]
+    _L   = _fam['label']
+    _obj_dir    = Path(__file__).parent / _fam['dir']
     softclt_dir = Path(__file__).parent / "SoftCLT"
     dino_dir    = Path(__file__).parent / "DINO"
     shared_dir  = Path(__file__).parent / "shared"
     _add_path(softclt_dir)
     _add_path(softclt_dir / "softclt_ts2vec")
+    _add_path(_obj_dir)
     _add_path(dino_dir)
     _add_path(shared_dir)
 
     import importlib.util as _ilu, sys as _sys, torch
 
     # ── Load SoftCLT config ───────────────────────────────────────────────────
-    _spec = _ilu.spec_from_file_location("config_softclt", softclt_dir / "config_softclt.py")
+    _spec = _ilu.spec_from_file_location(f"config_{objective}", _obj_dir / _fam['config'])
     _mod  = _ilu.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     cfg = {**DATA_PATHS, **dict(_mod.config)}
@@ -2380,7 +2509,7 @@ def run_softclt(
     # `from utils import *` / `from models import TSEncoder` would get DINO's.
     for _stale in [k for k in list(_sys.modules) if k.split('.')[0] in ('utils', 'models')]:
         del _sys.modules[_stale]
-    for _p in (softclt_dir / "softclt_ts2vec", softclt_dir):
+    for _p in (softclt_dir / "softclt_ts2vec", softclt_dir) + ((_obj_dir,) if objective != "softclt" else ()):
         _ps = str(Path(_p).resolve())
         if _ps in _sys.path:
             _sys.path.remove(_ps)
@@ -2407,8 +2536,8 @@ def run_softclt(
     # Pretrain batch: TS_SOFTCLT_BS env overrides config (mirrors TS_PATCHTST_BS /
     # TS_FORECAST_BS). Needed for high-channel in-domain sets — the traffic (862 ch)
     # in-domain pretrain OOMs at the default 128.
-    if os.environ.get("TS_SOFTCLT_BS"):
-        cfg['batch_size'] = int(os.environ["TS_SOFTCLT_BS"])
+    if os.environ.get(_fam['bs_env']):
+        cfg['batch_size'] = int(os.environ[_fam['bs_env']])
     if pretrain_source is not None:
         cfg['pretrain_source'] = pretrain_source
     elif pretrain_dataset is not None and pretrain_dataset not in ('monash', 'synthetic', 'monash+synthetic'):
@@ -2445,7 +2574,8 @@ def run_softclt(
         # run writes to its own dir instead of overwriting the standard backbone.
         _ep = cfg.get('epochs')
         _ep_tag = f"_ep{int(_ep)}" if _ep and int(_ep) != 20 else ''
-        cfg['output_dir'] = cfg.get('output_dir', './checkpoints_softclt').rstrip('/') + _src_tag + _synth_tag + _lay_tag + _cw_tag + _ep_tag + _SEED_TAG
+        cfg['output_dir'] = cfg.get('output_dir', _fam['ckpt_default']).rstrip('/') + _src_tag + _synth_tag + _lay_tag + _cw_tag + _ep_tag + _SEED_TAG
+    cfg['output_dir'] = _legacy_ckpt_dir(cfg['output_dir'], 'checkpoint_best.pth', skip_train)
 
     if pretrain_only or classification_only or (anomaly_dataset is not None and forecast_dataset is None):
         forecast_dataset = None
@@ -2473,7 +2603,7 @@ def run_softclt(
             'monash+synthetic': "Monash + Synthetic",
         }.get(pretrain_source, pretrain_source)
         print("\n" + "="*60)
-        print(f"  MODEL: SoftCLT")
+        print(f"  MODEL: {_L}")
         if pretrain_only:
             print(f"  pretrain: {_src_label}  [pretrain only]")
         else:
@@ -2481,7 +2611,7 @@ def run_softclt(
         print("="*60)
     elif _id_ds:
         print("\n" + "="*60)
-        print(f"  MODEL: SoftCLT")
+        print(f"  MODEL: {_L}")
         print(f"  pretrain: in-domain {_id_kind} ({_id_ds})")
         print("="*60)
     else:
@@ -2491,7 +2621,7 @@ def run_softclt(
             raise ValueError("pretrain_dataset not set — specify via run() or config_softclt.py")
         ds_pre = get_dataset_info(pretrain_dataset)
         print("\n" + "="*60)
-        print(f"  MODEL: SoftCLT")
+        print(f"  MODEL: {_L}")
         print(f"  pretrain: {pretrain_dataset}   forecast: {forecast_dataset}")
         print("="*60)
 
@@ -2499,14 +2629,17 @@ def run_softclt(
     out_dir.mkdir(parents=True, exist_ok=True)
     ckpt_path = str(out_dir / "checkpoint_best.pth")
 
-    from SoftCLT import (build_model, save_backbone,
-                         load_monash_windows, load_synthetic_windows, load_csv_train_data)
+    import importlib as _il
+    _objmod = _il.import_module(_fam['module'])
+    build_model, save_backbone = _objmod.build_model, _objmod.save_backbone
+    load_monash_windows, load_synthetic_windows, load_csv_train_data = (
+        _objmod.load_monash_windows, _objmod.load_synthetic_windows, _objmod.load_csv_train_data)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # ── Pretraining ───────────────────────────────────────────────────────────
     if not skip_train:
-        print("\n[SoftCLT] Loading pretrain data …")
+        print(f"\n[{_L}] Loading pretrain data …")
         seq_len = cfg['patch_len'] * cfg['num_patches']   # 336
         min_len = cfg.get('monash_min_len', 512)
 
@@ -2527,14 +2660,17 @@ def run_softclt(
             train_arr = load_csv_train_data(ds_pre["csv_path"], ds_pre.get("timestamp_col", "date"), seq_len)
 
         c_in = train_arr.shape[2]
-        print(f"[SoftCLT] Pretrain array: {train_arr.shape}  c_in={c_in}")
+        print(f"[{_L}] Pretrain array: {train_arr.shape}  c_in={c_in}")
 
         model = build_model(cfg, c_in, device)
-        print(f"[SoftCLT] Starting pretraining for {cfg['epochs']} epochs …")
-        model.fit(train_arr, 0, 0, 0, None, str(out_dir), n_epochs=cfg['epochs'], verbose=True)
+        print(f"[{_L}] Starting pretraining for {cfg['epochs']} epochs …")
+        if objective == "softclt":
+            model.fit(train_arr, 0, 0, 0, None, str(out_dir), n_epochs=cfg['epochs'], verbose=True)
+        else:
+            model.fit(train_arr, n_epochs=cfg['epochs'], verbose=True)
 
         # Save SoftCLT-native checkpoint
-        save_backbone(model, str(out_dir / "checkpoint_softclt.pth"), cfg['epochs'], cfg)
+        save_backbone(model, str(out_dir / f"checkpoint_{objective}.pth"), cfg['epochs'], cfg)
 
         # Save DINO-compatible checkpoint for downstream.
         # test_run reads checkpoint['teacher'], train_classification reads checkpoint['student'],
@@ -2543,15 +2679,16 @@ def run_softclt(
         # is the PatchTSTEncoder). DINO's teacher is TSMultiCropWrapper(PatchTST), so its
         # keys are 'backbone.backbone.*'. model._net.backbone here is ALREADY the encoder,
         # one level shallower — so it needs the prefix twice, or nothing matches at all.
-        backbone_sd = model._net.backbone.state_dict()
+        backbone_sd = (model.backbone_state_dict() if hasattr(model, 'backbone_state_dict')
+                       else model._net.backbone.state_dict())
         dino_sd = {'backbone.backbone.' + k: v for k, v in backbone_sd.items()}
         torch.save({'teacher': dino_sd, 'student': dino_sd, 'epoch': cfg['epochs']}, ckpt_path)
-        print(f"[SoftCLT] DINO-compatible checkpoint saved → {ckpt_path}")
+        print(f"[{_L}] DINO-compatible checkpoint saved → {ckpt_path}")
     else:
-        print("[SoftCLT] Skipping pretraining.")
+        print(f"[{_L}] Skipping pretraining.")
 
     if pretrain_only:
-        print("\n[SoftCLT] Pretrain-only mode — skipping downstream tasks.")
+        print(f"\n[{_L}] Pretrain-only mode — skipping downstream tasks.")
         return
 
     # ── Build DINO args for downstream ────────────────────────────────────────
@@ -2580,7 +2717,7 @@ def run_softclt(
     # ── Forecasting downstream ────────────────────────────────────────────────
     best_mse = None
     if not classification_only and forecast_dataset is not None:
-        print("\n[SoftCLT] Running forecasting downstream …")
+        print(f"\n[{_L}] Running forecasting downstream …")
         for pred_len in pred_lens:
             args.pred_len = pred_len
             mse = dino_main.test_run(args)
@@ -2646,7 +2783,7 @@ def run_softclt(
             for _k, _v in _saved_mods.items():
                 _sys.modules.setdefault(_k, _v)
         print(f"\n{'='*60}")
-        print(f"  [SoftCLT] Classification on {classification_dataset}")
+        print(f"  [{_L}] Classification on {classification_dataset}")
         print(f"  Test Accuracy: {cls_acc:.4f}")
         print(f"{'='*60}")
 
@@ -2705,6 +2842,8 @@ RUNNERS = {
     "diffusion":       run_timedart,
     "softclt":         run_softclt,
 }
+import functools as _functools
+RUNNERS["autotcl"] = _functools.partial(run_softclt, objective="autotcl")
 
 # Legacy names kept so existing scripts and logs keep working: the paper calls
 # these objectives MAE and Diffusion, the code used the backbone names.
@@ -2750,7 +2889,8 @@ def run(model: str,
         aug_local: str = None,
         synthetic_data_dir: str = None,
         dwt_wavelet_pool: str = None,
-        dwt_wavelet: str = None):
+        dwt_wavelet: str = None,
+        backbone: str = None):
     """
     Unified entry point. Each run handles ONE task.
 
@@ -2774,6 +2914,22 @@ def run(model: str,
     # path) via env, so it works for ALL models/sources — incl. Monash — without
     # threading the arg through each runner signature.
     os.environ['TS_CKPT_TAG'] = str(ckpt_tag) if ckpt_tag else ''
+    # Encoder backbone, read where DINO / JEPA / LE-JEPA build their encoders
+    # (shared/moderntcn_backbone.py). An explicit argument wins over the
+    # environment; both default to the patch transformer.
+    _bb = (backbone or os.environ.get('TS_BACKBONE') or 'transformer').strip().lower()
+    if _bb not in ('transformer', 'moderntcn'):
+        raise ValueError(f"backbone={_bb!r}: expected 'transformer' or 'moderntcn'")
+    if _bb == 'moderntcn' and model.lower() not in _MODERNTCN_MODELS:
+        raise ValueError(f"backbone=moderntcn is implemented for {sorted(_MODERNTCN_MODELS)} only, not {model!r}")
+    if _bb == 'moderntcn' and encoder_layers is None:
+        # Without --encoder_layers some runners build an untagged checkpoint path,
+        # which a ModernTCN run would share with the transformer.
+        raise ValueError("backbone=moderntcn needs --encoder_layers (e.g. 8)")
+    os.environ['TS_BACKBONE'] = _bb
+    if _bb == 'moderntcn':
+        print(f"[backbone] ModernTCN encoder (kernels large={os.environ.get('TS_MTCN_LARGE', 13)} "
+              f"small={os.environ.get('TS_MTCN_SMALL', 5)}); checkpoints tagged '_cnn'")
 
     # ── resolve task → old flags (backwards compat) ───────────────────────────
     classification_only = False
@@ -2864,7 +3020,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model", type=str, required=True,
         choices=list(RUNNERS),
-        help="Which model to run: dino | jepa | lejepa | mae | ntp | diffusion | softclt | mae_random",
+        help="Which model to run: dino | jepa | lejepa | mae | ntp | diffusion | softclt | autotcl | mae_random",
     )
     parser.add_argument(
         "--pretrain_dataset", type=str, default=None,
@@ -2950,6 +3106,11 @@ if __name__ == "__main__":
                         help="Global (teacher) augmentation type, overrides config (e.g. 'galilien', 'dwt_soft_threshold')")
     parser.add_argument("--aug_local",  type=str, default=None,
                         help="Local (student) augmentation type, overrides config (e.g. 'lorentz', 'dwt_high_perturb')")
+    parser.add_argument("--backbone", type=str, default=None,
+                        choices=["transformer", "moderntcn"],
+                        help="Encoder backbone for dino / jepa / lejepa: the patch transformer "
+                             "(default) or ModernTCN. ModernTCN checkpoints get a '_cnn' dir tag. "
+                             "Falls back to $TS_BACKBONE when not given.")
     args = parser.parse_args()
     run(model=args.model,
         task=args.task,
@@ -2985,4 +3146,5 @@ if __name__ == "__main__":
         synthetic_data_dir=args.synthetic_data_dir,
         dwt_wavelet_pool=args.dwt_wavelet_pool,
         pred_lens=args.pred_lens,
-        dwt_wavelet=args.dwt_wavelet)
+        dwt_wavelet=args.dwt_wavelet,
+        backbone=args.backbone)

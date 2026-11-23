@@ -45,7 +45,18 @@ class Learner(GetAttr):
         self.run_finder = False
 
     def set_opt(self):
-        if self.model:
+        import os
+        _enc = os.environ.get("TS_FT_ENCODER_LR")
+        if self.model and _enc and hasattr(get_model(self.model), 'head'):
+            # encoder-LR sweep: group 0 = head (follows the usual LR / schedule),
+            # group 1 = everything else at TS_FT_ENCODER_LR (see OneCycleLR)
+            head = list(get_model(self.model).head.parameters())
+            hid = {id(p) for p in head}
+            rest = [p for p in self.model.parameters() if id(p) not in hid]
+            self.opt = self.opt_func([{"params": head, "lr": self.lr},
+                                      {"params": rest, "lr": float(_enc)}], self.lr)
+            print(f"[MAE] head / encoder param groups — encoder_lr={float(_enc)} (TS_FT_ENCODER_LR)")
+        elif self.model:
             self.opt = self.opt_func(self.model.parameters(), self.lr) 
         else: self.opt = None
 

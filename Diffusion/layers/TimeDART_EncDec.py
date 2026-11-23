@@ -4,6 +4,22 @@ import torch.nn.functional as F
 from utils.masking import generate_causal_mask, generate_self_only_mask, generate_partial_mask
 
 
+
+# ── layer-wise probing / early exit ──────────────────────────────────────────
+# TS_EXIT_LAYER=k runs only the first k encoder blocks of a deeper pre-trained
+# encoder (all weights still load; the later blocks are simply skipped), so a
+# 24-layer backbone can be read out after block 2, 4, 8, ... Unset = all blocks.
+def _exit_layers(layers):
+    import os
+    k = int(os.environ.get("TS_EXIT_LAYER", "0") or 0)
+    if 0 < k < len(layers):
+        if not getattr(_exit_layers, "_said", False):
+            print(f"[exit] encoder truncated: first {k} of {len(layers)} blocks (TS_EXIT_LAYER)")
+            _exit_layers._said = True
+        return layers[:k]
+    return layers
+
+
 class ChannelIndependence(nn.Module):
     def __init__(
         self,
@@ -107,7 +123,7 @@ class CausalTransformer(nn.Module):
         # key_padding_mask: [batch_size * num_features, seq_len] bool, True=ignore (optional)
         seq_len = x.size(1)
         mask = generate_causal_mask(seq_len).to(x.device) if is_mask else None
-        for layer in self.layers:
+        for layer in _exit_layers(self.layers):
             x = layer(x, mask, key_padding_mask=key_padding_mask)
 
         x = self.norm(x)

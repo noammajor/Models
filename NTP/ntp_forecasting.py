@@ -125,13 +125,15 @@ def forecasting(config, checkpoint_path, linear_probe=True, mlp_head: bool = Fal
     fore_cfg = dict(config, ratio_patches=context_patches)
 
     epochs_head    = config.get("epochs_forecasting", 20)
-    batch_size     = config["batch_size"]
+    # TS_FORECAST_BS overrides the batch (mirrors the other objectives); needed
+    # for fine-tuning on traffic (862 channels), which OOMs at the default 64.
+    batch_size     = int(os.environ.get("TS_FORECAST_BS") or config["batch_size"])
 
     print(f"\n  dataset={forecast_dset}  n_vars={n_vars}")
     print(f"  context={context_patches} patches × {patch_size} = "
           f"{context_patches * patch_size} steps")
     print(f"  horizon={horizon_t} patches × {patch_size} = {forecast_len} steps")
-    print(f"  epochs={epochs_head}\n")
+    print(f"  epochs={epochs_head}  batch={batch_size}\n")
 
     # ── data loaders (PatchTST-identical splits/normalization) ───────────────
     _seq_len  = context_patches * patch_size   # = 21 * 16 = 336
@@ -184,7 +186,7 @@ def forecasting(config, checkpoint_path, linear_probe=True, mlp_head: bool = Fal
     # ── train prediction head (and optionally backbone) ───────────────────────
     # LR: config value if set, else hardcoded default.
     _cfg_head_lr = config.get("lr_forcasting")
-    _cfg_enc_lr  = config.get("lr_forcasting_encoder")
+    _cfg_enc_lr  = os.environ.get("TS_FT_ENCODER_LR") or config.get("lr_forcasting_encoder")   # TS_FT_ENCODER_LR: encoder-LR sweeps
     lr_head = float(_cfg_head_lr) if _cfg_head_lr is not None else 0.0001
     enc_lr  = float(_cfg_enc_lr)  if _cfg_enc_lr  is not None else lr_head
     if linear_probe:

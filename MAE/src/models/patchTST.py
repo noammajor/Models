@@ -36,6 +36,22 @@ def _proj(in_dim, out_dim, dropout, mlp_head=False, hidden_dim=512):
 
             
 # Cell
+
+# ── layer-wise probing / early exit ──────────────────────────────────────────
+# TS_EXIT_LAYER=k runs only the first k encoder blocks of a deeper pre-trained
+# encoder (all weights still load; the later blocks are simply skipped), so a
+# 24-layer backbone can be read out after block 2, 4, 8, ... Unset = all blocks.
+def _exit_layers(layers):
+    import os
+    k = int(os.environ.get("TS_EXIT_LAYER", "0") or 0)
+    if 0 < k < len(layers):
+        if not getattr(_exit_layers, "_said", False):
+            print(f"[exit] encoder truncated: first {k} of {len(layers)} blocks (TS_EXIT_LAYER)")
+            _exit_layers._said = True
+        return layers[:k]
+    return layers
+
+
 class PatchTST(nn.Module):
     """
     Output dimension: 
@@ -296,12 +312,12 @@ class TSTEncoder(nn.Module):
         output = src
         scores = None
         if self.res_attention:
-            for mod in self.layers:
+            for mod in _exit_layers(self.layers):
                 output, scores = mod(output, prev=scores,
                                      key_padding_mask=key_padding_mask)
             return output
         else:
-            for mod in self.layers:
+            for mod in _exit_layers(self.layers):
                 output = mod(output, key_padding_mask=key_padding_mask)
             return output
 

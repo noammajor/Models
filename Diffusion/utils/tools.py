@@ -43,8 +43,13 @@ def adjust_learning_rate(optimizer, scheduler, epoch, args, printout=True):
 
     if epoch in lr_adjust.keys():
         lr = lr_adjust[epoch]
+        # lr is the schedule for group 0; other groups (the encoder in a head /
+        # encoder split) keep their initial ratio to it instead of being reset
+        # to the head LR. One group: ratio 1, unchanged behaviour.
+        _base0 = optimizer.param_groups[0].get('initial_lr')
         for param_group in optimizer.param_groups:
-            param_group['lr'] = lr
+            _ratio = (param_group['initial_lr'] / _base0) if (_base0 and 'initial_lr' in param_group) else 1.0
+            param_group['lr'] = lr * _ratio
         if printout:
             print('Updating learning rate to {}'.format(lr))
 

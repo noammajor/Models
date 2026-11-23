@@ -232,11 +232,14 @@ def train_TS_DINO(args):
     device_ids = [args.gpu] if torch.cuda.is_available() else None
     if utils.has_batchnorms(student):
         # Around line 190 in train_TS_DINO
-        if torch.cuda.is_available():
+        # SyncBatchNorm only under DDP: a single-GPU run has no process group, and
+        # older PyTorch raises in SyncBatchNorm.forward without one. The transformer
+        # has no BatchNorm; the ModernTCN backbone (TS_BACKBONE=moderntcn) does.
+        if torch.cuda.is_available() and getattr(args, 'distributed', False):
             student = nn.SyncBatchNorm.convert_sync_batchnorm(student)
             teacher = nn.SyncBatchNorm.convert_sync_batchnorm(teacher)
         else:
-            print("Skipping SyncBatchNorm on Mac/CPU—using standard BatchNorm instead.")
+            print("Single process: using standard BatchNorm (no SyncBatchNorm).")
         if getattr(args, 'distributed', False):
             teacher = nn.parallel.DistributedDataParallel(teacher, device_ids=device_ids, find_unused_parameters=True)
             teacher_without_ddp = teacher.module
@@ -785,7 +788,7 @@ def test_run(args):
     criterion = nn.MSELoss()
     _lp_fore  = getattr(args, 'linear_probe', True)
     _head_lr_fore = float(args.lr_forecasting)
-    _enc_lr       = float(getattr(args, 'lr_forecasting_encoder', None) or _head_lr_fore)
+    _enc_lr       = float(os.environ.get("TS_FT_ENCODER_LR") or getattr(args, 'lr_forecasting_encoder', None) or _head_lr_fore)   # TS_FT_ENCODER_LR: encoder-LR sweeps
     if _lp_fore:
         optimizer = torch.optim.Adam(model.head.parameters(),
                                      lr=_head_lr_fore, weight_decay=1e-4)
@@ -830,8 +833,11 @@ def test_run(args):
             print(f"  Missing: {missing}")
             print(f"  Missing (new head): {len(missing)}  |  Unexpected (DINO head): {len(unexpected)}")
 
+    # One max_lr per param group: a scalar would reset the encoder group to the
+    # head LR and silently undo lr_forecasting_encoder / TS_FT_ENCODER_LR.
+    # With a single group (linear probe) this is exactly args.lr_forecasting.
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, max_lr=args.lr_forecasting,
+        optimizer, max_lr=[g['lr'] for g in optimizer.param_groups],
         total_steps=args.epochs_forecasting * len(data_loader_forecasting_train),
         pct_start=0.3, anneal_strategy='cos',
     )

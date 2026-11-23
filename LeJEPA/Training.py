@@ -149,7 +149,8 @@ def train_and_evaluate(self):
             self.best_encoder = copy.deepcopy(self.encoder.state_dict())
             print("New best — model saved.")
 
-        self.save_model(self.encoder, self.optimizer, epoch, f"{self.path_save}_epoch{epoch}")
+        if os.environ.get("TS_SAVE_EPOCH_CKPTS", "1") != "0":   # per-epoch files are optional
+            self.save_model(self.encoder, self.optimizer, epoch, f"{self.path_save}_epoch{epoch}")
 
     print("Training complete.")
     test_loss, test_dict = self.evaluate(self.test_loader, global_step, epoch=-1)

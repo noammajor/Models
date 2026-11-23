@@ -18,7 +18,7 @@
 # Usage:
 #   ./scripts/run_corpus.sh <model> <corpus> <task> <seed> [<seed> ...]
 #
-#     model   dino | jepa | lejepa | ntp | mae | diffusion | softclt
+#     model   dino | jepa | lejepa | ntp | mae | diffusion | softclt | autotcl
 #     corpus  synthetic | synthetic_small | hybrid
 #     task    forecast | anomaly | classify   (each pre-trains first)
 #

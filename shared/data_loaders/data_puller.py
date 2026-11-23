@@ -6,6 +6,11 @@ from making_style import get_mask_style
 import os
 import sys
 import pickle
+import sys as _sys
+_SHARED_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _SHARED_DIR not in _sys.path:
+    _sys.path.insert(0, _SHARED_DIR)
+from monash_exclude import monash_tsf_files
 import torch
 import numpy as np
 from pathlib import Path
@@ -256,7 +261,7 @@ class MonashDataPullerJEPA(Dataset):
         val_prec, test_prec
     """
 
-    def __init__(self, config, which='train'):
+    def __init__(self, config, which='train', window_stride=None):
         self.which          = which
         self.patch_size     = config['patch_size']
         self.ratio_patches  = config['ratio_patches']
@@ -264,6 +269,12 @@ class MonashDataPullerJEPA(Dataset):
         self.masking_type   = config['masking_type']
         self.num_blocks     = config.get('num_blocks', 1)
         self.chunk_size     = self.ratio_patches * self.patch_size
+        # Step between consecutive windows: the window itself (non-overlapping
+        # tiling) unless the caller says otherwise. NTP passes its context
+        # length so its 432-step (context + horizon) windows start every 336
+        # steps, exactly where the other objectives' 336-step windows start,
+        # and every split yields len // stride windows either way.
+        self.window_stride  = int(window_stride or self.chunk_size)
         self.epochs_completed = 0
 
         val_prec  = config.get('val_prec', 0.1)
@@ -278,10 +289,10 @@ class MonashDataPullerJEPA(Dataset):
         print(f"MonashDataPullerJEPA: {len(self._index['train'])} train  "
               f"| {len(self._index['val'])} val  "
               f"| {len(self._index['test'])} test  chunks  "
-              f"(chunk={self.chunk_size})")
+              f"(chunk={self.chunk_size}, stride={self.window_stride})")
 
     def _load_all(self, data_dir, min_len, val_prec, test_prec):
-        tsf_files = sorted(f for f in os.listdir(data_dir) if f.endswith('.tsf'))
+        tsf_files = monash_tsf_files(data_dir)
 
         for fname in tsf_files:
             path = os.path.join(data_dir, fname)
@@ -317,7 +328,7 @@ class MonashDataPullerJEPA(Dataset):
                     t     = torch.from_numpy(arr)   # [T, 1]
                     s_idx = len(self._series[sname])
                     self._series[sname].append(t)
-                    n_chunks = len(t) // self.chunk_size
+                    n_chunks = len(t) // self.window_stride
                     for ci in range(n_chunks):
                         self._index[sname].append((s_idx, ci))
                 loaded += 1
@@ -330,7 +341,10 @@ class MonashDataPullerJEPA(Dataset):
     def __getitem__(self, idx):
         s_idx, ci = self._index[self.which][idx]
         tensor = self._series[self.which][s_idx]
-        start  = ci * self.chunk_size
+        # The final window is clamped to end at the split's end, so a window
+        # longer than the stride (NTP: 432 vs 336) still has the same count
+        # of windows as a window equal to the stride.
+        start  = min(ci * self.window_stride, len(tensor) - self.chunk_size)
         chunk  = tensor[start : start + self.chunk_size]  # [chunk_size, 1]
 
         patches = [chunk[i * self.patch_size : (i + 1) * self.patch_size]
@@ -366,7 +380,7 @@ class SyntheticArrowDataPullerJEPA(Dataset):
         val_prec, test_prec, monash_min_len (reused as min series length)
     """
 
-    def __init__(self, config, which='train'):
+    def __init__(self, config, which='train', window_stride=None):
         self.which          = which
         self.patch_size     = config['patch_size']
         self.ratio_patches  = config['ratio_patches']
@@ -374,6 +388,12 @@ class SyntheticArrowDataPullerJEPA(Dataset):
         self.masking_type   = config['masking_type']
         self.num_blocks     = config.get('num_blocks', 1)
         self.chunk_size     = self.ratio_patches * self.patch_size
+        # Step between consecutive windows: the window itself (non-overlapping
+        # tiling) unless the caller says otherwise. NTP passes its context
+        # length so its 432-step (context + horizon) windows start every 336
+        # steps, exactly where the other objectives' 336-step windows start,
+        # and every split yields len // stride windows either way.
+        self.window_stride  = int(window_stride or self.chunk_size)
 
         val_prec  = config.get('val_prec', 0.1)
         test_prec = config.get('test_prec', 0.1)
@@ -387,7 +407,7 @@ class SyntheticArrowDataPullerJEPA(Dataset):
         print(f"SyntheticArrowDataPullerJEPA: {len(self._index['train'])} train  "
               f"| {len(self._index['val'])} val  "
               f"| {len(self._index['test'])} test  chunks  "
-              f"(chunk={self.chunk_size})")
+              f"(chunk={self.chunk_size}, stride={self.window_stride})")
 
     def _load_all(self, data_dir, min_len, val_prec, test_prec):
         import pyarrow as pa
@@ -446,7 +466,7 @@ class SyntheticArrowDataPullerJEPA(Dataset):
                     t     = torch.from_numpy(split_arr)   # [T, C]
                     s_idx = len(self._series[sname])
                     self._series[sname].append(t)
-                    n_chunks = len(t) // self.chunk_size
+                    n_chunks = len(t) // self.window_stride
                     for ci in range(n_chunks):
                         self._index[sname].append((s_idx, ci))
                 loaded += 1
@@ -459,7 +479,10 @@ class SyntheticArrowDataPullerJEPA(Dataset):
     def __getitem__(self, idx):
         s_idx, ci = self._index[self.which][idx]
         tensor = self._series[self.which][s_idx]
-        start  = ci * self.chunk_size
+        # The final window is clamped to end at the split's end, so a window
+        # longer than the stride (NTP: 432 vs 336) still has the same count
+        # of windows as a window equal to the stride.
+        start  = min(ci * self.window_stride, len(tensor) - self.chunk_size)
         chunk  = tensor[start : start + self.chunk_size]   # [chunk_size, C]
 
         patches = [chunk[i * self.patch_size : (i + 1) * self.patch_size]
@@ -513,7 +536,7 @@ class MonashWindowDatasetTimeDart(Dataset):
               f"{len(self._index['test'])} test windows (seq_len={seq_len})")
 
     def _load_all(self, data_dir, min_len, val_prec, test_prec):
-        tsf_files = sorted(f for f in os.listdir(data_dir) if f.endswith('.tsf'))
+        tsf_files = monash_tsf_files(data_dir)
         for fname in tsf_files:
             path = os.path.join(data_dir, fname)
             try:

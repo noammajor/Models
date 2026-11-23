@@ -18,7 +18,7 @@
 # Usage:
 #   ./scripts/run_probe_head.sh <model> <head> <task> <seed> [<seed> ...]
 #
-#     model  dino | jepa | lejepa | ntp | mae | diffusion | softclt
+#     model  dino | jepa | lejepa | ntp | mae | diffusion | softclt | autotcl
 #     head   linear | mlp | finetune
 #     task   forecast | anomaly | classify
 #

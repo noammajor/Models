@@ -17,7 +17,7 @@
 # Usage:
 #   ./scripts/run_equal_budget.sh <model> <task> <seed> [<seed> ...]
 #
-#     model  dino | jepa | lejepa | ntp | mae | diffusion | softclt
+#     model  dino | jepa | lejepa | ntp | mae | diffusion | softclt | autotcl
 #     task   forecast | anomaly | classify   (each pre-trains first)
 #
 #   CUDA_VISIBLE_DEVICES=0 ./scripts/run_equal_budget.sh ntp forecast 123

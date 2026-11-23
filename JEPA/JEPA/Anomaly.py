@@ -60,7 +60,7 @@ def _adjustment(gt, pred):
 
 def anomaly_detection(self, path, anomaly_train, anomaly_test,
                      anomaly_ratio: float = 1.0, linear_probe: bool = True,
-                     mlp_head: bool = False):
+                     mlp_head: bool = False, random_encoder: bool = False):
     """
     Reconstruction-based anomaly detection with JEPA encoder.
 
@@ -77,10 +77,12 @@ def anomaly_detection(self, path, anomaly_train, anomaly_test,
     checkpoint_path = f"{self.path_save}{path}best_model.pt"
 
     print(f"\n=== JEPA Anomaly Detection ===")
-    print(f"Loading checkpoint: {checkpoint_path}")
-
-    ckpt = torch.load(checkpoint_path, map_location="cpu")
-    self.encoder_for.load_state_dict(ckpt["target_encoder"])
+    if random_encoder:
+        print("Random encoder — skipping checkpoint load")
+    else:
+        print(f"Loading checkpoint: {checkpoint_path}")
+        ckpt = torch.load(checkpoint_path, map_location="cpu")
+        self.encoder_for.load_state_dict(ckpt["target_encoder"])
     self.encoder_for.to(self.device)
     if linear_probe:
         self.encoder_for.eval()

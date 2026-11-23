@@ -17,7 +17,7 @@
 # Usage:
 #   ./scripts/run_per_model.sh <model> <task> <seed> [<seed> ...]
 #
-#     model  dino | jepa | lejepa | ntp | mae | diffusion | softclt
+#     model  dino | jepa | lejepa | ntp | mae | diffusion | softclt | autotcl
 #     task   forecast | anomaly | classify   (each pre-trains first)
 #
 #   CUDA_VISIBLE_DEVICES=0 ./scripts/run_per_model.sh ntp forecast 123
@@ -44,4 +44,12 @@ FLAGS="$FLAGS --num_patches $PATCHES --lr $LR --epochs $EPOCHS --ckpt_tag monash
 case "$M" in mae|patchtst) FLAGS="$FLAGS --step_size 16" ;; esac
 
 echo "[per-model] $M / $TASK  (lr=$LR batch=$BATCH epochs=$EPOCHS patches=$PATCHES)"
-ts_sweep "$M" "$TASK" $SEEDS
+# SKIP_PRETRAIN=1 runs the downstream half only, against the backbone an earlier
+# call already pre-trained (forecasting and anomaly share the 336-step one):
+#   ./scripts/run_per_model.sh dino forecast 123
+#   SKIP_PRETRAIN=1 ./scripts/run_per_model.sh dino anomaly 123
+if [ "${SKIP_PRETRAIN:-0}" = 1 ]; then
+  ts_eval_only "$M" "$TASK" $SEEDS
+else
+  ts_sweep "$M" "$TASK" $SEEDS
+fi

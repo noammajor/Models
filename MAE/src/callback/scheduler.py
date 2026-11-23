@@ -40,8 +40,13 @@ class OneCycleLR(Callback):
         if not self.steps_per_epoch: self.steps_per_epoch = len(self.dls.train)
         self.lrs = []  # store lr values
         
+        import os
+        _max_lr = self.lr_max
+        _enc = os.environ.get("TS_FT_ENCODER_LR")
+        if _enc and len(self.opt.param_groups) == 2:   # learner.set_opt: [head, encoder]
+            _max_lr = [self.lr_max, float(_enc)]
         self.scheduler = lr_scheduler.OneCycleLR(optimizer = self.opt, 
-                                            max_lr = self.lr_max,
+                                            max_lr = _max_lr,
                                             total_steps = self.total_steps,
                                             epochs = self.n_epochs,
                                             steps_per_epoch=self.steps_per_epoch,

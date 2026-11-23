@@ -125,6 +125,10 @@ def pretrain_ntp(config, save_dir_override: str = None):
     # ── data ─────────────────────────────────────────────────────────────────
     if pretrain_dset in ('monash', 'synthetic', 'monash+synthetic'):
         _cfg = dict(config)
+        # Window = context + horizon (432 steps), advanced by the context (336)
+        # so NTP sees the same number of windows, at the same starts, as the
+        # other objectives; the final window of a split is clamped to its end.
+        _stride = (config['ratio_patches'] - config['horizon_t']) * config['patch_size']
         if pretrain_dset in ('monash', 'monash+synthetic'):
             monash_dir = config['monash_data_dir']
             if not os.path.isabs(monash_dir):
@@ -137,12 +141,12 @@ def pretrain_ntp(config, save_dir_override: str = None):
             _cfg['synthetic_data_dir'] = synth_dir
 
         if pretrain_dset in ('monash', 'monash+synthetic'):
-            train_dataset = MonashDataPullerJEPA(_cfg, which='train')
-            val_dataset   = MonashDataPullerJEPA(_cfg, which='val')
+            train_dataset = MonashDataPullerJEPA(_cfg, which='train', window_stride=_stride)
+            val_dataset   = MonashDataPullerJEPA(_cfg, which='val',   window_stride=_stride)
         if pretrain_dset in ('synthetic', 'monash+synthetic'):
             import torch.utils.data as _tud
-            syn_train = SyntheticArrowDataPullerJEPA(_cfg, which='train')
-            syn_val   = SyntheticArrowDataPullerJEPA(_cfg, which='val')
+            syn_train = SyntheticArrowDataPullerJEPA(_cfg, which='train', window_stride=_stride)
+            syn_val   = SyntheticArrowDataPullerJEPA(_cfg, which='val',   window_stride=_stride)
             if pretrain_dset == 'monash+synthetic':
                 train_dataset = _tud.ConcatDataset([train_dataset, syn_train])
                 val_dataset   = _tud.ConcatDataset([val_dataset,   syn_val])
@@ -244,8 +248,9 @@ def pretrain_ntp(config, save_dir_override: str = None):
             save_model(model, optimizer, epoch + 1,
                        os.path.join(save_dir, save_name + '.pt'))
             print(f'  → saved (best val={best_val_loss:.6f})')
-        save_model(model, optimizer, epoch + 1,
-                   os.path.join(save_dir, save_name + f'_epoch{epoch+1}.pt'))
+        if os.environ.get('TS_SAVE_EPOCH_CKPTS', '1') != '0':   # per-epoch files are optional
+            save_model(model, optimizer, epoch + 1,
+                       os.path.join(save_dir, save_name + f'_epoch{epoch+1}.pt'))
     pd.DataFrame(records).to_csv(
         os.path.join(save_dir, save_name + '_losses.csv'),
         index=False, float_format='%.6f')

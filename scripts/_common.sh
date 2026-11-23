@@ -32,6 +32,13 @@ ALL_SEEDS=${ALL_SEEDS:-"123 456 789 1337 2003"}
 # The shared encoder: 8 layers, d_model 128, 16 heads, d_ff 512, patch length 16.
 ENCODER_FLAGS="--encoder_layers 8 --embed_dim 128"
 
+# Encoder backbone: the patch transformer (default) or ModernTCN, for dino /
+# jepa / lejepa only. Exported for Train_and_downstream.py, which tags ModernTCN
+# checkpoint dirs "_cnn"; ts_log tags the log dirs the same way.
+#   BACKBONE=moderntcn ./scripts/run_per_model.sh jepa forecast 123
+BACKBONE=${BACKBONE:-${TS_BACKBONE:-transformer}}
+export TS_BACKBONE=$BACKBONE
+
 # DRY_RUN=1 prints the commands a protocol would run and executes nothing.
 DRY_RUN=${DRY_RUN:-0}
 
@@ -58,6 +65,7 @@ ts_budget() {
     mae|patchtst)       LR=1e-4; BATCH=64  ;;   # already the equal budget
     diffusion|timedart) LR=1e-4; BATCH=128 ;;
     softclt)            LR=2e-4; BATCH=128 ;;
+    autotcl)            LR=1e-4; BATCH=128 ;;   # AutoTCL repo --lr; meta_lr 1.2e-2 in its config
     *) echo "unknown model: $1" >&2; exit 1 ;;
   esac
 }
@@ -70,6 +78,7 @@ ts_batch() {
   export TS_MAE_BS=$1         # mae
   export TS_DIFFUSION_BS=$1   # diffusion
   export TS_SOFTCLT_BS=$1     # softclt
+  export TS_AUTOTCL_BS=$1     # autotcl
   export TS_DINO_BS=$1        # dino
 }
 
@@ -87,7 +96,9 @@ ts_task() {
 
 # ── ts_log <protocol> <model> <task> → OUT ───────────────────────────────────
 ts_log() {
-  OUT="logs/$1/${2}_${3}"
+  local proto=$1
+  [ "$TS_BACKBONE" = moderntcn ] && proto="${proto}_cnn"
+  OUT="logs/$proto/${2}_${3}"
   [ "$DRY_RUN" = 1 ] || mkdir -p "$OUT"
 }
 

@@ -68,7 +68,7 @@ class Exp_TimeDART(Exp_Basic):
         # Fine-tuning path: split head/encoder LR if both are exposed on args.
         # head_lr defaults to args.learning_rate; encoder_lr defaults to head_lr.
         head_lr_attr = getattr(self.args, "head_lr", None)
-        enc_lr_attr  = getattr(self.args, "encoder_lr", None)
+        enc_lr_attr  = os.environ.get("TS_FT_ENCODER_LR") or getattr(self.args, "encoder_lr", None)   # TS_FT_ENCODER_LR: encoder-LR sweeps
         if backbone_trainable and (head_lr_attr is not None or enc_lr_attr is not None):
             head_lr = float(head_lr_attr if head_lr_attr is not None else self.args.learning_rate)
             enc_lr  = float(enc_lr_attr  if enc_lr_attr  is not None else head_lr)
@@ -244,7 +244,9 @@ class Exp_TimeDART(Exp_Basic):
             steps_per_epoch=len(train_loader),
             pct_start=self.args.pct_start,
             epochs=self.args.train_epochs,
-            max_lr=self.args.learning_rate,
+            # per param group, so a head / encoder split keeps its encoder LR
+            # (== self.args.learning_rate when there is a single group)
+            max_lr=[g['lr'] for g in model_optim.param_groups],
         )
 
         for epoch in range(self.args.train_epochs):
@@ -425,7 +427,9 @@ class Exp_TimeDART(Exp_Basic):
             steps_per_epoch=len(train_loader),
             pct_start=self.args.pct_start,
             epochs=self.args.train_epochs,
-            max_lr=self.args.learning_rate,
+            # per param group, so a head / encoder split keeps its encoder LR
+            # (== self.args.learning_rate when there is a single group)
+            max_lr=[g['lr'] for g in model_optim.param_groups],
         )
 
         for epoch in range(self.args.train_epochs):

@@ -3,6 +3,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional
 import math
+import os
+import sys
+
+_SHARED = os.path.join(os.path.dirname(os.path.abspath(__file__)), *(['..'] * 1), 'shared')
+if _SHARED not in sys.path:
+    sys.path.insert(0, _SHARED)
+from moderntcn_backbone import ModernTCNPatchEncoder, use_moderntcn
 
 
 # ─── Positional Encoding ──────────────────────────────────────────────────────
@@ -41,6 +48,22 @@ def positional_encoding(pe, learn_pe, q_len, d_model) -> nn.Parameter:
 
 
 # ─── Attention ────────────────────────────────────────────────────────────────
+
+
+# ── layer-wise probing / early exit ──────────────────────────────────────────
+# TS_EXIT_LAYER=k runs only the first k encoder blocks of a deeper pre-trained
+# encoder (all weights still load; the later blocks are simply skipped), so a
+# 24-layer backbone can be read out after block 2, 4, 8, ... Unset = all blocks.
+def _exit_layers(layers):
+    import os
+    k = int(os.environ.get("TS_EXIT_LAYER", "0") or 0)
+    if 0 < k < len(layers):
+        if not getattr(_exit_layers, "_said", False):
+            print(f"[exit] encoder truncated: first {k} of {len(layers)} blocks (TS_EXIT_LAYER)")
+            _exit_layers._said = True
+        return layers[:k]
+    return layers
+
 
 class ScaledDotProductAttention(nn.Module):
     def __init__(self, d_model, n_heads, attn_dropout=0., res_attention=False, lsa=False):
@@ -156,14 +179,14 @@ class TSTEncoder(nn.Module):
 
     def forward(self, src, attn_mask=None):
         output, scores = src, None
-        for mod in self.layers:
+        for mod in _exit_layers(self.layers):
             output, scores = mod(output, prev=scores, attn_mask=attn_mask)
         return output
 
 
 # ─── Encoder ──────────────────────────────────────────────────────────────────
 
-class Encoder(nn.Module):
+class TransformerEncoder(nn.Module):
     """
     PatchTST-style channel-independent encoder (JEPA variant — no semantic tokens).
 
@@ -253,3 +276,12 @@ class Encoder(nn.Module):
             "orig_B":       B,
             "orig_F":       F,
         }
+
+
+def Encoder(*args, **kwargs):
+    """The encoder this run uses: the patch transformer above, or the ModernTCN
+    encoder when TS_BACKBONE=moderntcn (set by Train_and_downstream --backbone).
+    Both take the same arguments and return the same dict."""
+    if use_moderntcn():
+        return ModernTCNPatchEncoder(*args, **kwargs)
+    return TransformerEncoder(*args, **kwargs)

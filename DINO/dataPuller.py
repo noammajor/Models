@@ -5,6 +5,11 @@ from torch.utils.data import Dataset
 import os
 import numpy as np
 from sklearn.preprocessing import StandardScaler
+import sys as _sys
+_SHARED_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared')
+if _SHARED_DIR not in _sys.path:
+    _sys.path.insert(0, _SHARED_DIR)
+from monash_exclude import monash_tsf_files
 
 
 # ── Shared Monash .tsf reader ─────────────────────────────────────────────────
@@ -279,7 +284,7 @@ class MonashDataPuller(Dataset):
               f"(window={self.window_size}, step={self.window_size})")
 
     def _load_all(self, data_dir, min_len, val_prec, test_prec):
-        tsf_files = sorted(f for f in os.listdir(data_dir) if f.endswith('.tsf'))
+        tsf_files = monash_tsf_files(data_dir)
 
         for fname in tsf_files:
             path = os.path.join(data_dir, fname)

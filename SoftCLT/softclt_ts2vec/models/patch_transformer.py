@@ -24,7 +24,8 @@ if _orig_idx is not None:
     sys.path.remove(_TSDINO)
 sys.path.insert(0, _TSDINO)
 try:
-    from models.patchTST import PatchTSTEncoder
+    # DINO's module also exposes the ModernTCN encoder and the TS_BACKBONE switch
+    from models.patchTST import PatchTSTEncoder, ModernTCNPatchTSTEncoder, use_moderntcn
 finally:
     for _k in [k for k in list(sys.modules) if k.split('.')[0] in ('models', 'utils')]:
         del sys.modules[_k]
@@ -66,7 +67,10 @@ class PatchTransformerWrapper(nn.Module):
         self.n_vars = input_dims
         self.d_model = output_dims
 
-        self.backbone = PatchTSTEncoder(
+        # TS_BACKBONE=moderntcn swaps in the ModernTCN encoder (same constructor and
+        # output contract as DINO's PatchTSTEncoder; it ignores the attention-only args).
+        _Enc = ModernTCNPatchTSTEncoder if use_moderntcn() else PatchTSTEncoder
+        self.backbone = _Enc(
             c_in=input_dims,
             num_patch=max_num_patches,
             patch_len=patch_len,

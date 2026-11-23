@@ -17,6 +17,12 @@ from models.layers.attention import *
 from utils.util import DropPath
 from torch.nn.init import trunc_normal_
 from models.layers.revin import RevIN
+import os as _os
+import sys as _sys
+_SHARED = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', '..', 'shared')
+if _SHARED not in _sys.path:
+    _sys.path.insert(0, _SHARED)
+from moderntcn_backbone import ModernTCNPatchTSTEncoder, use_moderntcn
 
 
 # Paper B.1: the MLP probe is one hidden layer of width 512 with GELU and
@@ -42,6 +48,22 @@ def _proj(in_dim, out_dim, dropout, mlp_head=False, hidden_dim=512):
 
             
 # Cell
+
+# ── layer-wise probing / early exit ──────────────────────────────────────────
+# TS_EXIT_LAYER=k runs only the first k encoder blocks of a deeper pre-trained
+# encoder (all weights still load; the later blocks are simply skipped), so a
+# 24-layer backbone can be read out after block 2, 4, 8, ... Unset = all blocks.
+def _exit_layers(layers):
+    import os
+    k = int(os.environ.get("TS_EXIT_LAYER", "0") or 0)
+    if 0 < k < len(layers):
+        if not getattr(_exit_layers, "_said", False):
+            print(f"[exit] encoder truncated: first {k} of {len(layers)} blocks (TS_EXIT_LAYER)")
+            _exit_layers._said = True
+        return layers[:k]
+    return layers
+
+
 class PatchTST(nn.Module):
     """
     Output dimension: 
@@ -63,7 +85,10 @@ class PatchTST(nn.Module):
 
         #assert head_type in ['pretrain', 'prediction', 'regression', 'classification'], 'head type should be either pretrain, prediction, or regression'
         # Backbone
-        self.backbone = PatchTSTEncoder(c_in, num_patch=num_patch, patch_len=patch_len, 
+        # TS_BACKBONE=moderntcn swaps the patch transformer for the ModernTCN encoder
+        # (shared/moderntcn_backbone.py); same arguments, same output shape.
+        _Enc = ModernTCNPatchTSTEncoder if use_moderntcn() else PatchTSTEncoder
+        self.backbone = _Enc(c_in, num_patch=num_patch, patch_len=patch_len, 
                                 n_layers=n_layers, d_model=d_model, n_heads=n_heads, 
                                 shared_embedding=shared_embedding, d_ff=d_ff,
                                 attn_dropout=attn_dropout, dropout=dropout, act=act, 
@@ -424,10 +449,10 @@ class TSTEncoder(nn.Module):
         output = src
         scores = None
         if self.res_attention:
-            for mod in self.layers: output, scores = mod(output, prev=scores, key_padding_mask=key_padding_mask)
+            for mod in _exit_layers(self.layers): output, scores = mod(output, prev=scores, key_padding_mask=key_padding_mask)
             return output
         else:
-            for mod in self.layers: output = mod(output, key_padding_mask=key_padding_mask)
+            for mod in _exit_layers(self.layers): output = mod(output, key_padding_mask=key_padding_mask)
             return output
 
 

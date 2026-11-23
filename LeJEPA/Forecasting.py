@@ -77,7 +77,7 @@ def forecasting(self, path, linear_probe=True, mlp_head: bool = False):
     _all_params = list(self.encoder.parameters()) + list(forecast_head.parameters())
     # LR: config value if set, else hardcoded default.
     _cfg_head_lr = config.get("lr_forcasting")
-    _cfg_enc_lr  = config.get("lr_forcasting_encoder")
+    _cfg_enc_lr  = os.environ.get("TS_FT_ENCODER_LR") or config.get("lr_forcasting_encoder")   # TS_FT_ENCODER_LR: encoder-LR sweeps
     head_lr = float(_cfg_head_lr) if _cfg_head_lr is not None else 0.0001
     enc_lr  = float(_cfg_enc_lr)  if _cfg_enc_lr  is not None else head_lr
     if linear_probe:

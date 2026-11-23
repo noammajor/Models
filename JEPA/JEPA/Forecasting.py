@@ -13,7 +13,8 @@ def _instance_denorm(x, mean, std):
     return x * std.reshape(shape) + mean.reshape(shape)
 
 
-def forecasting(self, path, linear_probe=True, mlp_head: bool = False):
+def forecasting(self, path, linear_probe=True, mlp_head: bool = False,
+                random_encoder: bool = False):
     """Non-autoregressive forecasting: slides real context forward, no prediction feedback.
     Runs TWICE: first with random encoder (baseline), then with trained encoder.
 
@@ -25,7 +26,9 @@ def forecasting(self, path, linear_probe=True, mlp_head: bool = False):
     epoch_tag = path
     checkpoint_path = f"{self.path_save}{path}best_model.pt"
 
-    name_loader = torch.load(checkpoint_path, map_location=torch.device("cpu"))
+    # random_encoder: the untrained-encoder control (jepa_random). The encoder keeps
+    # the seeded initialisation it was built with; no checkpoint is read.
+    name_loader = None if random_encoder else torch.load(checkpoint_path, map_location=torch.device("cpu"))
     for run_type in ['TRAINED']:
         print(f"\n=== Zero-Shot Forecasting ({run_type}) ===")
 
@@ -33,7 +36,9 @@ def forecasting(self, path, linear_probe=True, mlp_head: bool = False):
         self.encoder_for.to(self.device)
         self.predictor_for.to(self.device)
 
-        if run_type == 'TRAINED':
+        if random_encoder:
+            print("Random encoder — skipping checkpoint load")
+        elif run_type == 'TRAINED':
             print(f"Loading checkpoint: {checkpoint_path}")
             self.encoder_for.load_state_dict(name_loader["target_encoder"])
         else:
@@ -60,7 +65,7 @@ def forecasting(self, path, linear_probe=True, mlp_head: bool = False):
         
         # LR: config value if set, else hardcoded default.
         _cfg_head_lr = config.get("lr_forcasting")
-        _cfg_enc_lr  = config.get("lr_forcasting_encoder")
+        _cfg_enc_lr  = os.environ.get("TS_FT_ENCODER_LR") or config.get("lr_forcasting_encoder")   # TS_FT_ENCODER_LR: encoder-LR sweeps
         head_lr = float(_cfg_head_lr) if _cfg_head_lr is not None else 0.0001
         enc_lr  = float(_cfg_enc_lr)  if _cfg_enc_lr  is not None else head_lr
         if linear_probe:
